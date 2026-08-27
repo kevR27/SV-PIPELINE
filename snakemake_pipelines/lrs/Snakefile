@@ -16,10 +16,11 @@ TRGT_CATALOG = config["trgt_catalog"]          # TRGT repeat-locus catalog BED
 
 rule all:
     input:
-        # QC
+        # QC (solo read depth --> mosdepth)
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/qc/cramino/{sample}_cramino.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/qc/samtools/{sample}_samtools.stats", sample=SAMPLES),
+        # expand(PATH + "{sample}/qc/cramino/{sample}_cramino.txt", sample=SAMPLES),
+        # expand(PATH + "{sample}/qc/samtools/{sample}_samtools.stats", sample=SAMPLES),
+
         # small variants + phasing
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
@@ -60,29 +61,29 @@ rule mosdepth_coverage:
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input}
         """
 
-rule cramino_qc:
-    input:
-        bam = lambda wc: BAMS[wc.sample]
-    output:
-        txt = PATH + "{sample}/qc/cramino/{sample}_cramino.txt"
-    conda:
+#rule cramino_qc:
+#    input:
+#        bam = lambda wc: BAMS[wc.sample]
+#    output:
+#        txt = PATH + "{sample}/qc/cramino/{sample}_cramino.txt"
+#    conda:
         CONDAENV + "cramino.yaml"
-    shell:
-        """
-        cramino {input.bam} > {output.txt}
-        """
+#    shell:
+#        """
+#        cramino {input.bam} > {output.txt}
+#        """
 
-rule samtools_stats_qc:
-    input:
-        bam = lambda wc: BAMS[wc.sample]
-    output:
-        stats = PATH + "{sample}/qc/samtools/{sample}_samtools.stats"
-    conda:
-        CONDAENV + "samtools.yaml"
-    shell:
-        """
-        samtools stats -@ {THREADS} {input.bam} > {output.stats}
-        """
+#rule samtools_stats_qc:
+#    input:
+#        bam = lambda wc: BAMS[wc.sample]
+#    output:
+#        stats = PATH + "{sample}/qc/samtools/{sample}_samtools.stats"
+#    conda:
+#        CONDAENV + "samtools.yaml"
+#    shell:
+#        """
+#        samtools stats -@ {THREADS} {input.bam} > {output.stats}
+#        """
 
 rule clair3_snp_calling:
     input:
