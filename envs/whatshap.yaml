@@ -1,0 +1,8 @@
+name: whatshap
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - whatshap=2.3
+  - samtools=1.19
+  - tabix

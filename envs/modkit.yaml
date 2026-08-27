@@ -1,0 +1,10 @@
+# modkit is distributed as a standalone Rust binary release, not a conda
+# package - download from https://github.com/nanoporetech/modkit/releases
+# and point MODKITENV at the binary path. This env is only a placeholder
+# in case you build it from source (needs a Rust toolchain).
+name: modkit
+channels:
+  - conda-forge
+dependencies:
+  - rust
+  - python=3.10

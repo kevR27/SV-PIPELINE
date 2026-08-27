@@ -1,0 +1,357 @@
+configfile: "config_srs.yaml"
+
+SAMPLES   = list(config["samples"].keys())
+BAMS      = config["samples"]
+PATH      = config["path"]
+REF       = config["ref"]
+THREADS   = config["threads"]
+BED       = config["bed"]                 # panel/target regions (optional, used for reporting/EH catalog restriction)
+EXCLUDE   = config["exclude_bed"]          # DELLY/smoove exclude regions (centromeres, telomeres, segdups)
+EH_CATALOG = config["expansionhunter_catalog"]
+MELT_DIR  = config["melt_dir"]             # MELTv2 install dir (contains mei_list, add_bed_files, genes bed)
+MELT_TRANSPOSONS = config["melt_transposons"]  # list of *_MELT.zip element refs (ALU, LINE1, SVA, HERVK...)
+CONDAENV  = config["condaenv"]
+FASTQ     = config.get("fastq", {})        # optional: {sample: {"r1": ..., "r2": ...}} if you want BWA-MEM2 realignment
+TRGT_EH_PANEL_NOTE = None                  # (no-op placeholder, see EH_CATALOG above)
+
+rule all:
+    input:
+        expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/qualimap/{sample}/qualimapReport.html", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/smoove/{sample}-smoove.genotyped.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/cnvkit/{sample}.call.cns", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
+        expand(PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv", sample=SAMPLES)
+
+#######
+# QC  #
+#######
+
+rule mosdepth_coverage:
+    input:
+        bam = lambda wc: BAMS[wc.sample]
+    output:
+        PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt"
+    conda:
+        CONDAENV + "mosdepth.yaml"
+    shell:
+        """
+        mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input.bam}
+        """
+
+rule qualimap_qc:
+    input:
+        bam = lambda wc: BAMS[wc.sample]
+    output:
+        html = PATH + "{sample}/qc/qualimap/{sample}/qualimapReport.html"
+    params:
+        outdir = PATH + "{sample}/qc/qualimap/{sample}"
+    conda:
+        CONDAENV + "qualimap.yaml"
+    shell:
+        """
+        qualimap bamqc -bam {input.bam} -outdir {params.outdir} \
+            -nt {THREADS} --java-mem-size=8G
+        """
+
+########################################################
+# OPTIONAL: BWA-MEM2 realignment (only if you start     #
+# from fastq rather than an already-aligned BAM - your  #
+# BAMS dict already covers the pre-aligned case above)   #
+########################################################
+
+rule bwa_mem2_index:
+    input:
+        ref = REF
+    output:
+        REF + ".bwt.2bit.64"
+    conda:
+        CONDAENV + "bwa-mem2.yaml"
+    shell:
+        """
+        bwa-mem2 index {input.ref}
+        """
+
+rule bwa_mem2_align:
+    input:
+        r1 = lambda wc: FASTQ[wc.sample]["r1"],
+        r2 = lambda wc: FASTQ[wc.sample]["r2"],
+        ref = REF,
+        idx = rules.bwa_mem2_index.output
+    output:
+        bam = PATH + "{sample}/alignment/{sample}.bwamem2.sorted.bam"
+    conda:
+        CONDAENV + "bwa-mem2.yaml"
+    shell:
+        """
+        bwa-mem2 mem -t {THREADS} -R '@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}' \
+            {input.ref} {input.r1} {input.r2} | \
+            samtools sort -@ {THREADS} -o {output.bam}
+        samtools index {output.bam}
+        """
+
+#####################
+# SV CALLING (x4)   #
+#####################
+
+rule manta_sv:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz"
+    params:
+        rundir = PATH + "{sample}/sv/manta/rundir"
+    conda:
+        CONDAENV + "manta.yaml"
+    shell:
+        """
+        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir {params.rundir}
+        {params.rundir}/runWorkflow.py -m local -j {THREADS}
+        cp {params.rundir}/results/variants/diploidSV.vcf.gz {output.vcf}
+        tabix -p vcf {output.vcf}
+        """
+
+rule delly_sv:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF,
+        excl = EXCLUDE
+    output:
+        vcf = PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz"
+    params:
+        bcf = PATH + "{sample}/sv/delly/{sample}_delly.bcf"
+    conda:
+        CONDAENV + "delly.yaml"
+    shell:
+        """
+        delly call -x {input.excl} -g {input.ref} -o {params.bcf} {input.bam}
+        bcftools view {params.bcf} -O z -o {output.vcf}
+        tabix -p vcf {output.vcf}
+        """
+
+rule smoove_sv:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF,
+        excl = EXCLUDE
+    output:
+        vcf = PATH + "{sample}/sv/smoove/{sample}-smoove.genotyped.vcf.gz"
+    params:
+        outdir = PATH + "{sample}/sv/smoove"
+    conda:
+        CONDAENV + "smoove.yaml"
+    shell:
+        """
+        smoove call --outdir {params.outdir} --name {wildcards.sample} \
+            --exclude {input.excl} --fasta {input.ref} -p {THREADS} \
+            --genotype {input.bam}
+        """
+
+rule cnvkit_cnv:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        cns = PATH + "{sample}/sv/cnvkit/{sample}.call.cns"
+    params:
+        outdir = PATH + "{sample}/sv/cnvkit"
+    conda:
+        CONDAENV + "cnvkit.yaml"
+    shell:
+        """
+        # WGS mode, flat reference (no matched normal panel) - germline singleton use case
+        cnvkit.py batch {input.bam} -n -m wgs -f {input.ref} \
+            -d {params.outdir} -p {THREADS}
+        cnvkit.py call {params.outdir}/{wildcards.sample}.cns -o {output.cns}
+        """
+
+#############################
+# WITHIN-PLATFORM SV MERGE  #
+#############################
+
+rule survivor_merge:
+    input:
+        manta  = rules.manta_sv.output.vcf,
+        delly  = rules.delly_sv.output.vcf,
+        smoove = rules.smoove_sv.output.vcf,
+        cnvkit = rules.cnvkit_cnv.output.cns
+    output:
+        list_file = PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
+        vcf = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf"
+    conda:
+        CONDAENV + "survivor.yaml"
+    shell:
+        """
+        # decompress the gz callers to plain VCF for SURVIVOR, and convert
+        # CNVkit .cns -> VCF beforehand with cnvkit.py export vcf (not shown,
+        # add as a separate rule if you want CNVkit calls in the merge)
+        zcat {input.manta} > {PATH}/{wildcards.sample}/sv/merged/manta.vcf
+        zcat {input.delly} > {PATH}/{wildcards.sample}/sv/merged/delly.vcf
+        zcat {input.smoove} > {PATH}/{wildcards.sample}/sv/merged/smoove.vcf
+
+        printf "%s\\n" \
+            {PATH}/{wildcards.sample}/sv/merged/manta.vcf \
+            {PATH}/{wildcards.sample}/sv/merged/delly.vcf \
+            {PATH}/{wildcards.sample}/sv/merged/smoove.vcf \
+            > {output.list_file}
+
+        # 1kb max distance, require >=2 callers agree, same type, same strand,
+        # min SV size 50bp -> tune to your needs
+        SURVIVOR merge {output.list_file} 1000 2 1 1 0 50 {output.vcf}
+        """
+
+##############################
+# SV ANNOTATION (AnnotSV)    #
+##############################
+
+rule annotsv_annotation:
+    input:
+        vcf = rules.survivor_merge.output.vcf
+    output:
+        tsv = PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv"
+    params:
+        outdir = PATH + "{sample}/sv/merged"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        AnnotSV -SVinputFile {input.vcf} \
+            -outputDir {params.outdir} \
+            -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {BED}
+        """
+
+######################
+# MEI (MELT)         #
+######################
+
+rule melt_mei:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf"
+    params:
+        outdir = PATH + "{sample}/mei/melt",
+        transposons = " ".join(MELT_TRANSPOSONS)
+    conda:
+        CONDAENV + "melt.yaml"
+    shell:
+        """
+        # MELT-Single per transposon family, then merge - adapt to MELT-Split
+        # if you want cross-family joint genotyping across many samples later
+        java -jar $MELT_HOME/MELT.jar Single \
+            -bamfile {input.bam} -h {input.ref} \
+            -n {MELT_DIR}/add_bed_files/Hg38/Hg38.genes.bed \
+            -t {params.transposons} \
+            -w {params.outdir}
+        # concatenate per-family VCFs into one merged MEI callset
+        bcftools concat -a {params.outdir}/*.final_comp.vcf -O v -o {output.vcf}
+        """
+
+##############################
+# REPEAT EXPANSION (EH)      #
+##############################
+
+rule expansionhunter_str:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF,
+        catalog = EH_CATALOG
+    output:
+        vcf = PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf"
+    params:
+        prefix = PATH + "{sample}/str/expansionhunter/{sample}_EH"
+    conda:
+        CONDAENV + "expansionhunter.yaml"
+    shell:
+        """
+        ExpansionHunter --reads {input.bam} --reference {input.ref} \
+            --variant-catalog {input.catalog} --output-prefix {params.prefix} \
+            --threads {THREADS}
+        """
+
+##################################
+# SMALL VARIANTS (DeepVariant)   #
+##################################
+
+rule deepvariant_snp:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
+    params:
+        outdir = PATH + "{sample}/snp_deepvariant"
+    conda:
+        CONDAENV + "deepvariant.yaml"
+    shell:
+        """
+        run_deepvariant --model_type=WGS \
+            --ref={input.ref} --reads={input.bam} \
+            --output_vcf={output.vcf} \
+            --num_shards={THREADS} \
+            --intermediate_results_dir={params.outdir}/intermediate \
+            --regions={BED}
+        """
+
+######################
+# PHASING (WhatsHap)  #
+######################
+
+rule whatshap_phasing:
+    input:
+        vcf = rules.deepvariant_snp.output.vcf,
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        phased = PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
+        haplotag = PATH + "{sample}/phasing/{sample}.phased.bam"
+    conda:
+        CONDAENV + "whatshap.yaml"
+    shell:
+        """
+        whatshap phase --reference {input.ref} -o {output.phased} \
+            {input.vcf} {input.bam} --ignore-read-groups
+
+        tabix -p vcf {output.phased}
+
+        whatshap haplotag -o {output.haplotag} --reference {input.ref} \
+            {output.phased} {input.bam} --ignore-read-groups
+
+        samtools index {output.haplotag}
+        """
+
+#####################################################
+# mtDNA rearrangements (works from SRS or LRS BAMs)  #
+#####################################################
+
+rule eklipse_mtdna:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        csv = PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv"
+    params:
+        outdir = PATH + "{sample}/mtdna/eklipse"
+    conda:
+        CONDAENV + "eklipse.yaml"
+    shell:
+        """
+        # eKLIPse needs a BAM subset/realigned to the mtDNA contig (chrM/MT)
+        # plus a small circularized reference - see eKLIPse README for the
+        # exact reference prep; -bed points at a gene-annotation bed for mtDNA
+        python /path/to/eKLIPse/eKLIPse.py -in {input.bam} -ref {input.ref} \
+            -out {params.outdir}
+        cp {params.outdir}/*_eKLIPse.csv {output.csv}
+        """

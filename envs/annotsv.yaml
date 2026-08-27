@@ -1,0 +1,8 @@
+name: annotsv
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - annotsv=3.4.4
+  - bedtools
+  - tabix

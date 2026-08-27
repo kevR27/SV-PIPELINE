@@ -1,0 +1,7 @@
+name: cutesv
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - cutesv=2.1.1
+  - tabix

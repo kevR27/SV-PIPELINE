@@ -1,0 +1,18 @@
+samples:
+  patient01: /data/lrs_bams/patient01.sort.bam
+  patient02: /data/lrs_bams/patient02.sort.bam
+
+path: "/data/lrs_results/"
+ref: "/refs/hg38/hg38.fa"
+threads: 16
+
+bed: "/panels/optic_neuropathy_mito_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
+candidate_genes_list: "/panels/optic_neuropathy_mito_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
+cpg: "chr1:1-100000"                                            # region(s) for modkit CpG extraction - adjust as needed
+
+tldr_elements: "/tools/tldr/ref/teref.human.fa"                 # ALU/LINE1/SVA reference for TLDR
+trgt_catalog: "/refs/hg38/trgt_repeat_catalog_panel.bed"         # TRGT repeat-locus catalog, panel-restricted
+
+condaenv: "envs/"
+modkitenv: "/tools/modkit/modkit"     # standalone binary, not a conda env
+clair3env: "/tools/clair3/models/ont" # Clair3 ONT model directory

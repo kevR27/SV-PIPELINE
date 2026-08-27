@@ -1,0 +1,15 @@
+# Straglr is not on bioconda as of writing - clone from
+# https://github.com/bcgsc/straglr and install its deps via this env,
+# then call it via the repo's straglr.py path (as in your Snakefile)
+name: straglr
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pysam
+  - numpy
+  - scipy
+  - pybedtools
+  - samtools=1.19
+  - blast

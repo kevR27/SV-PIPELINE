@@ -1,0 +1,4 @@
+name: cramino
+channels: [bioconda, conda-forge]
+dependencies:
+  - cramino=0.14.5

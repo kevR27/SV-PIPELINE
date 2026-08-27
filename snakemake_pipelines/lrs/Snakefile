@@ -1,0 +1,404 @@
+configfile: "config_lrs.yaml"
+
+SAMPLES    = list(config["samples"].keys())
+BAMS       = config["samples"]
+PATH       = config["path"]
+REF        = config["ref"]
+THREADS    = config["threads"]
+BED        = config["bed"]                    # panel regions (Clair3 target + AnnotSV candidate genes)
+GENE_LIST  = config["candidate_genes_list"]    # plain gene-symbol list derived from BED, for AnnotSV
+CPG        = config["cpg"]
+CONDAENV   = config["condaenv"]
+MODKITENV  = config["modkitenv"]
+CLAIRENV   = config["clair3env"]
+TLDR_ELTS  = config["tldr_elements"]           # ALU/LINE1/SVA reference fastas for TLDR
+TRGT_CATALOG = config["trgt_catalog"]          # TRGT repeat-locus catalog BED
+
+rule all:
+    input:
+        # QC
+        expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/cramino/{sample}_cramino.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/samtools/{sample}_samtools.stats", sample=SAMPLES),
+        # small variants + phasing
+        expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz", sample=SAMPLES),
+        # SV calling + merge + annotation
+        expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        # insertion / MEI classification (multiple independent callers)
+        expand(PATH + "{sample}/sv/insertions/{sample}_insertions.fasta", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
+        expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/mei/palmer/{sample}.palmer.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/mei/xtea_long/{sample}.xtea.vcf", sample=SAMPLES),
+        # repeat expansion (multiple independent callers)
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/strdust/{sample}_strdust.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/trgt/{sample}_trgt.vcf.gz", sample=SAMPLES),
+        # methylation
+        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
+        # mtDNA rearrangements
+        expand(PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv", sample=SAMPLES)
+
+rule mosdepth_coverage:
+    input:
+        lambda wc: BAMS[wc.sample]
+    output:
+        PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt"
+    conda:
+        CONDAENV + "mosdepth.yaml"
+    shell:
+        """
+        mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input}
+        """
+
+rule cramino_qc:
+    input:
+        bam = lambda wc: BAMS[wc.sample]
+    output:
+        txt = PATH + "{sample}/qc/cramino/{sample}_cramino.txt"
+    conda:
+        CONDAENV + "cramino.yaml"
+    shell:
+        """
+        cramino {input.bam} > {output.txt}
+        """
+
+rule samtools_stats_qc:
+    input:
+        bam = lambda wc: BAMS[wc.sample]
+    output:
+        stats = PATH + "{sample}/qc/samtools/{sample}_samtools.stats"
+    conda:
+        CONDAENV + "samtools.yaml"
+    shell:
+        """
+        samtools stats -@ {THREADS} {input.bam} > {output.stats}
+        """
+
+rule clair3_snp_calling:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/snp_clair3/{sample}.vcf.gz"
+    conda:
+        CONDAENV + "clair3.yaml"
+    shell:
+        """
+        run_clair3.sh -b {input.bam} -f {input.ref} -t {THREADS} -p ont \
+            -o {PATH}/{wildcards.sample}/snp_clair3 \
+            -m {CLAIRENV} \
+            --bed_fn={BED}
+
+        cp {PATH}/{wildcards.sample}/snp_clair3/merge_output.vcf.gz {output.vcf}
+        tabix -p vcf {output.vcf}
+        """
+
+rule whatsHap_phasing:
+    input:
+        vcf = rules.clair3_snp_calling.output.vcf,
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        phased = PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
+        haplotag = PATH + "{sample}/phasing/{sample}.phased.bam"
+    conda:
+        CONDAENV + "whatshap.yaml"
+    shell:
+        """
+        whatshap phase --reference {input.ref} -o {output.phased} {input.vcf} {input.bam} --ignore-read-groups
+        tabix -p vcf {output.phased}
+        whatshap haplotag -o {output.haplotag} --reference {input.ref} {output.phased} {input.bam} --ignore-read-groups
+        samtools index {output.haplotag}
+        """
+
+rule longphase_phasing:
+    input:
+        vcf = rules.clair3_snp_calling.output.vcf,
+        sv_vcf = PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf",
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
+    params:
+        prefix = PATH + "{sample}/phasing_longphase/{sample}.longphase"
+    conda:
+        CONDAENV + "longphase.yaml"
+    shell:
+        """
+        # SV-aware phasing (SNP + SV jointly) - complements WhatsHap's SNP-only
+        # phase blocks; compare the two for phase-block length / concordance
+        longphase phase -s {input.vcf} --sv-file {input.sv_vcf} \
+            -b {input.bam} -r {input.ref} -t {THREADS} -o {params.prefix}
+        bgzip -f {params.prefix}.vcf
+        tabix -p vcf {output.vcf}
+        """
+
+rule sniffles2_sv:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf"
+    conda:
+        CONDAENV + "sniffles2.yaml"
+    shell:
+        """
+        sniffles --input {input.bam} --vcf {output.vcf} --reference {input.ref} --threads {THREADS} --minsupport 1 --no-qc --mosaic --allow-overwrite --min-alignment-length 100
+        """
+
+rule cutesv:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf"
+    conda:
+        CONDAENV + "cutesv.yaml"
+    shell:
+        """
+        cuteSV {input.bam} {input.ref} {output.vcf} {PATH}/{wildcards.sample}/sv/cutesv --threads {THREADS} --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3 --min_support 1 --genotype -include_bed {BED}
+        """
+
+#####################################################
+# NEW: within-platform SV merge (Sniffles2 + cuteSV) #
+#####################################################
+
+rule jasmine_merge:
+    input:
+        sniffles = rules.sniffles2_sv.output.vcf,
+        cutesv   = rules.cutesv.output.vcf
+    output:
+        list_file = PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
+        vcf = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf"
+    conda:
+        CONDAENV + "jasmine.yaml"
+    shell:
+        """
+        printf "%s\\n%s\\n" {input.sniffles} {input.cutesv} > {output.list_file}
+        jasmine file_list={output.list_file} out_file={output.vcf} \
+            threads={THREADS} --output_genotypes --dup_to_ins
+        """
+
+##########################################################
+# NEW: AnnotSV annotation of the merged, high-conf SV set #
+##########################################################
+
+rule annotsv_annotation:
+    input:
+        vcf = rules.jasmine_merge.output.vcf
+    output:
+        tsv = PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv"
+    params:
+        outdir = PATH + "{sample}/sv/merged"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        AnnotSV -SVinputFile {input.vcf} \
+            -outputDir {params.outdir} \
+            -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {GENE_LIST}
+        """
+
+#####################################################################
+# NEW: insertion sequence extraction + RepeatMasker TE classification #
+#####################################################################
+
+rule extract_insertion_seqs:
+    input:
+        vcf = rules.jasmine_merge.output.vcf
+    output:
+        fasta = PATH + "{sample}/sv/insertions/{sample}_insertions.fasta"
+    conda:
+        CONDAENV + "annotsv.yaml"   # just needs bcftools, already in this env
+    shell:
+        """
+        bcftools view -i 'INFO/SVTYPE="INS"' {input.vcf} | \
+        bcftools query -f '>%ID\\n%ALT\\n' - | \
+        sed 's/,.*$//' > {output.fasta}
+        """
+
+rule repeatmasker_classify:
+    input:
+        fasta = rules.extract_insertion_seqs.output.fasta
+    output:
+        out = PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out"
+    params:
+        outdir = PATH + "{sample}/sv/insertions"
+    conda:
+        CONDAENV + "repeatmasker.yaml"
+    shell:
+        """
+        RepeatMasker -species human -pa {THREADS} -dir {params.outdir} {input.fasta}
+        mv {params.outdir}/{wildcards.sample}_insertions.fasta.out {output.out}
+        """
+
+##################################################################
+# NEW: TLDR long-read MEI caller, independent cross-check on BAM  #
+##################################################################
+
+rule tldr_mei:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        table = PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
+    params:
+        outdir = PATH + "{sample}/mei/tldr"
+    conda:
+        CONDAENV + "tldr.yaml"
+    shell:
+        """
+        tldr -b {input.bam} -r {input.ref} -e {TLDR_ELTS} \
+            -p {THREADS} --outdir {params.outdir}
+        cp {params.outdir}/*.table.txt {output.table}
+        """
+
+rule palmer_mei:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        txt = PATH + "{sample}/mei/palmer/{sample}.palmer.txt"
+    params:
+        outdir = PATH + "{sample}/mei/palmer"
+    conda:
+        CONDAENV + "palmer.yaml"
+    shell:
+        """
+        # PALMER requires its own MEI reference set (Alu/L1/SVA consensus) -
+        # point --ref_ins at that directory per the PALMER README
+        perl /path/to/PALMER/PALMER --input {input.bam} --workdir {params.outdir} \
+            --ref_fa {input.ref} --type LINE --output {wildcards.sample}
+        cp {params.outdir}/{wildcards.sample}_*.txt {output.txt}
+        """
+
+rule xtea_long_mei:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/mei/xtea_long/{sample}.xtea.vcf"
+    params:
+        outdir = PATH + "{sample}/mei/xtea_long"
+    conda:
+        CONDAENV + "xtea_long.yaml"
+    shell:
+        """
+        # xTea-long needs a repeat library + config file generated by its
+        # gen_pipeline script; run once per cohort to build {params.outdir}/config
+        xtea_long -i {input.bam} -r {input.ref} -o {params.outdir} \
+            -p {THREADS} --long
+        cp {params.outdir}/classified_results.vcf {output.vcf}
+        """
+
+rule straglr:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vvf = PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",
+        bed = PATH + "{sample}/sv/straglr/{sample}_straglr.bed",
+        tsv = PATH + "{sample}/sv/straglr/{sample}_straglr.tsv"
+    params:
+        prefix = PATH + "{sample}/sv/straglr/{sample}_straglr"
+    conda:
+        CONDAENV + "straglr.yaml"
+    shell:
+        """
+        python /path/to/straglr/straglr.py {input.bam} {input.ref} {params.prefix} --min_str_len 2 --min_support 1 --min_ins_size 1 --include_partials --nprocs {THREADS} --max_str_len 100000 --use_unpaired_clips --max_num_clusters 10 --min_cluster_d 1 --regions {BED}
+        """
+
+rule sv_annotation_stranger:
+    input:
+        vcf = PATH + "{sample}/sv/straglr/{sample}_straglr.vcf"
+    output:
+        annotated = PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf"
+    conda:
+        CONDAENV + "stranger.yaml"
+    shell:
+        """
+        stranger annotate --vcf {input.vcf} --output {output.annotated}
+        """
+
+rule strdust_str:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/sv/strdust/{sample}_strdust.vcf"
+    conda:
+        CONDAENV + "strdust.yaml"
+    shell:
+        """
+        STRdust --reference {input.ref} --threads {THREADS} \
+            {input.bam} > {output.vcf}
+        """
+
+rule trgt_str:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF,
+        catalog = TRGT_CATALOG
+    output:
+        vcf = PATH + "{sample}/sv/trgt/{sample}_trgt.vcf.gz"
+    params:
+        prefix = PATH + "{sample}/sv/trgt/{sample}_trgt"
+    conda:
+        CONDAENV + "trgt.yaml"
+    shell:
+        """
+        # TRGT needs a per-locus repeat catalog BED (same style as
+        # ExpansionHunter's JSON, different format) - restrict to your
+        # panel + known pathogenic loci, same rationale as SRS's EH catalog
+        trgt genotype --genome {input.ref} --reads {input.bam} \
+            --repeats {input.catalog} --threads {THREADS} \
+            --output-prefix {params.prefix}
+        bgzip -f {params.prefix}.vcf
+        tabix -p vcf {output.vcf}
+        """
+
+rule modkit_extract:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        tsv = PATH + "{sample}/methylation/{sample}.modkit.tsv"
+    conda:
+        CONDAENV + "modkit.yaml"
+    shell:
+        """
+        {MODKITENV} extract calls -t {THREADS} --reference {input.ref} --cpg --region {CPG} {input.bam} {output.tsv}
+        """
+
+#####################################################
+# mtDNA rearrangements (works from SRS or LRS BAMs)  #
+#####################################################
+
+rule eklipse_mtdna:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        csv = PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv"
+    params:
+        outdir = PATH + "{sample}/mtdna/eklipse"
+    conda:
+        CONDAENV + "eklipse.yaml"
+    shell:
+        """
+        python /path/to/eKLIPse/eKLIPse.py -in {input.bam} -ref {input.ref} \
+            -out {params.outdir}
+        cp {params.outdir}/*_eKLIPse.csv {output.csv}
+        """

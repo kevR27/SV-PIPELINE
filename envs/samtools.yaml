@@ -1,0 +1,4 @@
+name: samtools_qc
+channels: [bioconda, conda-forge]
+dependencies:
+  - samtools=1.19

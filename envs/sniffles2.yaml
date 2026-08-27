@@ -1,0 +1,7 @@
+name: sniffles2
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - sniffles=2.4
+  - tabix

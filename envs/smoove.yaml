@@ -1,0 +1,8 @@
+name: smoove
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - smoove=0.2.8
+  - samtools=1.19
+  - bcftools=1.19

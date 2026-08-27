@@ -1,0 +1,16 @@
+# TLDR (long-read MEI caller) - install from
+# https://github.com/adamewing/tldr ; needs its --elts reference fastas
+# for ALU/LINE1/SVA in addition to this environment
+name: tldr
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pysam
+  - pandas
+  - numpy
+  - scikit-bio
+  - bwa
+  - samtools=1.19
+  - last

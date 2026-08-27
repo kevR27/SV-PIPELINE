@@ -1,0 +1,7 @@
+name: cnvkit
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - cnvkit=0.9.10
+  - samtools=1.19
