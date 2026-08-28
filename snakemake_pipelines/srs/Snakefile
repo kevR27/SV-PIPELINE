@@ -17,7 +17,6 @@ TRGT_EH_PANEL_NOTE = None                  # (no-op placeholder, see EH_CATALOG 
 rule all:
     input:
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/qc/qualimap/{sample}/qualimapReport.html", sample=SAMPLES),
         expand(PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/smoove/{sample}-smoove.genotyped.vcf.gz", sample=SAMPLES),
@@ -47,20 +46,6 @@ rule mosdepth_coverage:
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input.bam}
         """
 
-rule qualimap_qc:
-    input:
-        bam = lambda wc: BAMS[wc.sample]
-    output:
-        html = PATH + "{sample}/qc/qualimap/{sample}/qualimapReport.html"
-    params:
-        outdir = PATH + "{sample}/qc/qualimap/{sample}"
-    conda:
-        CONDAENV + "qualimap.yaml"
-    shell:
-        """
-        qualimap bamqc -bam {input.bam} -outdir {params.outdir} \
-            -nt {THREADS} --java-mem-size=8G
-        """
 
 ########################################################
 # OPTIONAL: BWA-MEM2 realignment (only if you start     #
@@ -100,6 +85,7 @@ rule bwa_mem2_align:
 
 #####################
 # SV CALLING (x4)   #
+# (Choose only 2?) #
 #####################
 
 rule manta_sv:
