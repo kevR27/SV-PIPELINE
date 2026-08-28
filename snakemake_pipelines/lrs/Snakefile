@@ -18,25 +18,26 @@ rule all:
     input:
         # QC (solo read depth --> mosdepth)
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
-        # expand(PATH + "{sample}/qc/cramino/{sample}_cramino.txt", sample=SAMPLES),
-        # expand(PATH + "{sample}/qc/samtools/{sample}_samtools.stats", sample=SAMPLES),
 
         # small variants + phasing
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
         expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz", sample=SAMPLES),
+
         # SV calling + merge + annotation
         expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+
         # insertion / MEI classification (multiple independent callers)
         expand(PATH + "{sample}/sv/insertions/{sample}_insertions.fasta", sample=SAMPLES),
         expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
         expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES),
         expand(PATH + "{sample}/mei/palmer/{sample}.palmer.txt", sample=SAMPLES),
         expand(PATH + "{sample}/mei/xtea_long/{sample}.xtea.vcf", sample=SAMPLES),
+
         # repeat expansion (multiple independent callers)
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed", sample=SAMPLES),
@@ -44,10 +45,16 @@ rule all:
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/strdust/{sample}_strdust.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/trgt/{sample}_trgt.vcf.gz", sample=SAMPLES),
+
         # methylation
         expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
+
         # mtDNA rearrangements
         expand(PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv", sample=SAMPLES)
+
+################
+# QC           #
+################
 
 rule mosdepth_coverage:
     input:
@@ -61,30 +68,9 @@ rule mosdepth_coverage:
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input}
         """
 
-#rule cramino_qc:
-#    input:
-#        bam = lambda wc: BAMS[wc.sample]
-#    output:
-#        txt = PATH + "{sample}/qc/cramino/{sample}_cramino.txt"
-#    conda:
-#        CONDAENV + "cramino.yaml"
-#    shell:
-#        """
-#        cramino {input.bam} > {output.txt}
-#        """
-
-#rule samtools_stats_qc:
-#    input:
-#        bam = lambda wc: BAMS[wc.sample]
-#    output:
-#        stats = PATH + "{sample}/qc/samtools/{sample}_samtools.stats"
-#    conda:
-#        CONDAENV + "samtools.yaml"
-#    shell:
-#        """
-#        samtools stats -@ {THREADS} {input.bam} > {output.stats}
-#        """
-
+##################
+# Small variant  #
+##################
 rule clair3_snp_calling:
     input:
         bam = lambda wc: BAMS[wc.sample],
@@ -104,6 +90,9 @@ rule clair3_snp_calling:
         tabix -p vcf {output.vcf}
         """
 
+##################
+# Phasing        #
+##################
 rule whatsHap_phasing:
     input:
         vcf = rules.clair3_snp_calling.output.vcf,
@@ -122,6 +111,9 @@ rule whatsHap_phasing:
         samtools index {output.haplotag}
         """
 
+########################
+# comparison ?
+########################
 rule longphase_phasing:
     input:
         vcf = rules.clair3_snp_calling.output.vcf,
@@ -144,6 +136,9 @@ rule longphase_phasing:
         tabix -p vcf {output.vcf}
         """
 
+########################
+# comparison ?
+########################
 rule sniffles2_sv:
     input:
         bam = lambda wc: BAMS[wc.sample],
