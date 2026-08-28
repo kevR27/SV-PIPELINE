@@ -67,7 +67,7 @@ rule mosdepth_coverage:
 #    output:
 #        txt = PATH + "{sample}/qc/cramino/{sample}_cramino.txt"
 #    conda:
-        CONDAENV + "cramino.yaml"
+#        CONDAENV + "cramino.yaml"
 #    shell:
 #        """
 #        cramino {input.bam} > {output.txt}
@@ -171,7 +171,7 @@ rule cutesv:
         """
 
 #####################################################
-# NEW: within-platform SV merge (Sniffles2 + cuteSV) #
+#  SV merge (Sniffles2 + cuteSV) #
 #####################################################
 
 rule jasmine_merge:
@@ -191,7 +191,8 @@ rule jasmine_merge:
         """
 
 ##########################################################
-# NEW: AnnotSV annotation of the merged, high-conf SV set #
+# AnnotSV annotation of the merged, high-conf SV set #
+# 
 ##########################################################
 
 rule annotsv_annotation:
@@ -246,7 +247,7 @@ rule repeatmasker_classify:
         """
 
 ##################################################################
-# NEW: TLDR long-read MEI caller, independent cross-check on BAM  #
+# TLDR long-read MEI caller, independent cross-check on BAM  #
 ##################################################################
 
 rule tldr_mei:
