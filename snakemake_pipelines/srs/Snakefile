@@ -46,46 +46,9 @@ rule mosdepth_coverage:
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input.bam}
         """
 
-
-########################################################
-# OPTIONAL: BWA-MEM2 realignment (only if you start     #
-# from fastq rather than an already-aligned BAM - your  #
-# BAMS dict already covers the pre-aligned case above)   #
-########################################################
-
-rule bwa_mem2_index:
-    input:
-        ref = REF
-    output:
-        REF + ".bwt.2bit.64"
-    conda:
-        CONDAENV + "bwa-mem2.yaml"
-    shell:
-        """
-        bwa-mem2 index {input.ref}
-        """
-
-rule bwa_mem2_align:
-    input:
-        r1 = lambda wc: FASTQ[wc.sample]["r1"],
-        r2 = lambda wc: FASTQ[wc.sample]["r2"],
-        ref = REF,
-        idx = rules.bwa_mem2_index.output
-    output:
-        bam = PATH + "{sample}/alignment/{sample}.bwamem2.sorted.bam"
-    conda:
-        CONDAENV + "bwa-mem2.yaml"
-    shell:
-        """
-        bwa-mem2 mem -t {THREADS} -R '@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}' \
-            {input.ref} {input.r1} {input.r2} | \
-            samtools sort -@ {THREADS} -o {output.bam}
-        samtools index {output.bam}
-        """
-
 #####################
-# SV CALLING (x4)   #
-# (Choose only 2?) #
+# SV CALLING        #
+# (Choose only 2)  #
 #####################
 
 rule manta_sv:
@@ -192,7 +155,7 @@ rule survivor_merge:
 
         # 1kb max distance, require >=2 callers agree, same type, same strand,
         # min SV size 50bp -> tune to your needs
-        SURVIVOR merge {output.list_file} 1000 2 1 1 0 50 {output.vcf}
+        SURVIVOR merge {output.list_file} 1000 3 1 1 0 50 {output.vcf}
         """
 
 ##############################
@@ -316,28 +279,4 @@ rule whatshap_phasing:
             {output.phased} {input.bam} --ignore-read-groups
 
         samtools index {output.haplotag}
-        """
-
-#####################################################
-# mtDNA rearrangements (works from SRS or LRS BAMs)  #
-#####################################################
-
-rule eklipse_mtdna:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        csv = PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv"
-    params:
-        outdir = PATH + "{sample}/mtdna/eklipse"
-    conda:
-        CONDAENV + "eklipse.yaml"
-    shell:
-        """
-        # eKLIPse needs a BAM subset/realigned to the mtDNA contig (chrM/MT)
-        # plus a small circularized reference - see eKLIPse README for the
-        # exact reference prep; -bed points at a gene-annotation bed for mtDNA
-        python /path/to/eKLIPse/eKLIPse.py -in {input.bam} -ref {input.ref} \
-            -out {params.outdir}
-        cp {params.outdir}/*_eKLIPse.csv {output.csv}
         """
