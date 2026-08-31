@@ -12,7 +12,6 @@ CONDAENV   = config["condaenv"]
 MODKITENV  = config["modkitenv"]
 CLAIRENV   = config["clair3env"]
 TLDR_ELTS  = config["tldr_elements"]           # ALU/LINE1/SVA reference fastas for TLDR
-TRGT_CATALOG = config["trgt_catalog"]          # TRGT repeat-locus catalog BED
 
 rule all:
     input:
@@ -44,7 +43,7 @@ rule all:
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/strdust/{sample}_strdust.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/trgt/{sample}_trgt.vcf.gz", sample=SAMPLES),
+        
 
         # methylation
         expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
@@ -112,7 +111,7 @@ rule whatsHap_phasing:
         """
 
 ########################
-# comparison ?
+# comparison with whatshap? 
 ########################
 rule longphase_phasing:
     input:
@@ -137,7 +136,7 @@ rule longphase_phasing:
         """
 
 ########################
-# comparison ?
+# SV Caller
 ########################
 rule sniffles2_sv:
     input:
@@ -186,8 +185,8 @@ rule jasmine_merge:
         """
 
 ##########################################################
+# da fare dopo?
 # AnnotSV annotation of the merged, high-conf SV set #
-# 
 ##########################################################
 
 rule annotsv_annotation:
@@ -242,7 +241,7 @@ rule repeatmasker_classify:
         """
 
 ##################################################################
-# TLDR long-read MEI caller, independent cross-check on BAM  #
+# long-read MEI caller, independent cross-check on BAM  #
 ##################################################################
 
 rule tldr_mei:
@@ -300,7 +299,11 @@ rule xtea_long_mei:
         cp {params.outdir}/classified_results.vcf {output.vcf}
         """
 
-rule straglr:
+##################################################################
+# SHORT TANDEM REPEATS #
+##################################################################
+
+rule straglr: 
     input:
         bam = lambda wc: BAMS[wc.sample],
         ref = REF
@@ -317,6 +320,11 @@ rule straglr:
         python /path/to/straglr/straglr.py {input.bam} {input.ref} {params.prefix} --min_str_len 2 --min_support 1 --min_ins_size 1 --include_partials --nprocs {THREADS} --max_str_len 100000 --use_unpaired_clips --max_num_clusters 10 --min_cluster_d 1 --regions {BED}
         """
 
+##################################################################
+# ANNOTATION #
+##################################################################
+
+# FOR REPEATS
 rule sv_annotation_stranger:
     input:
         vcf = PATH + "{sample}/sv/straglr/{sample}_straglr.vcf"
@@ -329,6 +337,7 @@ rule sv_annotation_stranger:
         stranger annotate --vcf {input.vcf} --output {output.annotated}
         """
 
+# FOR REPEATS
 rule strdust_str:
     input:
         bam = lambda wc: BAMS[wc.sample],
@@ -343,29 +352,11 @@ rule strdust_str:
             {input.bam} > {output.vcf}
         """
 
-rule trgt_str:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF,
-        catalog = TRGT_CATALOG
-    output:
-        vcf = PATH + "{sample}/sv/trgt/{sample}_trgt.vcf.gz"
-    params:
-        prefix = PATH + "{sample}/sv/trgt/{sample}_trgt"
-    conda:
-        CONDAENV + "trgt.yaml"
-    shell:
-        """
-        # TRGT needs a per-locus repeat catalog BED (same style as
-        # ExpansionHunter's JSON, different format) - restrict to your
-        # panel + known pathogenic loci, same rationale as SRS's EH catalog
-        trgt genotype --genome {input.ref} --reads {input.bam} \
-            --repeats {input.catalog} --threads {THREADS} \
-            --output-prefix {params.prefix}
-        bgzip -f {params.prefix}.vcf
-        tabix -p vcf {output.vcf}
-        """
 
+
+##################################################################
+# ANLAYSIS OF METHYLATION #
+##################################################################
 rule modkit_extract:
     input:
         bam = lambda wc: BAMS[wc.sample],
