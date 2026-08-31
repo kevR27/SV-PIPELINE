@@ -22,7 +22,7 @@ vep_cache_dir: "/refs/vep_cache/"      # TODO: point this at your local VEP offl
 vep_assembly: "GRCh38"                 # optional - already the default if omitted
 
 # optional - needLR population-AF backend, leave unset to skip
-# needlr_backend_files: "/refs/needlr/backend/"
+needlr_backend_files: "/refs/needlr/backend/"
 
 # optional confirmatory MEI caller block (longphase + TLDR), off by default
 run_tldr_confirmation: false
