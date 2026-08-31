@@ -520,7 +520,7 @@ rule eklipse_mtdna:
 
 if RUN_TLDR_CONFIRMATION:
 
-    rule longphase_phasing_ondemand:
+    rule longphase_phasing:
         # SV-aware joint SNP+SV phasing, for a specific candidate locus only.
         input:
             vcf = rules.clair3_snp_calling.output.vcf,
