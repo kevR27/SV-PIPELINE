@@ -14,8 +14,13 @@ CLAIRENV   = config["clair3env"]
 TLDR_ELTS  = config["tldr_elements"]           # only used by the OPTIONAL confirmatory rule below
 
 # --- SVAN inputs ---
-SVAN_DIR       = config["svan_dir"]
-VNTR_BED       = config["vntr_bed"]
+SVAN_DIR       = config["svan_dir"]           # dir containing SVAN-INS.py, SVAN-DEL.py, scripts/
+VNTR_BED       = config["vntr_bed"]           # reference-wide VNTR bed (Zenodo hg38 bundle)
+EXONS_BED_SVAN = config.get("svan_exons_bed", None)  # optional: use Zenodo's exon bed instead of gtf_to_exons_bed
+REPEATS_BED    = config["repeats_bed"]        # reference-wide RepeatMasker bed (Zenodo hg38 bundle) -
+                                               # NOT the same file as repeatmasker_classify's per-sample
+                                               # insertion-sequence .out below; SVAN needs repeat
+                                               # annotation of the REFERENCE genome, not of the insertions
 MEI_CONSENSUS  = config["mei_consensus_fasta"]
 GTF            = config["gtf"]
 
@@ -45,9 +50,10 @@ rule all:
         expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
 
-        # insertion / MEI mechanism classification (RepeatMasker -> SVAN; no redundant 2nd/3rd/4th caller)
+        # insertion / MEI mechanism classification (RepeatMasker kept; SVAN rule commented out below —
+        # see note there for why, and for the fix needed before re-enabling it)
         expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/svan/{sample}_SVAN.vcf", sample=SAMPLES),
+        # expand(PATH + "{sample}/sv/svan/{sample}_SVAN.vcf", sample=SAMPLES),
 
         # repeat expansion (straglr primary, annotated)
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
@@ -104,10 +110,6 @@ rule clair3_snp_calling:
         """
 
 rule whatsHap_phasing:
-    # default phasing track. LongPhase (SV+SNP joint phasing) was dropped from
-    # the default run — it was doubling phasing work for a comparison you
-    # only need on a specific candidate locus. Re-add it as a targeted,
-    # on-demand rule if/when a candidate SV needs SV-aware phase blocks.
     input:
         vcf = rules.clair3_snp_calling.output.vcf,
         bam = lambda wc: BAMS[wc.sample],
@@ -140,7 +142,7 @@ rule sniffles2_sv:
     shell:
         """
         sniffles --input {input.bam} --vcf {output.vcf} --reference {input.ref} --threads {THREADS} \
-            --minsupport 1 --no-qc --mosaic --allow-overwrite --min-alignment-length 100 \
+            --minsupport 3 --no-qc --mosaic --allow-overwrite --min-alignment-length 100 \
             --output-rnames --tandem-repeats {VNTR_BED}
         """
 
@@ -157,7 +159,7 @@ rule cutesv:
         cuteSV {input.bam} {input.ref} {output.vcf} {PATH}/{wildcards.sample}/sv/cutesv --threads {THREADS} \
             --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 \
             --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3 \
-            --min_support 1 --genotype -include_bed {BED}
+            --min_support 3 --genotype -include_bed {BED}
         """
 
 rule jasmine_merge:
@@ -173,12 +175,12 @@ rule jasmine_merge:
         """
         printf "%s\\n%s\\n" {input.sniffles} {input.cutesv} > {output.list_file}
         jasmine file_list={output.list_file} out_file={output.vcf} \
-            threads={THREADS} --output_genotypes --dup_to_ins
+            threads={THREADS} --allow_intrasample --output_genotypes --dup_to_ins
         """
 
-#####################################################################
-# Insertion sequence extraction + single-pass TE/mechanism classify #
-#####################################################################
+###########################################################################
+# Insertion sequence extraction + single-pass TE/mechanism classification #
+###########################################################################
 
 rule extract_insertion_seqs:
     input:
@@ -223,60 +225,144 @@ rule gtf_to_exons_bed:
         sort -k1,1 -k2,2n -u > {output.bed}
         """
 
-rule trf_on_svs:
+# ---------------------------------------------------------------------
+# SVAN — INS/DEL implementation
+# Duplications are never a separate input type — they only get resolved
+# as an ITYPE_N of DUP/DUP_INTERSPERSED/INV_DUP/COMPLEX_DUP inside
+# SVAN-INS.py, which is exactly why jasmine's --dup_to_ins conversion
+# upstream matters (a raw SVTYPE=DUP record would never reach SVAN)
+#
+# NOTE on the "repeats" input: SVAN wants a reference-genome-wide
+# RepeatMasker bed (REPEATS_BED, from the Zenodo hg38 bundle) — NOT the
+# per-sample insertion-sequence RepeatMasker .out from
+# repeatmasker_classify above. Those are two different things: one
+# annotates repeat content of the REFERENCE, the other classifies the
+# TE family of the SAMPLE'S inserted sequences. repeatmasker_classify
+# is kept as its own standalone TE-classification output; it does not
+# feed into SVAN.
+# ---------------------------------------------------------------------
+
+rule split_vcf_ins:
     input:
         vcf = rules.jasmine_merge.output.vcf
     output:
-        dat = PATH + "{sample}/sv/svan/{sample}_indels.trf.dat"
-    params:
-        outdir = PATH + "{sample}/sv/svan",
-        fasta = PATH + "{sample}/sv/svan/{sample}_indels.fasta"
+        vcf = PATH + "{sample}/sv/svan/{sample}_INS.vcf"
     conda:
-        CONDAENV + "svan.yaml"
+        CONDAENV + "annotsv.yaml"   # just needs bcftools
     shell:
         """
-        mkdir -p {params.outdir}
-        bcftools view -i 'INFO/SVTYPE="INS" || INFO/SVTYPE="DEL"' {input.vcf} | \
-        bcftools query -f '>%ID\\n%ALT\\n' - | sed 's/,.*$//' > {params.fasta}
-        trf {params.fasta} 2 7 7 80 10 50 500 -d -h
-        mv {wildcards.sample}_indels.fasta.2.7.7.80.10.50.500.dat {output.dat}
+        bcftools view -i 'INFO/SVTYPE="INS"' {input.vcf} -Ov -o {output.vcf}
         """
 
-rule svan_annotation:
-    # SVAN is the ONLY mechanism classifier in the default run: it already
-    # consumes the RepeatMasker output above, so it covers MEI/NUMT/
-    # processed-pseudogene/tandem-repeat calls without needing TLDR, PALMER,
-    # or xTea-long run genome-wide as well.
+rule split_vcf_del:
     input:
-        vcf = rules.jasmine_merge.output.vcf,
-        trf = rules.trf_on_svs.output.dat,
-        vntr = VNTR_BED,
-        exons = rules.gtf_to_exons_bed.output.bed,
-        repeats = rules.repeatmasker_classify.output.out,
-        consensus = MEI_CONSENSUS,
-        ref = REF
+        vcf = rules.jasmine_merge.output.vcf
     output:
-        vcf = PATH + "{sample}/sv/svan/{sample}_SVAN.vcf"
+        vcf = PATH + "{sample}/sv/svan/{sample}_DEL.vcf"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        bcftools view -i 'INFO/SVTYPE="DEL"' {input.vcf} -Ov -o {output.vcf}
+        """
+
+rule trf_on_ins:
+    # Uses SVAN's own scripts/ins2fasta.py + the exact TRF parameters from
+    # the SVAN README, not the earlier ad hoc bcftools/sed extraction.
+    input:
+        vcf = rules.split_vcf_ins.output.vcf
+    output:
+        dat = PATH + "{sample}/sv/svan/{sample}_ins_trf.out"
     params:
         outdir = PATH + "{sample}/sv/svan"
     conda:
         CONDAENV + "svan.yaml"
     shell:
         """
-        python {SVAN_DIR}/SVAN.py \
-            --vcf {input.vcf} \
-            --trf {input.trf} \
-            --vntr {input.vntr} \
-            --exons {input.exons} \
-            --repeats {input.repeats} \
-            --consensus {input.consensus} \
-            --reference {input.ref} \
-            --sampleId {wildcards.sample} \
-            --outDir {params.outdir}
+        python {SVAN_DIR}/scripts/ins2fasta.py {input.vcf} {params.outdir}
+        trf {params.outdir}/insertions_seq.fa 2 7 7 80 10 10 500 -h -d -ngs 1> {output.dat}
+        """
+
+rule trf_on_del:
+    input:
+        vcf = rules.split_vcf_del.output.vcf
+    output:
+        dat = PATH + "{sample}/sv/svan/{sample}_del_trf.out"
+    params:
+        outdir = PATH + "{sample}/sv/svan"
+    conda:
+        CONDAENV + "svan.yaml"
+    shell:
+        """
+        python {SVAN_DIR}/scripts/del2fasta.py {input.vcf} {params.outdir}
+        trf {params.outdir}/deletions_seq.fa 2 7 7 80 10 10 500 -h -d -ngs 1> {output.dat}
+        """
+
+rule svan_ins_annotation:
+    input:
+        vcf = rules.split_vcf_ins.output.vcf,
+        trf = rules.trf_on_ins.output.dat,
+        vntr = VNTR_BED,
+        exons = rules.gtf_to_exons_bed.output.bed,
+        repeats = REPEATS_BED,
+        consensus = MEI_CONSENSUS,
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/sv/svan/{sample}_SVAN_INS.vcf"
+    params:
+        outdir = PATH + "{sample}/sv/svan"
+    conda:
+        CONDAENV + "svan.yaml"
+    shell:
+        # Positional args, per SVAN-INS.py's actual CLI:
+        #   ins.vcf ins_trf.out VNTR.bed EXONS.bed REPEATS.bed CONSENSUS.fa reference.fa SAMPLEID
+        """
+        cd {params.outdir} && python {SVAN_DIR}/SVAN-INS.py \
+            {input.vcf} {input.trf} {input.vntr} {input.exons} {input.repeats} \
+            {input.consensus} {input.ref} {wildcards.sample}
+        """
+
+rule svan_del_annotation:
+    input:
+        vcf = rules.split_vcf_del.output.vcf,
+        trf = rules.trf_on_del.output.dat,
+        vntr = VNTR_BED,
+        exons = rules.gtf_to_exons_bed.output.bed,
+        repeats = REPEATS_BED,
+        consensus = MEI_CONSENSUS,
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/sv/svan/{sample}_SVAN_DEL.vcf"
+    params:
+        outdir = PATH + "{sample}/sv/svan"
+    conda:
+        CONDAENV + "svan.yaml"
+    shell:
+        """
+        cd {params.outdir} && python {SVAN_DIR}/SVAN-DEL.py \
+            {input.vcf} {input.trf} {input.vntr} {input.exons} {input.repeats} \
+            {input.consensus} {input.ref} {wildcards.sample}
+        """
+
+rule svan_merge:
+    # SVAN-INS.py and SVAN-DEL.py each write their own output VCF (named
+    # from SAMPLEID inside outdir) - concatenate the two into one
+    # sample-level annotated SV file for downstream use alongside
+    # AnnotSV/VEP.
+    input:
+        ins = rules.svan_ins_annotation.output.vcf,
+        del_ = rules.svan_del_annotation.output.vcf
+    output:
+        vcf = PATH + "{sample}/sv/svan/{sample}_SVAN.vcf"
+    conda:
+        CONDAENV + "annotsv.yaml"   # just needs bcftools
+    shell:
+        """
+        bcftools concat -a {input.ins} {input.del_} -Ov -o {output.vcf}
         """
 
 ##################################################################
-# Repeat expansion (straglr primary; strdust dropped as default) #
+# Repeat expansion classification and annotation                 #
 ##################################################################
 
 rule straglr:
@@ -426,7 +512,10 @@ rule eklipse_mtdna:
 ########################################################################
 # OPTIONAL / ON-DEMAND rules — not in rule all, not run by default.    #
 # Use these only when a specific candidate SV (e.g. an OPA1 locus)     #
-# needs deeper confirmation.                                           #
+# needs deeper confirmation. PALMER and xTea-long were dropped         #
+# entirely: for this project they added independent MEI-detection      #
+# passes without adding evidence beyond RepeatMasker+SVAN, and both    #
+# are less actively maintained for ONT-native use than TLDR.           #
 ########################################################################
 
 if RUN_TLDR_CONFIRMATION:
@@ -468,3 +557,6 @@ if RUN_TLDR_CONFIRMATION:
                 -p {THREADS} --outdir {params.outdir}
             cp {params.outdir}/*.table.txt {output.table}
             """
+
+
+
