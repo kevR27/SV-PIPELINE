@@ -10,10 +10,8 @@ GENE_LIST  = config["candidate_genes_list"]    # optic-neuropathy / mito-disease
 CPG        = config["cpg"]
 CONDAENV   = config["condaenv"]
 MODKITENV  = config["modkitenv"]
-CLAIRENV   = config["clair3env"]               # NOTE: despite the name this is passed to run_clair3.sh's
-                                                # -m (model) argument below, not a conda env path -
-                                                # double check it actually points to the ONT
-                                                # basecaller-matched Clair3 model directory, not an env
+CLAIRENV   = config["clair3env"]               
+
 TLDR_ELTS  = config["tldr_elements"]           # only used by the OPTIONAL confirmatory rule below
 
 VNTR_BED   = config["vntr_bed"]                # reference-wide VNTR bed (Zenodo hg38 bundle),
