@@ -13,6 +13,20 @@ MODKITENV  = config["modkitenv"]
 CLAIRENV   = config["clair3env"]
 TLDR_ELTS  = config["tldr_elements"]           # ALU/LINE1/SVA reference fastas for TLDR
 
+# --- SVAN inputs ---
+SVAN_DIR       = config["svan_dir"]            # SVAN install dir (python scripts)
+VNTR_BED       = config["vntr_bed"]            # VNTR/tandem-repeat bed on REF (see config comment - can reuse needLR's recommended pbsv annotation file)
+MEI_CONSENSUS  = config["mei_consensus_fasta"] # consensus fasta for human MEI families (ALU/L1/SVA/HERV)
+GTF            = config["gtf"]                 # GENCODE/RefSeq hg38 GTF - source for exons_bed below
+
+# --- needLR ---
+# needLR ships its own 500-sample 1KGP-LRSC control cohort as pre-downloaded
+# "backend files" (installed once via conda, or via `wget` for custom
+# installs) - there's no VCF or HPO-term flag to pass in; annotation flags
+# below (--omim/--hpo/--gencc/etc.) just toggle which annotation columns
+# get added, they don't take arguments. See explanation below the rule.
+NEEDLR_BACKEND = config.get("needlr_backend_files", None)  # only set this if using a CUSTOM (non-conda) install; passed as -B
+
 rule all:
     input:
         # QC (solo read depth --> mosdepth)
@@ -29,13 +43,19 @@ rule all:
         expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        PATH + "reference/hg38_exons.bed",
 
-        # insertion / MEI classification (multiple independent callers)
+        # insertion / MEI classification (multiple independent callers + RepeatMasker)
         expand(PATH + "{sample}/sv/insertions/{sample}_insertions.fasta", sample=SAMPLES),
         expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
         expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES),
         expand(PATH + "{sample}/mei/palmer/{sample}.palmer.txt", sample=SAMPLES),
         expand(PATH + "{sample}/mei/xtea_long/{sample}.xtea.vcf", sample=SAMPLES),
+
+        # NEW: mechanism classification (SVAN) + population/phenotype prioritization (needLR)
+        expand(PATH + "{sample}/sv/svan/{sample}_SVAN.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
         # repeat expansion (multiple independent callers)
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf", sample=SAMPLES),
@@ -43,7 +63,6 @@ rule all:
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/strdust/{sample}_strdust.vcf", sample=SAMPLES),
-        
 
         # methylation
         expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
@@ -111,7 +130,7 @@ rule whatsHap_phasing:
         """
 
 ########################
-# comparison with whatshap? 
+# comparison with whatshap?
 ########################
 rule longphase_phasing:
     input:
@@ -147,6 +166,11 @@ rule sniffles2_sv:
     conda:
         CONDAENV + "sniffles2.yaml"
     shell:
+        # Note: needLR's docs recommend adding --output-rnames and
+        # --tandem-repeats {vntr_bed} to this call for best merging fidelity
+        # against its 1KGP-LRSC control cohort. Not added here since it
+        # would change your already-tuned calling parameters - your call on
+        # whether the needLR merge quality trade-off is worth it.
         """
         sniffles --input {input.bam} --vcf {output.vcf} --reference {input.ref} --threads {THREADS} --minsupport 1 --no-qc --mosaic --allow-overwrite --min-alignment-length 100
         """
@@ -185,8 +209,8 @@ rule jasmine_merge:
         """
 
 ##########################################################
-# da fare dopo?
-# AnnotSV annotation of the merged, high-conf SV set #
+# AnnotSV annotation of the merged, high-conf SV set     #
+# (general gene/regulatory/ClinVar-SV/gnomAD-SV context) #
 ##########################################################
 
 rule annotsv_annotation:
@@ -208,7 +232,8 @@ rule annotsv_annotation:
         """
 
 #####################################################################
-# NEW: insertion sequence extraction + RepeatMasker TE classification #
+# insertion sequence extraction + RepeatMasker TE classification    #
+# (feeds both the standalone check below AND SVAN's --repeats input) #
 #####################################################################
 
 rule extract_insertion_seqs:
@@ -299,11 +324,120 @@ rule xtea_long_mei:
         cp {params.outdir}/classified_results.vcf {output.vcf}
         """
 
+#####################################################################
+# NEW: derive SVAN's --exons bed from a GENCODE/RefSeq GTF. Run once   #
+# (not per-sample - it's genome annotation, same for every sample)     #
+#####################################################################
+
+rule gtf_to_exons_bed:
+    input:
+        gtf = GTF
+    output:
+        bed = PATH + "reference/hg38_exons.bed"
+    conda:
+        CONDAENV + "svan.yaml"   # just needs awk/sort, already covered
+    shell:
+        """
+        mkdir -p {PATH}/reference
+        awk 'BEGIN{{OFS="\\t"}} $3=="exon" {{print $1, $4-1, $5}}' {input.gtf} | \
+        sort -k1,1 -k2,2n -u > {output.bed}
+        """
+
+#####################################################################
+# NEW: SVAN - mechanism/origin classification of the merged INS/DEL #
+# calls (MEI, processed pseudogene, duplication, tandem repeat      #
+# expansion/contraction, NUMT). This is the step that specifically  #
+# flags NUMTs (nuclear-mitochondrial insertions) - relevant to the  #
+# mito-disease angle and not covered by AnnotSV, RepeatMasker, or   #
+# the MEI callers on their own. Reuses the RepeatMasker output      #
+# above as its --repeats input rather than duplicating that work.   #
+#####################################################################
+
+rule trf_on_svs:
+    input:
+        vcf = rules.jasmine_merge.output.vcf
+    output:
+        dat = PATH + "{sample}/sv/svan/{sample}_indels.trf.dat"
+    params:
+        outdir = PATH + "{sample}/sv/svan",
+        fasta = PATH + "{sample}/sv/svan/{sample}_indels.fasta"
+    conda:
+        CONDAENV + "svan.yaml"   # needs bcftools + trf
+    shell:
+        """
+        mkdir -p {params.outdir}
+        # SVAN needs TRF run on the inserted/deleted sequences themselves
+        bcftools view -i 'INFO/SVTYPE="INS" || INFO/SVTYPE="DEL"' {input.vcf} | \
+        bcftools query -f '>%ID\\n%ALT\\n' - | sed 's/,.*$//' > {params.fasta}
+        trf {params.fasta} 2 7 7 80 10 50 500 -d -h
+        mv {wildcards.sample}_indels.fasta.2.7.7.80.10.50.500.dat {output.dat}
+        """
+
+rule svan_annotation:
+    input:
+        vcf = rules.jasmine_merge.output.vcf,
+        trf = rules.trf_on_svs.output.dat,
+        vntr = VNTR_BED,
+        exons = rules.gtf_to_exons_bed.output.bed,
+        repeats = rules.repeatmasker_classify.output.out,
+        consensus = MEI_CONSENSUS,
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/sv/svan/{sample}_SVAN.vcf"
+    params:
+        outdir = PATH + "{sample}/sv/svan"
+    conda:
+        CONDAENV + "svan.yaml"
+    shell:
+        """
+        python {SVAN_DIR}/SVAN.py \
+            --vcf {input.vcf} \
+            --trf {input.trf} \
+            --vntr {input.vntr} \
+            --exons {input.exons} \
+            --repeats {input.repeats} \
+            --consensus {input.consensus} \
+            --reference {input.ref} \
+            --sampleId {wildcards.sample} \
+            --outDir {params.outdir}
+        """
+
+#####################################################################
+# needLR - compares the merged SV set to needLR's built-in 500-sample  #
+# 1KGP-LRSC ONT control cohort via Truvari, assigns population allele  #
+# frequencies, and annotates OMIM/HPO/GenCC/pLI/UTR/CDS/ORegAnno/      #
+# mappability per gene overlap. It does NOT take your own HPO terms as #
+# a filter (see explanation below the rule) - you filter its output    #
+# TSV afterward against your optic neuropathy panel/HPO terms.         #
+#####################################################################
+
+rule needlr_annotation:
+    input:
+        vcf = rules.jasmine_merge.output.vcf
+    output:
+        # needLR names outputs from the input vcf's basename inside its own
+        # subdirectory (e.g. {basename}_needLR_1kg_v4.1/{basename}_RESULTS.tsv)
+        # - copied to a fixed per-sample name here for downstream rules
+        tsv = PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
+        vcf = PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
+    params:
+        outdir = PATH + "{sample}/sv/needlr",
+        backend_flag = lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
+    conda:
+        CONDAENV + "needlr.yaml"
+    shell:
+        """
+        needLR annotate -O {params.outdir} -T {THREADS} {params.backend_flag} \
+            --all {input.vcf}
+        cp {params.outdir}/*/*_RESULTS.tsv {output.tsv}
+        cp {params.outdir}/*/*_RESULTS.vcf.gz {output.vcf}
+        """
+
 ##################################################################
 # SHORT TANDEM REPEATS #
 ##################################################################
 
-rule straglr: 
+rule straglr:
     input:
         bam = lambda wc: BAMS[wc.sample],
         ref = REF
@@ -351,8 +485,6 @@ rule strdust_str:
         STRdust --reference {input.ref} --threads {THREADS} \
             {input.bam} > {output.vcf}
         """
-
-
 
 ##################################################################
 # ANLAYSIS OF METHYLATION #
