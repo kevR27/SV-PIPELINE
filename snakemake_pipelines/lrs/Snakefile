@@ -5,69 +5,63 @@ BAMS       = config["samples"]
 PATH       = config["path"]
 REF        = config["ref"]
 THREADS    = config["threads"]
-BED        = config["bed"]                    # panel regions (Clair3 target + AnnotSV candidate genes)?
-GENE_LIST  = config["candidate_genes_list"]    # plain gene-symbol list derived from BED, for Annotation
+BED        = config["bed"]                    # panel regions (Clair3 target + AnnotSV candidate genes)
+GENE_LIST  = config["candidate_genes_list"]    # optic-neuropathy / mito-disease panel gene symbols
 CPG        = config["cpg"]
 CONDAENV   = config["condaenv"]
 MODKITENV  = config["modkitenv"]
 CLAIRENV   = config["clair3env"]
-TLDR_ELTS  = config["tldr_elements"]           # ALU/LINE1/SVA reference fastas for TLDR
+TLDR_ELTS  = config["tldr_elements"]           # only used by the OPTIONAL confirmatory rule below
 
 # --- SVAN inputs ---
-SVAN_DIR       = config["svan_dir"]            # SVAN install dir (python scripts)
-VNTR_BED       = config["vntr_bed"]            # VNTR/tandem-repeat bed on REF (see config comment - can reuse needLR's recommended pbsv annotation file)
-MEI_CONSENSUS  = config["mei_consensus_fasta"] # consensus fasta for human MEI families (ALU/L1/SVA/HERV)
-GTF            = config["gtf"]                 # GENCODE/RefSeq hg38 GTF - source for exons_bed below
+SVAN_DIR       = config["svan_dir"]
+VNTR_BED       = config["vntr_bed"]
+MEI_CONSENSUS  = config["mei_consensus_fasta"]
+GTF            = config["gtf"]
 
-# --- needLR ---
-# needLR ships its own 500-sample 1KGP-LRSC control cohort as pre-downloaded
-# "backend files" - there's no VCF or HPO-term flag to pass in; annotation flags
-# below (--omim/--hpo/--gencc/etc.) just toggle which annotation columns
-# get added, they don't take arguments. See explanation below the rule.
-NEEDLR_BACKEND = config.get("needlr_backend_files", None)  
+# --- needLR (used ONLY as an ONT-native population-AF filter, not as gene annotation) ---
+NEEDLR_BACKEND = config.get("needlr_backend_files", None)
+
+# --- VEP ---
+VEP_CACHE_DIR  = config["vep_cache_dir"]
+VEP_ASSEMBLY   = config.get("vep_assembly", "GRCh38")
+
+# --- Optional confirmatory MEI caller (see block at bottom) ---
+RUN_TLDR_CONFIRMATION = config.get("run_tldr_confirmation", False)  # keep False by default
 
 
 rule all:
     input:
-        # QC (solo read depth --> mosdepth)
+        # QC
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
 
-        # small variants + phasing
+        # small variants + phasing (control track)
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
-        expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz", sample=SAMPLES),
 
-        # SV calling + merge + annotation
+        # SV calling + merge
         expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
-        PATH + "reference/hg38_exons.bed",
 
-        # insertion / MEI classification (multiple independent callers + RepeatMasker)
-        expand(PATH + "{sample}/sv/insertions/{sample}_insertions.fasta", sample=SAMPLES),
+        # insertion / MEI mechanism classification (RepeatMasker -> SVAN; no redundant 2nd/3rd/4th caller)
         expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
-        expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/mei/palmer/{sample}.palmer.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/mei/xtea_long/{sample}.xtea.vcf", sample=SAMPLES),
-
-        # NEW: mechanism classification (SVAN) + population/phenotype prioritization (needLR)
         expand(PATH + "{sample}/sv/svan/{sample}_SVAN.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
+
+        # repeat expansion (straglr primary, annotated)
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
+
+        # population-AF filtering (ONT-native cohort, upstream of clinical annotation)
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
-        # repeat expansion (multiple independent callers)
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/strdust/{sample}_strdust.vcf", sample=SAMPLES),
+        # clinical/gene annotation (single source of truth) + transcript-level consequence detail
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        PATH + "reference/hg38_exons.bed",
 
-        # methylation
+        # methylation + mtDNA
         expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
-
-        # mtDNA rearrangements
         expand(PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv", sample=SAMPLES)
 
 ################
@@ -86,9 +80,10 @@ rule mosdepth_coverage:
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input}
         """
 
-##################
-# Small variant  #
-##################
+##################################
+# Small variant calling (control) #
+##################################
+
 rule clair3_snp_calling:
     input:
         bam = lambda wc: BAMS[wc.sample],
@@ -108,10 +103,11 @@ rule clair3_snp_calling:
         tabix -p vcf {output.vcf}
         """
 
-##################
-# Phasing        #
-##################
 rule whatsHap_phasing:
+    # default phasing track. LongPhase (SV+SNP joint phasing) was dropped from
+    # the default run — it was doubling phasing work for a comparison you
+    # only need on a specific candidate locus. Re-add it as a targeted,
+    # on-demand rule if/when a candidate SV needs SV-aware phase blocks.
     input:
         vcf = rules.clair3_snp_calling.output.vcf,
         bam = lambda wc: BAMS[wc.sample],
@@ -130,33 +126,9 @@ rule whatsHap_phasing:
         """
 
 ########################
-# comparison with whatshap?
+# SV calling + merge   #
 ########################
-rule longphase_phasing:
-    input:
-        vcf = rules.clair3_snp_calling.output.vcf,
-        sv_vcf = PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf",
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        vcf = PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
-    params:
-        prefix = PATH + "{sample}/phasing_longphase/{sample}.longphase"
-    conda:
-        CONDAENV + "longphase.yaml"
-    shell:
-        """
-        # SV-aware phasing (SNP + SV jointly) - complements WhatsHap's SNP-only
-        # phase blocks; compare the two for phase-block length / concordance
-        longphase phase -s {input.vcf} --sv-file {input.sv_vcf} \
-            -b {input.bam} -r {input.ref} -t {THREADS} -o {params.prefix}
-        bgzip -f {params.prefix}.vcf
-        tabix -p vcf {output.vcf}
-        """
 
-########################
-# SV Caller
-########################
 rule sniffles2_sv:
     input:
         bam = lambda wc: BAMS[wc.sample],
@@ -166,13 +138,10 @@ rule sniffles2_sv:
     conda:
         CONDAENV + "sniffles2.yaml"
     shell:
-        # Note: needLR's docs recommend adding --output-rnames and
-        # --tandem-repeats {vntr_bed} to this call for best merging fidelity
-        # against its 1KGP-LRSC control cohort. Not added here since it
-        # would change your already-tuned calling parameters - your call on
-        # whether the needLR merge quality trade-off is worth it.
         """
-        sniffles --input {input.bam} --vcf {output.vcf} --reference {input.ref} --threads {THREADS} --minsupport 1 --no-qc --mosaic --allow-overwrite --min-alignment-length 100
+        sniffles --input {input.bam} --vcf {output.vcf} --reference {input.ref} --threads {THREADS} \
+            --minsupport 1 --no-qc --mosaic --allow-overwrite --min-alignment-length 100 \
+            --output-rnames --tandem-repeats {VNTR_BED}
         """
 
 rule cutesv:
@@ -185,12 +154,11 @@ rule cutesv:
         CONDAENV + "cutesv.yaml"
     shell:
         """
-        cuteSV {input.bam} {input.ref} {output.vcf} {PATH}/{wildcards.sample}/sv/cutesv --threads {THREADS} --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3 --min_support 1 --genotype -include_bed {BED}
+        cuteSV {input.bam} {input.ref} {output.vcf} {PATH}/{wildcards.sample}/sv/cutesv --threads {THREADS} \
+            --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 \
+            --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3 \
+            --min_support 1 --genotype -include_bed {BED}
         """
-
-#####################################################
-#  SV merge (Sniffles2 + cuteSV) #
-#####################################################
 
 rule jasmine_merge:
     input:
@@ -208,32 +176,8 @@ rule jasmine_merge:
             threads={THREADS} --output_genotypes --dup_to_ins
         """
 
-##########################################################
-# AnnotSV annotation of the merged, high-conf SV set     #
-# (general gene/regulatory/ClinVar-SV/gnomAD-SV context) #
-##########################################################
-
-rule annotsv_annotation:
-    input:
-        vcf = rules.jasmine_merge.output.vcf
-    output:
-        tsv = PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv"
-    params:
-        outdir = PATH + "{sample}/sv/merged"
-    conda:
-        CONDAENV + "annotsv.yaml"
-    shell:
-        """
-        AnnotSV -SVinputFile {input.vcf} \
-            -outputDir {params.outdir} \
-            -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
-            -genomeBuild GRCh38 \
-            -candidateGenesFile {GENE_LIST}
-        """
-
 #####################################################################
-# insertion sequence extraction + RepeatMasker TE classification    #
-# (feeds both the standalone check below AND SVAN's --repeats input) #
+# Insertion sequence extraction + single-pass TE/mechanism classify #
 #####################################################################
 
 rule extract_insertion_seqs:
@@ -242,7 +186,7 @@ rule extract_insertion_seqs:
     output:
         fasta = PATH + "{sample}/sv/insertions/{sample}_insertions.fasta"
     conda:
-        CONDAENV + "annotsv.yaml"   # just needs bcftools, already in this env
+        CONDAENV + "annotsv.yaml"
     shell:
         """
         bcftools view -i 'INFO/SVTYPE="INS"' {input.vcf} | \
@@ -265,77 +209,13 @@ rule repeatmasker_classify:
         mv {params.outdir}/{wildcards.sample}_insertions.fasta.out {output.out}
         """
 
-##################################################################
-# long-read MEI caller, independent cross-check on BAM  #
-##################################################################
-
-rule tldr_mei:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        table = PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
-    params:
-        outdir = PATH + "{sample}/mei/tldr"
-    conda:
-        CONDAENV + "tldr.yaml"
-    shell:
-        """
-        tldr -b {input.bam} -r {input.ref} -e {TLDR_ELTS} \
-            -p {THREADS} --outdir {params.outdir}
-        cp {params.outdir}/*.table.txt {output.table}
-        """
-
-rule palmer_mei:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        txt = PATH + "{sample}/mei/palmer/{sample}.palmer.txt"
-    params:
-        outdir = PATH + "{sample}/mei/palmer"
-    conda:
-        CONDAENV + "palmer.yaml"
-    shell:
-        """
-        # PALMER requires its own MEI reference set (Alu/L1/SVA consensus) -
-        # point --ref_ins at that directory per the PALMER README
-        perl /path/to/PALMER/PALMER --input {input.bam} --workdir {params.outdir} \
-            --ref_fa {input.ref} --type LINE --output {wildcards.sample}
-        cp {params.outdir}/{wildcards.sample}_*.txt {output.txt}
-        """
-
-rule xtea_long_mei:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        vcf = PATH + "{sample}/mei/xtea_long/{sample}.xtea.vcf"
-    params:
-        outdir = PATH + "{sample}/mei/xtea_long"
-    conda:
-        CONDAENV + "xtea_long.yaml"
-    shell:
-        """
-        # xTea-long needs a repeat library + config file generated by its
-        # gen_pipeline script; run once per cohort to build {params.outdir}/config
-        xtea_long -i {input.bam} -r {input.ref} -o {params.outdir} \
-            -p {THREADS} --long
-        cp {params.outdir}/classified_results.vcf {output.vcf}
-        """
-
-#####################################################################
-# NEW: derive SVAN's --exons bed from a GENCODE/RefSeq GTF. Run once   #
-# (not per-sample - it's genome annotation, same for every sample)     #
-#####################################################################
-
 rule gtf_to_exons_bed:
     input:
         gtf = GTF
     output:
         bed = PATH + "reference/hg38_exons.bed"
     conda:
-        CONDAENV + "svan.yaml"   # just needs awk/sort, already covered
+        CONDAENV + "svan.yaml"
     shell:
         """
         mkdir -p {PATH}/reference
@@ -343,18 +223,7 @@ rule gtf_to_exons_bed:
         sort -k1,1 -k2,2n -u > {output.bed}
         """
 
-#####################################################################
-# NEW: SVAN - mechanism/origin classification of the merged INS/DEL #
-# calls (MEI, processed pseudogene, duplication, tandem repeat      #
-# expansion/contraction, NUMT). This is the step that specifically  #
-# flags NUMTs (nuclear-mitochondrial insertions) - relevant to the  #
-# mito-disease angle and not covered by AnnotSV, RepeatMasker, or   #
-# the MEI callers on their own. Reuses the RepeatMasker output      #
-# above as its --repeats input rather than duplicating that work.   #
-#####################################################################
-
-# merge SVs from different callers 
-rule trf_on_svs: 
+rule trf_on_svs:
     input:
         vcf = rules.jasmine_merge.output.vcf
     output:
@@ -363,11 +232,10 @@ rule trf_on_svs:
         outdir = PATH + "{sample}/sv/svan",
         fasta = PATH + "{sample}/sv/svan/{sample}_indels.fasta"
     conda:
-        CONDAENV + "svan.yaml"   # needs bcftools + trf
+        CONDAENV + "svan.yaml"
     shell:
         """
         mkdir -p {params.outdir}
-        # SVAN needs TRF run on the inserted/deleted sequences themselves
         bcftools view -i 'INFO/SVTYPE="INS" || INFO/SVTYPE="DEL"' {input.vcf} | \
         bcftools query -f '>%ID\\n%ALT\\n' - | sed 's/,.*$//' > {params.fasta}
         trf {params.fasta} 2 7 7 80 10 50 500 -d -h
@@ -375,6 +243,10 @@ rule trf_on_svs:
         """
 
 rule svan_annotation:
+    # SVAN is the ONLY mechanism classifier in the default run: it already
+    # consumes the RepeatMasker output above, so it covers MEI/NUMT/
+    # processed-pseudogene/tandem-repeat calls without needing TLDR, PALMER,
+    # or xTea-long run genome-wide as well.
     input:
         vcf = rules.jasmine_merge.output.vcf,
         trf = rules.trf_on_svs.output.dat,
@@ -403,39 +275,8 @@ rule svan_annotation:
             --outDir {params.outdir}
         """
 
-#####################################################################
-# needLR - compares the merged SV set to needLR's built-in 500-sample  #
-# 1KGP-LRSC ONT control cohort via Truvari, assigns population allele  #
-# frequencies, and annotates OMIM/HPO/GenCC/pLI/UTR/CDS/ORegAnno/      #
-# mappability per gene overlap. It does NOT take your own HPO terms as #
-# a filter (see explanation below the rule) - you filter its output    #
-# TSV afterward against your optic neuropathy panel/HPO terms.         #
-#####################################################################
-
-rule needlr_annotation:
-    input:
-        vcf = rules.jasmine_merge.output.vcf
-    output:
-        # needLR names outputs from the input vcf's basename inside its own
-        # subdirectory (e.g. {basename}_needLR_1kg_v4.1/{basename}_RESULTS.tsv)
-        # - copied to a fixed per-sample name here for downstream rules
-        tsv = PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
-        vcf = PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
-    params:
-        outdir = PATH + "{sample}/sv/needlr",
-        backend_flag = lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
-    conda:
-        CONDAENV + "needlr.yaml"
-    shell:
-        """
-        needLR annotate -O {params.outdir} -T {THREADS} {params.backend_flag} \
-            --all {input.vcf}
-        cp {params.outdir}/*/*_RESULTS.tsv {output.tsv}
-        cp {params.outdir}/*/*_RESULTS.vcf.gz {output.vcf}
-        """
-
 ##################################################################
-# SHORT TANDEM REPEATS #
+# Repeat expansion (straglr primary; strdust dropped as default) #
 ##################################################################
 
 rule straglr:
@@ -452,17 +293,15 @@ rule straglr:
         CONDAENV + "straglr.yaml"
     shell:
         """
-        python /path/to/straglr/straglr.py {input.bam} {input.ref} {params.prefix} --min_str_len 2 --min_support 1 --min_ins_size 1 --include_partials --nprocs {THREADS} --max_str_len 100000 --use_unpaired_clips --max_num_clusters 10 --min_cluster_d 1 --regions {BED}
+        python /path/to/straglr/straglr.py {input.bam} {input.ref} {params.prefix} \
+            --min_str_len 2 --min_support 1 --min_ins_size 1 --include_partials \
+            --nprocs {THREADS} --max_str_len 100000 --use_unpaired_clips \
+            --max_num_clusters 10 --min_cluster_d 1 --regions {BED}
         """
 
-##################################################################
-# ANNOTATION #
-##################################################################
-
-# FOR REPEATS
 rule sv_annotation_stranger:
     input:
-        vcf = PATH + "{sample}/sv/straglr/{sample}_straglr.vcf"
+        vcf = rules.straglr.output.vvf
     output:
         annotated = PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf"
     conda:
@@ -472,9 +311,83 @@ rule sv_annotation_stranger:
         stranger annotate --vcf {input.vcf} --output {output.annotated}
         """
 
+#####################################################################
+# needLR — population-AF filter ONLY (ONT-native 1KGP-LRSC cohort). #
+# Its OMIM/HPO/GenCC gene columns are NOT used downstream — AnnotSV #
+# is the single source of truth for gene/disease annotation, to     #
+# avoid two competing "final" annotation tables.                    #
+#####################################################################
+
+rule needlr_annotation:
+    input:
+        vcf = rules.jasmine_merge.output.vcf
+    output:
+        tsv = PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
+        vcf = PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
+    params:
+        outdir = PATH + "{sample}/sv/needlr",
+        backend_flag = lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
+    conda:
+        CONDAENV + "needlr.yaml"
+    shell:
+        """
+        needLR annotate -O {params.outdir} -T {THREADS} {params.backend_flag} \
+            --all {input.vcf}
+        cp {params.outdir}/*/*_RESULTS.tsv {output.tsv}
+        cp {params.outdir}/*/*_RESULTS.vcf.gz {output.vcf}
+        """
+
+##########################################################################
+# AnnotSV — single primary clinical/gene annotation + panel filter step  #
+# (gene overlap, regulatory context, ClinVar-SV, gnomAD-SV, OMIM morbid  #
+# gene flag, ACMG-SV ranking, candidate-gene-panel filtering)            #
+##########################################################################
+
+rule annotsv_annotation:
+    input:
+        vcf = rules.needlr_annotation.output.vcf   # AF-filtered upstream of clinical annotation
+    output:
+        tsv = PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv"
+    params:
+        outdir = PATH + "{sample}/sv/annotsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        AnnotSV -SVinputFile {input.vcf} \
+            -outputDir {params.outdir} \
+            -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {GENE_LIST}
+        """
+
 ##################################################################
-# ANLAYSIS OF METHYLATION #
+# VEP — transcript-level consequence detail on the AnnotSV-      #
+# prioritized set (which exon/intron is disrupted, frameshift    #
+# likelihood, canonical-transcript hit). Complements AnnotSV      #
+# rather than duplicating it.                                    #
 ##################################################################
+
+rule vep_sv_annotation:
+    input:
+        vcf = rules.needlr_annotation.output.vcf
+    output:
+        txt = PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
+    conda:
+        CONDAENV + "vep.yaml"
+    shell:
+        """
+        vep --input_file {input.vcf} --format vcf \
+            --output_file {output.txt} \
+            --cache --offline --dir_cache {VEP_CACHE_DIR} --assembly {VEP_ASSEMBLY} \
+            --canonical --overlaps --pick --symbol --biotype \
+            --max_sv_size 250000000 --batch_size 100
+        """
+
+##################################################################
+# Methylation                                                    #
+##################################################################
+
 rule modkit_extract:
     input:
         bam = lambda wc: BAMS[wc.sample],
@@ -489,7 +402,7 @@ rule modkit_extract:
         """
 
 #####################################################
-# mtDNA rearrangements (works from SRS or LRS BAMs)  #
+# mtDNA rearrangements                               #
 #####################################################
 
 rule eklipse_mtdna:
@@ -508,3 +421,53 @@ rule eklipse_mtdna:
             -out {params.outdir}
         cp {params.outdir}/*_eKLIPse.csv {output.csv}
         """
+
+
+########################################################################
+# OPTIONAL / ON-DEMAND rules — not in rule all, not run by default.    #
+# Use these only when a specific candidate SV (e.g. an OPA1 locus)     #
+# needs deeper confirmation. PALMER and xTea-long were dropped         #
+# entirely: for this project they added independent MEI-detection      #
+# passes without adding evidence beyond RepeatMasker+SVAN, and both    #
+# are less actively maintained for ONT-native use than TLDR.           #
+########################################################################
+
+if RUN_TLDR_CONFIRMATION:
+
+    rule longphase_phasing_ondemand:
+        # SV-aware joint SNP+SV phasing, for a specific candidate locus only.
+        input:
+            vcf = rules.clair3_snp_calling.output.vcf,
+            sv_vcf = rules.sniffles2_sv.output.vcf,
+            bam = lambda wc: BAMS[wc.sample],
+            ref = REF
+        output:
+            vcf = PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
+        params:
+            prefix = PATH + "{sample}/phasing_longphase/{sample}.longphase"
+        conda:
+            CONDAENV + "longphase.yaml"
+        shell:
+            """
+            longphase phase -s {input.vcf} --sv-file {input.sv_vcf} \
+                -b {input.bam} -r {input.ref} -t {THREADS} -o {params.prefix}
+            bgzip -f {params.prefix}.vcf
+            tabix -p vcf {output.vcf}
+            """
+
+    rule tldr_mei_confirmation:
+        input:
+            bam = lambda wc: BAMS[wc.sample],
+            ref = REF
+        output:
+            table = PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
+        params:
+            outdir = PATH + "{sample}/mei/tldr"
+        conda:
+            CONDAENV + "tldr.yaml"
+        shell:
+            """
+            tldr -b {input.bam} -r {input.ref} -e {TLDR_ELTS} \
+                -p {THREADS} --outdir {params.outdir}
+            cp {params.outdir}/*.table.txt {output.table}
+            """
