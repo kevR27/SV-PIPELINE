@@ -332,27 +332,6 @@ rule modkit_extract:
         {MODKITENV} extract calls -t {THREADS} --reference {input.ref} --cpg --region {CPG} {input.bam} {output.tsv}
         """
 
-#####################################################
-# mtDNA rearrangements                               #
-#####################################################
-
-rule eklipse_mtdna:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        csv = PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv"
-    params:
-        outdir = PATH + "{sample}/mtdna/eklipse"
-    conda:
-        CONDAENV + "eklipse.yaml"
-    shell:
-        """
-        python /path/to/eKLIPse/eKLIPse.py -in {input.bam} -ref {input.ref} \
-            -out {params.outdir}
-        cp {params.outdir}/*_eKLIPse.csv {output.csv}
-        """
-
 
 ########################################################################
 # OPTIONAL / ON-DEMAND rules — not in rule all, not run by default.    #
