@@ -5,8 +5,8 @@ BAMS       = config["samples"]
 PATH       = config["path"]
 REF        = config["ref"]
 THREADS    = config["threads"]
-BED        = config["bed"]                    # panel regions (Clair3 target + AnnotSV candidate genes)
-GENE_LIST  = config["candidate_genes_list"]    # plain gene-symbol list derived from BED, for AnnotSV
+BED        = config["bed"]                    # panel regions (Clair3 target + AnnotSV candidate genes)?
+GENE_LIST  = config["candidate_genes_list"]    # plain gene-symbol list derived from BED, for Annotation
 CPG        = config["cpg"]
 CONDAENV   = config["condaenv"]
 MODKITENV  = config["modkitenv"]
@@ -21,11 +21,11 @@ GTF            = config["gtf"]                 # GENCODE/RefSeq hg38 GTF - sourc
 
 # --- needLR ---
 # needLR ships its own 500-sample 1KGP-LRSC control cohort as pre-downloaded
-# "backend files" (installed once via conda, or via `wget` for custom
-# installs) - there's no VCF or HPO-term flag to pass in; annotation flags
+# "backend files" - there's no VCF or HPO-term flag to pass in; annotation flags
 # below (--omim/--hpo/--gencc/etc.) just toggle which annotation columns
 # get added, they don't take arguments. See explanation below the rule.
-NEEDLR_BACKEND = config.get("needlr_backend_files", None)  # only set this if using a CUSTOM (non-conda) install; passed as -B
+NEEDLR_BACKEND = config.get("needlr_backend_files", None)  
+
 
 rule all:
     input:
@@ -353,7 +353,8 @@ rule gtf_to_exons_bed:
 # above as its --repeats input rather than duplicating that work.   #
 #####################################################################
 
-rule trf_on_svs:
+# merge SVs from different callers 
+rule trf_on_svs: 
     input:
         vcf = rules.jasmine_merge.output.vcf
     output:
@@ -469,21 +470,6 @@ rule sv_annotation_stranger:
     shell:
         """
         stranger annotate --vcf {input.vcf} --output {output.annotated}
-        """
-
-# FOR REPEATS
-rule strdust_str:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        vcf = PATH + "{sample}/sv/strdust/{sample}_strdust.vcf"
-    conda:
-        CONDAENV + "strdust.yaml"
-    shell:
-        """
-        STRdust --reference {input.ref} --threads {THREADS} \
-            {input.bam} > {output.vcf}
         """
 
 ##################################################################
