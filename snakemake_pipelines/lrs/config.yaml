@@ -8,25 +8,22 @@ threads: 16
 
 bed: "/panels/optic_neuropathy_mito_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
 candidate_genes_list: "/panels/optic_neuropathy_mito_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
-cpg: "chr1:1-100000"                                            # region(s) for modkit CpG extraction - adjust as needed
+# cpg: "chr1:1-100000"                                            # region(s) for modkit CpG extraction - adjust as needed
 
 condaenv: "envs/"
 modkitenv: "/tools/modkit/modkit"     # standalone binary, not a conda env
 clair3env: "/tools/clair3/models/ont" # Clair3 ONT model directory (confirm it matches your basecaller model)
 
-# --- required by sniffles2_sv (--tandem-repeats) - was missing from your draft, filled with a placeholder ---
+# required by sniffles2_sv (--tandem-repeats)
 vntr_bed: "/refs/hg38/hg38_vntr.bed"   # TODO: point this at your actual reference-wide VNTR bed
 
-# --- required by vep_sv_annotation - was missing from your draft, filled with a placeholder ---
+# required by vep_sv_annotation
 vep_cache_dir: "/refs/vep_cache/"      # TODO: point this at your local VEP offline cache
-vep_assembly: "GRCh38"                 # optional, this is already the default if omitted
+vep_assembly: "GRCh38"                 # optional - already the default if omitted
 
-# --- needLR population-AF backend ---
-needlr_backend_files: "/refs/needlr/backend/"
+# optional - needLR population-AF backend, leave unset to skip
+# needlr_backend_files: "/refs/needlr/backend/"
 
-# --- optional confirmatory MEI caller block (off by default) ---
-run_tldr_confirmation: false           # set true to enable the longphase + TLDR on-demand rules
-tldr_elements: "/tools/tldr/ref/teref.human.fa"  # ALU/LINE1/SVA reference for TLDR
-
-# --- NOT currently read by the Snakefile - see note below ---
-trgt_catalog: "/refs/hg38/trgt_repeat_catalog_panel.bed"
+# optional confirmatory MEI caller block (longphase + TLDR), off by default
+run_tldr_confirmation: false
+tldr_elements: "/tools/tldr/ref/teref.human.fa"  # ALU/LINE1/SVA reference for TLDR, only read if run_tldr_confirmation: true
