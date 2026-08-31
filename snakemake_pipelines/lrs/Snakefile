@@ -426,10 +426,7 @@ rule eklipse_mtdna:
 ########################################################################
 # OPTIONAL / ON-DEMAND rules — not in rule all, not run by default.    #
 # Use these only when a specific candidate SV (e.g. an OPA1 locus)     #
-# needs deeper confirmation. PALMER and xTea-long were dropped         #
-# entirely: for this project they added independent MEI-detection      #
-# passes without adding evidence beyond RepeatMasker+SVAN, and both    #
-# are less actively maintained for ONT-native use than TLDR.           #
+# needs deeper confirmation.                                           #
 ########################################################################
 
 if RUN_TLDR_CONFIRMATION:
