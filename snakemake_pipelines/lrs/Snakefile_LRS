@@ -155,10 +155,6 @@ rule cutesv:
         """
 
 rule jasmine_merge:
-    # NOTE: --dup_to_ins removed. That flag existed only because the old SVAN step required DUP
-    # calls to be pre-converted to INS (SVAN has no native DUP input type). Now that SVAN is gone,
-    # keeping DUP calls as DUP is what you want -- AnnotSV/VEP classify and annotate DUP/INS
-    # differently, and collapsing DUP into INS here would corrupt that classification downstream.
     input:
         sniffles = rules.sniffles2_sv.output.vcf,
         cutesv   = rules.cutesv.output.vcf
@@ -245,9 +241,7 @@ rule sv_annotation_stranger:
 
 #####################################################################
 # needLR — population-AF filter ONLY (ONT-native 1KGP-LRSC cohort). #
-# Its OMIM/HPO/GenCC gene columns are NOT used downstream — AnnotSV #
-# is the single source of truth for gene/disease annotation, to     #
-# avoid two competing "final" annotation tables.                    #
+# Its OMIM/HPO/GenCC gene columns are NOT used downstream           #
 #####################################################################
 
 rule needlr_annotation:
@@ -337,12 +331,7 @@ rule modkit_extract:
 
 ########################################################################
 # SV-aware joint SNP+SV phasing (longphase) + confirmatory MEI calling  #
-# (TLDR). Kept as their own section since they serve a locus-level      #
-# confirmation role, but now run for every sample by default.          #
-# PALMER and xTea-long were dropped entirely: for this project they     #
-# added independent MEI-detection passes without adding evidence        #
-# beyond RepeatMasker, and both are less actively maintained for        #
-# ONT-native use than TLDR.                                             #
+# (TLDR).                                                               #
 ########################################################################
 
 rule longphase_phasing:
