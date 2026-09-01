@@ -9,7 +9,7 @@ BED        = config["bed"]                     # panel/target regions (used for 
 GENE_LIST  = config["candidate_genes_list"]     # plain gene-symbol list, same role as the LRS panel gene list
 EXCLUDE    = config["exclude_bed"]              # Delly exclude regions (centromeres, telomeres, segdups)
 EH_CATALOG = config["expansionhunter_catalog"]
-MELT_DIR   = config["melt_dir"]                 # MELTv2 install dir (contains mei_list, add_bed_files, genes bed)
+MELT_DIR   = config["melt_dir"]                 # MELTv2 install dir - see envs/melt.yaml, NOT bioconda-installable
 MELT_TRANSPOSONS = config["melt_transposons"]   # list of *_MELT.zip element refs (ALU, LINE1, SVA, HERVK...)
 CONDAENV   = config["condaenv"]
 
@@ -19,6 +19,15 @@ VEP_ASSEMBLY  = config.get("vep_assembly", "GRCh38")
 
 # --- AnnotSV (optional HPO-term phenotype matching) ---
 HPO_TERMS = config.get("hpo_terms", None)
+# downloaded once into this directory and reused by
+# every AnnotSV call via -annotationsDir (see annotsv_install_annotations
+# and annotsv_annotation below)
+ANNOTSV_ANNOTATIONS_DIR = config.get("annotsv_annotations_dir", PATH + "reference/AnnotSV_annotations")
+
+# --- DeepVariant ---
+DEEPVARIANT_VERSION   = config.get("deepvariant_version", "1.6.1")
+DEEPVARIANT_USE_CONDA = config.get("deepvariant_use_conda", False)
+
 
 rule all:
     input:
@@ -120,9 +129,23 @@ rule survivor_merge:
 # AnnotSV                                                                #
 ##########################################################################
 
+rule annotsv_install_annotations:
+    output:
+        marker = ANNOTSV_ANNOTATIONS_DIR + "/.installed"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        mkdir -p {ANNOTSV_ANNOTATIONS_DIR}
+        cd {ANNOTSV_ANNOTATIONS_DIR}
+        INSTALL_annotations.sh
+        touch {output.marker}
+        """
+
 rule annotsv_annotation:
     input:
-        vcf = rules.survivor_merge.output.vcf
+        vcf = rules.survivor_merge.output.vcf,
+        annotations = rules.annotsv_install_annotations.output.marker
     output:
         tsv = PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv"
     params:
@@ -133,6 +156,7 @@ rule annotsv_annotation:
     shell:
         """
         AnnotSV -SVinputFile {input.vcf} \
+            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
             -outputDir {params.outdir} \
             -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
             -genomeBuild GRCh38 \
@@ -164,6 +188,9 @@ rule vep_sv_annotation:
 ######################
 # MEI (MELT)         #
 ######################
+# See envs/melt.yaml: bioconda's "melt" package is an unrelated tool.
+# This rule's conda env only supplies the Java runtime - MELT_DIR must
+# already point to a manually installed, registration-gated MELTv2.2.2.
 
 rule melt_mei:
     input:
@@ -178,7 +205,7 @@ rule melt_mei:
         CONDAENV + "melt.yaml"
     shell:
         """
-        java -jar $MELT_HOME/MELT.jar Single \
+        java -jar {MELT_DIR}/MELT.jar Single \
             -bamfile {input.bam} -h {input.ref} \
             -n {MELT_DIR}/add_bed_files/Hg38/Hg38.genes.bed \
             -t {params.transposons} \
@@ -212,25 +239,54 @@ rule expansionhunter_str:
 # SMALL VARIANTS (DeepVariant)   #
 ##################################
 
-rule deepvariant_snp:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        vcf = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
-    params:
-        outdir = PATH + "{sample}/snp_deepvariant"
-    conda:
-        CONDAENV + "deepvariant.yaml"
-    shell:
-        """
-        run_deepvariant --model_type=WGS \
-            --ref={input.ref} --reads={input.bam} \
-            --output_vcf={output.vcf} \
-            --num_shards={THREADS} \
-            --intermediate_results_dir={params.outdir}/intermediate \
-            --regions={BED}
-        """
+if DEEPVARIANT_USE_CONDA:
+
+    rule deepvariant_snp:
+        # Opt-in fallback - see envs/deepvariant.yaml caveats before using this.
+        input:
+            bam = lambda wc: BAMS[wc.sample],
+            ref = REF
+        output:
+            vcf = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
+        params:
+            outdir = PATH + "{sample}/snp_deepvariant"
+        conda:
+            CONDAENV + "deepvariant.yaml"
+        shell:
+            """
+            run_deepvariant --model_type=WGS \
+                --ref={input.ref} --reads={input.bam} \
+                --output_vcf={output.vcf} \
+                --num_shards={THREADS} \
+                --intermediate_results_dir={params.outdir}/intermediate \
+                --regions={BED}
+            """
+
+else:
+
+    rule deepvariant_snp:
+        # Default path: Google's officially supported Docker image, run
+        # via Snakemake's container: directive (needs --use-singularity
+        # or --use-apptainer at runtime; Snakemake pulls/converts the
+        # image automatically).
+        input:
+            bam = lambda wc: BAMS[wc.sample],
+            ref = REF
+        output:
+            vcf = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
+        params:
+            outdir = PATH + "{sample}/snp_deepvariant"
+        container:
+            f"docker://google/deepvariant:{DEEPVARIANT_VERSION}"
+        shell:
+            """
+            /opt/deepvariant/bin/run_deepvariant --model_type=WGS \
+                --ref={input.ref} --reads={input.bam} \
+                --output_vcf={output.vcf} \
+                --num_shards={THREADS} \
+                --intermediate_results_dir={params.outdir}/intermediate \
+                --regions={BED}
+            """
 
 ######################
 # PHASING (WhatsHap)  #
