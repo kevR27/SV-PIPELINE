@@ -24,7 +24,7 @@ NEEDLR_BACKEND = config.get("needlr_backend_files", None)
 VEP_CACHE_DIR  = config["vep_cache_dir"]
 VEP_ASSEMBLY   = config.get("vep_assembly", "GRCh38")
 
-# --- Optional confirmatory MEI caller (see block at bottom) ---
+# --- confirmatory MEI caller  ---
 RUN_TLDR_CONFIRMATION = config.get("run_tldr_confirmation", False)  # keep False by default
 
 
@@ -33,7 +33,7 @@ rule all:
         # QC
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
 
-        # small variants + phasing (control)
+        # small variants + phasing (control track)
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
@@ -152,10 +152,6 @@ rule cutesv:
         """
 
 rule jasmine_merge:
-    # NOTE: --dup_to_ins removed. That flag existed only because the old SVAN step required DUP
-    # calls to be pre-converted to INS (SVAN has no native DUP input type). Now that SVAN is gone,
-    # keeping DUP calls as DUP is what you want -- AnnotSV/VEP classify and annotate DUP/INS
-    # differently, and collapsing DUP into INS here would corrupt that classification downstream.
     input:
         sniffles = rules.sniffles2_sv.output.vcf,
         cutesv   = rules.cutesv.output.vcf
@@ -241,10 +237,7 @@ rule sv_annotation_stranger:
         """
 
 #####################################################################
-# needLR — population-AF filter ONLY (ONT-native 1KGP-LRSC cohort). #
-# Its OMIM/HPO/GenCC gene columns are NOT used downstream — AnnotSV #
-# is the single source of truth for gene/disease annotation, to     #
-# avoid two competing "final" annotation tables.                    #
+# needLR — population-AF filter ONLY (ONT-native 1KGP-LRSC cohort)  #
 #####################################################################
 
 rule needlr_annotation:
@@ -288,7 +281,7 @@ rule annotsv_annotation:
             -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
             -genomeBuild GRCh38 \
             -candidateGenesFile {GENE_LIST} \
-            -candidateGenesFiltering yes
+            -candidateGenesFiltering 0
         """
 
 ##################################################################
@@ -333,7 +326,7 @@ rule modkit_extract:
 
 
 ########################################################################
-# OPTIONAL / ON-DEMAND rules — not in rule all, not run by default.    #
+# Other rules — not in rule all, not run by default.                   #
 # Use these only when a specific candidate SV (e.g. an OPA1 locus)     #
 # needs deeper confirmation. PALMER and xTea-long were dropped         #
 # entirely: for this project they added independent MEI-detection      #
