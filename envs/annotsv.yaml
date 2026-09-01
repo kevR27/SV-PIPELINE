@@ -1,6 +1,3 @@
-# The bioconda annotsv package installs the AnnotSV binary/scripts only.
-# It does NOT bundle the annotation databases (that would make the
-# recipe enormous) - those must be downloaded once with
 # INSTALL_annotations.sh into a directory you then pass to every
 # AnnotSV call via -annotationsDir. See the annotsv_install_annotations
 # rule in the Snakefile.
