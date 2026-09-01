@@ -10,7 +10,7 @@ GENE_LIST  = config["candidate_genes_list"]    # optic-neuropathy / mito-disease
 CPG        = config["cpg"]
 CONDAENV   = config["condaenv"]
 MODKITENV  = config["modkitenv"]
-CLAIRENV   = config["clair3env"]               
+CLAIRENV   = config["clair3env"]
 
 TLDR_ELTS  = config["tldr_elements"]           # only used by the OPTIONAL confirmatory rule below
 
@@ -33,7 +33,7 @@ rule all:
         # QC
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
 
-        # small variants + phasing (control track)
+        # small variants + phasing (control)
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
@@ -56,9 +56,8 @@ rule all:
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
 
-        # methylation + mtDNA
-        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv", sample=SAMPLES)
+        # methylation
+        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES)
 
 ################
 # QC           #
