@@ -13,7 +13,7 @@ candidate_genes_list: "/panels/optic_neuropathy_genes.txt" # plain gene-symbol l
 cpg: "chr1:1-100000"                                            # region(s) for modkit CpG extraction - adjust as needed
 
 condaenv: "envs/"
-modkitenv: "/tools/modkit/modkit"     # standalone binary, not a conda env
+modkitenv: "/tools/modkit/modkit"     
 clair3env: "/tools/clair3/models/ont" # Clair3 ONT model directory (confirm it matches your basecaller model)
 
 # required by sniffles2_sv (--tandem-repeats)
@@ -24,7 +24,7 @@ vep_cache_dir: "/refs/vep_cache/"      # TODO: point this at your local VEP offl
 vep_assembly: "GRCh38"                 # optional - already the default if omitted
 
 # needLR population-AF backend - required for real AF output, not just annotation columns
-needlr_backend_files: "/refs/needlr/backend/"   # TODO: point this at your actual needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle)
+needlr_backend_files: "/refs/needlr/backend/"   # path of  needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle)
 
-# TLDR + longphase now run for every sample by default (see Snakefile)
+# TLDR + longphase 
 tldr_elements: "/tools/tldr/ref/teref.human.fa"  # ALU/LINE1/SVA reference for TLDR
