@@ -1,0 +1,16 @@
+# IMPORTANT: do NOT run `conda install bioconda::melt` expecting the real
+# MEI caller. bioconda's "melt" package is an unrelated nucleotide
+# melting-temperature calculator (last updated 2016) - installing it
+# would silently give you the wrong tool under the same name.
+#
+# The real MELTv2.2.2 (Mobile Element Locator Tool, Gardner/Devine lab)
+# is not distributed on bioconda at all. It's a registration-gated
+# download from https://melt.igs.umaryland.edu/ - this env only provides
+# the Java runtime MELT needs; melt_dir in the config must still point
+# to your manually downloaded MELTv2.2.2 install.
+name: melt
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - conda-forge::openjdk=17
