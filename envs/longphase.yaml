@@ -1,0 +1,6 @@
+name: longphase
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::longphase=1.7.*
