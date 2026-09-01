@@ -1,34 +1,38 @@
 configfile: "config_srs.yaml"
 
-SAMPLES   = list(config["samples"].keys())
-BAMS      = config["samples"]
-PATH      = config["path"]
-REF       = config["ref"]
-THREADS   = config["threads"]
-BED       = config["bed"]                 # panel/target regions (optional, used for reporting/EH catalog restriction)
-EXCLUDE   = config["exclude_bed"]          # DELLY/smoove exclude regions (centromeres, telomeres, segdups)
+SAMPLES    = list(config["samples"].keys())
+BAMS       = config["samples"]
+PATH       = config["path"]
+REF        = config["ref"]
+THREADS    = config["threads"]
+BED        = config["bed"]                     # panel/target regions (used for DeepVariant --regions restriction)
+GENE_LIST  = config["candidate_genes_list"]     # plain gene-symbol list, same role as the LRS panel gene list
+EXCLUDE    = config["exclude_bed"]              # Delly exclude regions (centromeres, telomeres, segdups)
 EH_CATALOG = config["expansionhunter_catalog"]
-MELT_DIR  = config["melt_dir"]             # MELTv2 install dir (contains mei_list, add_bed_files, genes bed)
-MELT_TRANSPOSONS = config["melt_transposons"]  # list of *_MELT.zip element refs (ALU, LINE1, SVA, HERVK...)
-CONDAENV  = config["condaenv"]
-FASTQ     = config.get("fastq", {})        # optional: {sample: {"r1": ..., "r2": ...}} if you want BWA-MEM2 realignment
-TRGT_EH_PANEL_NOTE = None                  # (no-op placeholder, see EH_CATALOG above)
+MELT_DIR   = config["melt_dir"]                 # MELTv2 install dir (contains mei_list, add_bed_files, genes bed)
+MELT_TRANSPOSONS = config["melt_transposons"]   # list of *_MELT.zip element refs (ALU, LINE1, SVA, HERVK...)
+CONDAENV   = config["condaenv"]
+
+# --- VEP (transcript-level consequence detail, parity with the LRS pipeline) ---
+VEP_CACHE_DIR = config["vep_cache_dir"]
+VEP_ASSEMBLY  = config.get("vep_assembly", "GRCh38")
+
+# --- AnnotSV (optional HPO-term phenotype matching) ---
+HPO_TERMS = config.get("hpo_terms", None)
 
 rule all:
     input:
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
         expand(PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/smoove/{sample}-smoove.genotyped.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/cnvkit/{sample}.call.cns", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
         expand(PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
-        expand(PATH + "{sample}/mtdna/eklipse/{sample}_eKLIPse.csv", sample=SAMPLES)
+        expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES)
 
 #######
 # QC  #
@@ -46,10 +50,9 @@ rule mosdepth_coverage:
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input.bam}
         """
 
-#####################
-# SV CALLING        #
-# (Choose only 2)  #
-#####################
+#####################################
+# SV CALLING - Manta + Delly        #
+#####################################
 
 rule manta_sv:
     input:
@@ -87,52 +90,14 @@ rule delly_sv:
         tabix -p vcf {output.vcf}
         """
 
-rule smoove_sv:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF,
-        excl = EXCLUDE
-    output:
-        vcf = PATH + "{sample}/sv/smoove/{sample}-smoove.genotyped.vcf.gz"
-    params:
-        outdir = PATH + "{sample}/sv/smoove"
-    conda:
-        CONDAENV + "smoove.yaml"
-    shell:
-        """
-        smoove call --outdir {params.outdir} --name {wildcards.sample} \
-            --exclude {input.excl} --fasta {input.ref} -p {THREADS} \
-            --genotype {input.bam}
-        """
-
-rule cnvkit_cnv:
-    input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
-    output:
-        cns = PATH + "{sample}/sv/cnvkit/{sample}.call.cns"
-    params:
-        outdir = PATH + "{sample}/sv/cnvkit"
-    conda:
-        CONDAENV + "cnvkit.yaml"
-    shell:
-        """
-        # WGS mode, flat reference (no matched normal panel) - germline singleton use case
-        cnvkit.py batch {input.bam} -n -m wgs -f {input.ref} \
-            -d {params.outdir} -p {THREADS}
-        cnvkit.py call {params.outdir}/{wildcards.sample}.cns -o {output.cns}
-        """
-
 #############################
 # WITHIN-PLATFORM SV MERGE  #
 #############################
 
 rule survivor_merge:
     input:
-        manta  = rules.manta_sv.output.vcf,
-        delly  = rules.delly_sv.output.vcf,
-        smoove = rules.smoove_sv.output.vcf,
-        cnvkit = rules.cnvkit_cnv.output.cns
+        manta = rules.manta_sv.output.vcf,
+        delly = rules.delly_sv.output.vcf
     output:
         list_file = PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
         vcf = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf"
@@ -140,27 +105,20 @@ rule survivor_merge:
         CONDAENV + "survivor.yaml"
     shell:
         """
-        # decompress the gz callers to plain VCF for SURVIVOR, and convert
-        # CNVkit .cns -> VCF beforehand with cnvkit.py export vcf (not shown,
-        # add as a separate rule if you want CNVkit calls in the merge)
         zcat {input.manta} > {PATH}/{wildcards.sample}/sv/merged/manta.vcf
         zcat {input.delly} > {PATH}/{wildcards.sample}/sv/merged/delly.vcf
-        zcat {input.smoove} > {PATH}/{wildcards.sample}/sv/merged/smoove.vcf
 
         printf "%s\\n" \
             {PATH}/{wildcards.sample}/sv/merged/manta.vcf \
             {PATH}/{wildcards.sample}/sv/merged/delly.vcf \
-            {PATH}/{wildcards.sample}/sv/merged/smoove.vcf \
             > {output.list_file}
 
-        # 1kb max distance, require >=2 callers agree, same type, same strand,
-        # min SV size 50bp -> tune to your needs
-        SURVIVOR merge {output.list_file} 1000 3 1 1 0 50 {output.vcf}
+        SURVIVOR merge {output.list_file} 1000 1 1 1 0 50 {output.vcf}
         """
 
-##############################
-# SV ANNOTATION (AnnotSV)    #
-##############################
+##########################################################################
+# AnnotSV                                                                #
+##########################################################################
 
 rule annotsv_annotation:
     input:
@@ -168,7 +126,8 @@ rule annotsv_annotation:
     output:
         tsv = PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv"
     params:
-        outdir = PATH + "{sample}/sv/merged"
+        outdir = PATH + "{sample}/sv/merged",
+        hpo_flag = lambda wc: f"-hpo {HPO_TERMS}" if HPO_TERMS else ""
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
@@ -177,7 +136,29 @@ rule annotsv_annotation:
             -outputDir {params.outdir} \
             -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
             -genomeBuild GRCh38 \
-            -candidateGenesFile {BED}
+            -candidateGenesFile {GENE_LIST} \
+            -candidateGenesFiltering 0 \
+            {params.hpo_flag}
+        """
+
+##################################################################
+# VEP                                                             #
+##################################################################
+
+rule vep_sv_annotation:
+    input:
+        vcf = rules.survivor_merge.output.vcf
+    output:
+        txt = PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
+    conda:
+        CONDAENV + "vep.yaml"
+    shell:
+        """
+        vep --input_file {input.vcf} --format vcf \
+            --output_file {output.txt} \
+            --cache --offline --dir_cache {VEP_CACHE_DIR} --assembly {VEP_ASSEMBLY} \
+            --canonical --overlaps --pick --symbol --biotype \
+            --max_sv_size 250000000 --batch_size 100 --fork {THREADS}
         """
 
 ######################
@@ -197,14 +178,11 @@ rule melt_mei:
         CONDAENV + "melt.yaml"
     shell:
         """
-        # MELT-Single per transposon family, then merge - adapt to MELT-Split
-        # if you want cross-family joint genotyping across many samples later
         java -jar $MELT_HOME/MELT.jar Single \
             -bamfile {input.bam} -h {input.ref} \
             -n {MELT_DIR}/add_bed_files/Hg38/Hg38.genes.bed \
             -t {params.transposons} \
             -w {params.outdir}
-        # concatenate per-family VCFs into one merged MEI callset
         bcftools concat -a {params.outdir}/*.final_comp.vcf -O v -o {output.vcf}
         """
 
