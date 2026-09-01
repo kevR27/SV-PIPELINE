@@ -3,27 +3,23 @@
 samples:
   patient01: /data/srs_bams/patient01.sorted.bam
   patient02: /data/srs_bams/patient02.sorted.bam
-
 path: "/data/srs_results/"
 ref: "/refs/hg38/hg38.fa"
 threads: 16
-
 bed: "/panels/optic_neuropathy_mito_panel.bed"          # gene panel regions (also used to restrict DeepVariant/AnnotSV)
-exclude_bed: "/refs/hg38/delly_smoove_exclude.bed"       # centromeres/telomeres/segdup blacklist for DELLY & smoove
+candidate_genes_list: "/panels/optic_neuropathy_mito_panel_genes.txt"
+exclude_bed: "/refs/hg38/delly_smoove_exclude.bed"       # centromeres/telomeres/segdup blacklist for DELLY
 expansionhunter_catalog: "/refs/hg38/eh_variant_catalog_panel.json"
-
 melt_dir: "/tools/MELTv2.2.2"
 melt_transposons:
   - "/tools/MELTv2.2.2/me_refs/Hg38/ALU_MELT.zip"
   - "/tools/MELTv2.2.2/me_refs/Hg38/LINE1_MELT.zip"
   - "/tools/MELTv2.2.2/me_refs/Hg38/SVA_MELT.zip"
   - "/tools/MELTv2.2.2/me_refs/Hg38/HERVK_MELT.zip"
-
-# optional - only needed if you want the BWA-MEM2 realignment rule instead of
-# using the pre-aligned BAMs listed under `samples:` above
-fastq:
-  patient01:
-    r1: /data/srs_fastq/patient01_R1.fastq.gz
-    r2: /data/srs_fastq/patient01_R2.fastq.gz
-
+vep_cache_dir: "/refs/vep_cache"
+vep_assembly: "GRCh38"
+# annotsv_annotations_dir: "/data/srs_results/reference/AnnotSV_annotations"  # optional override
+# hpo_terms: "HP:0000505,HP:0007675"  # optional, e.g. optic-neuropathy HPO terms
+# deepvariant_version: "1.6.1"        # optional override
+# deepvariant_use_conda: false        # true only if you've verified the conda build on your system
 condaenv: "envs/"
