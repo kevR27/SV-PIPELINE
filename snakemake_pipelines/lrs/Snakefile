@@ -24,8 +24,7 @@ NEEDLR_BACKEND = config.get("needlr_backend_files", None)
 VEP_CACHE_DIR  = config["vep_cache_dir"]
 VEP_ASSEMBLY   = config.get("vep_assembly", "GRCh38")
 
-# --- confirmatory MEI caller  ---
-RUN_TLDR_CONFIRMATION = config.get("run_tldr_confirmation", False)  # keep False by default
+# --- Confirmatory MEI caller (TLDR) + joint SNP+SV phasing (longphase) - always run ---
 
 
 rule all:
@@ -57,7 +56,11 @@ rule all:
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
 
         # methylation
-        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES)
+        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
+
+        # SV-aware joint SNP+SV phasing + confirmatory MEI calling (TLDR)
+        expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES)
 
 ################
 # QC           #
@@ -152,6 +155,10 @@ rule cutesv:
         """
 
 rule jasmine_merge:
+    # NOTE: --dup_to_ins removed. That flag existed only because the old SVAN step required DUP
+    # calls to be pre-converted to INS (SVAN has no native DUP input type). Now that SVAN is gone,
+    # keeping DUP calls as DUP is what you want -- AnnotSV/VEP classify and annotate DUP/INS
+    # differently, and collapsing DUP into INS here would corrupt that classification downstream.
     input:
         sniffles = rules.sniffles2_sv.output.vcf,
         cutesv   = rules.cutesv.output.vcf
@@ -237,7 +244,10 @@ rule sv_annotation_stranger:
         """
 
 #####################################################################
-# needLR — population-AF filter ONLY (ONT-native 1KGP-LRSC cohort)  #
+# needLR — population-AF filter ONLY (ONT-native 1KGP-LRSC cohort). #
+# Its OMIM/HPO/GenCC gene columns are NOT used downstream — AnnotSV #
+# is the single source of truth for gene/disease annotation, to     #
+# avoid two competing "final" annotation tables.                    #
 #####################################################################
 
 rule needlr_annotation:
@@ -326,50 +336,49 @@ rule modkit_extract:
 
 
 ########################################################################
-# Other rules — not in rule all, not run by default.                   #
-# Use these only when a specific candidate SV (e.g. an OPA1 locus)     #
-# needs deeper confirmation. PALMER and xTea-long were dropped         #
-# entirely: for this project they added independent MEI-detection      #
-# passes without adding evidence beyond RepeatMasker, and both         #
-# are less actively maintained for ONT-native use than TLDR.           #
+# SV-aware joint SNP+SV phasing (longphase) + confirmatory MEI calling  #
+# (TLDR). Kept as their own section since they serve a locus-level      #
+# confirmation role, but now run for every sample by default.          #
+# PALMER and xTea-long were dropped entirely: for this project they     #
+# added independent MEI-detection passes without adding evidence        #
+# beyond RepeatMasker, and both are less actively maintained for        #
+# ONT-native use than TLDR.                                             #
 ########################################################################
 
-if RUN_TLDR_CONFIRMATION:
+rule longphase_phasing:
+    # SV-aware joint SNP+SV phasing.
+    input:
+        vcf = rules.clair3_snp_calling.output.vcf,
+        sv_vcf = rules.sniffles2_sv.output.vcf,
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        vcf = PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
+    params:
+        prefix = PATH + "{sample}/phasing_longphase/{sample}.longphase"
+    conda:
+        CONDAENV + "longphase.yaml"
+    shell:
+        """
+        longphase phase -s {input.vcf} --sv-file {input.sv_vcf} \
+            -b {input.bam} -r {input.ref} -t {THREADS} -o {params.prefix}
+        bgzip -f {params.prefix}.vcf
+        tabix -p vcf {output.vcf}
+        """
 
-    rule longphase_phasing:
-        # SV-aware joint SNP+SV phasing, for a specific candidate locus only.
-        input:
-            vcf = rules.clair3_snp_calling.output.vcf,
-            sv_vcf = rules.sniffles2_sv.output.vcf,
-            bam = lambda wc: BAMS[wc.sample],
-            ref = REF
-        output:
-            vcf = PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
-        params:
-            prefix = PATH + "{sample}/phasing_longphase/{sample}.longphase"
-        conda:
-            CONDAENV + "longphase.yaml"
-        shell:
-            """
-            longphase phase -s {input.vcf} --sv-file {input.sv_vcf} \
-                -b {input.bam} -r {input.ref} -t {THREADS} -o {params.prefix}
-            bgzip -f {params.prefix}.vcf
-            tabix -p vcf {output.vcf}
-            """
-
-    rule tldr_mei_confirmation:
-        input:
-            bam = lambda wc: BAMS[wc.sample],
-            ref = REF
-        output:
-            table = PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
-        params:
-            outdir = PATH + "{sample}/mei/tldr"
-        conda:
-            CONDAENV + "tldr.yaml"
-        shell:
-            """
-            tldr -b {input.bam} -r {input.ref} -e {TLDR_ELTS} \
-                -p {THREADS} --outdir {params.outdir}
-            cp {params.outdir}/*.table.txt {output.table}
-            """
+rule tldr_mei_confirmation:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        table = PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
+    params:
+        outdir = PATH + "{sample}/mei/tldr"
+    conda:
+        CONDAENV + "tldr.yaml"
+    shell:
+        """
+        tldr -b {input.bam} -r {input.ref} -e {TLDR_ELTS} \
+            -p {THREADS} --outdir {params.outdir}
+        cp {params.outdir}/*.table.txt {output.table}
+        """
