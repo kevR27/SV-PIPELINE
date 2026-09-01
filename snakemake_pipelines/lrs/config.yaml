@@ -1,3 +1,5 @@
+# PATH TO BE CHANGED 
+
 samples:
   patient01: /data/lrs_bams/patient01.sort.bam
   patient02: /data/lrs_bams/patient02.sort.bam
@@ -6,9 +8,9 @@ path: "/data/lrs_results/"
 ref: "/refs/hg38/hg38.fa"
 threads: 16
 
-bed: "/panels/optic_neuropathy_mito_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
-candidate_genes_list: "/panels/optic_neuropathy_mito_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
-# cpg: "chr1:1-100000"                                            # region(s) for modkit CpG extraction - adjust as needed
+bed: "/panels/optic_neuropathy_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
+candidate_genes_list: "/panels/optic_neuropathy_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
+cpg: "chr1:1-100000"                                            # region(s) for modkit CpG extraction - adjust as needed
 
 condaenv: "envs/"
 modkitenv: "/tools/modkit/modkit"     # standalone binary, not a conda env
@@ -21,9 +23,8 @@ vntr_bed: "/refs/hg38/hg38_vntr.bed"   # TODO: point this at your actual referen
 vep_cache_dir: "/refs/vep_cache/"      # TODO: point this at your local VEP offline cache
 vep_assembly: "GRCh38"                 # optional - already the default if omitted
 
-# optional - needLR population-AF backend, leave unset to skip
-needlr_backend_files: "/refs/needlr/backend/"
+# needLR population-AF backend - required for real AF output, not just annotation columns
+needlr_backend_files: "/refs/needlr/backend/"   # TODO: point this at your actual needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle)
 
-# optional confirmatory MEI caller block (longphase + TLDR), off by default
-run_tldr_confirmation: false
-tldr_elements: "/tools/tldr/ref/teref.human.fa"  # ALU/LINE1/SVA reference for TLDR, only read if run_tldr_confirmation: true
+# TLDR + longphase now run for every sample by default (see Snakefile)
+tldr_elements: "/tools/tldr/ref/teref.human.fa"  # ALU/LINE1/SVA reference for TLDR
