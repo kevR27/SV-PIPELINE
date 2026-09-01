@@ -1,3 +1,5 @@
+#change PATH
+
 samples:
   patient01: /data/srs_bams/patient01.sorted.bam
   patient02: /data/srs_bams/patient02.sorted.bam
