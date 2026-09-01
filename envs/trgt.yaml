@@ -1,5 +1,0 @@
-name: trgt
-channels: [bioconda, conda-forge]
-dependencies:
-  - trgt=1.2.0
-  - samtools=1.19

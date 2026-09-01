@@ -1,8 +1,0 @@
-name: delly
-channels:
-  - bioconda
-  - conda-forge
-dependencies:
-  - delly=1.2.6
-  - bcftools=1.19
-  - tabix

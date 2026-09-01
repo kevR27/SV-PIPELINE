@@ -1,7 +1,0 @@
-name: repeatmasker
-channels:
-  - bioconda
-  - conda-forge
-dependencies:
-  - repeatmasker=4.1.7
-  - samtools=1.19

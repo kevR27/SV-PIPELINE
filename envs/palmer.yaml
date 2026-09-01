@@ -1,9 +1,0 @@
-# PALMER is not on bioconda - install from https://github.com/mills-lab/PALMER
-# This env covers its runtime deps (perl + samtools + bwa)
-name: palmer
-channels: [bioconda, conda-forge]
-dependencies:
-  - perl=5.32
-  - samtools=1.19
-  - bwa
-  - blast

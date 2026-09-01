@@ -1,4 +1,0 @@
-name: strdust
-channels: [bioconda, conda-forge]
-dependencies:
-  - strdust=0.11.0

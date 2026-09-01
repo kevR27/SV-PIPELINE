@@ -1,7 +1,0 @@
-name: expansionhunter
-channels:
-  - bioconda
-  - conda-forge
-dependencies:
-  - expansionhunter=5.0.0
-  - samtools=1.19

@@ -1,5 +1,0 @@
-name: longphase
-channels: [bioconda, conda-forge]
-dependencies:
-  - longphase=1.7.3
-  - samtools=1.19

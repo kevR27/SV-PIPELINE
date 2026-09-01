@@ -1,7 +1,0 @@
-name: jasmine
-channels:
-  - bioconda
-  - conda-forge
-dependencies:
-  - jasminesv=1.1.5
-  - samtools=1.19
