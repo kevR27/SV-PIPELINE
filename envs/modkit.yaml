@@ -1,7 +1,0 @@
-# Package name on bioconda is "ont-modkit" (CLI command is still `modkit`).
-name: modkit
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  - bioconda::ont-modkit=0.4.*

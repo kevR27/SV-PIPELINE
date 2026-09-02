@@ -1,7 +1,0 @@
-# Package name on bioconda is "sniffles" (covers Sniffles2).
-name: sniffles2
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  - bioconda::sniffles=2.*

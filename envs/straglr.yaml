@@ -1,6 +1,0 @@
-name: straglr
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  - bioconda::straglr=1.5.6

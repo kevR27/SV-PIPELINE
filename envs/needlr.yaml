@@ -1,9 +1,0 @@
-# Package name on bioconda is "needlr" (lowercase). needLR also ships a
-# more complete custom env file (envs/needLR-4.0.yaml in its own repo) if
-# you want its exact pinned dependency set instead of this minimal one.
-name: needlr
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  - bioconda::needlr=4.0
