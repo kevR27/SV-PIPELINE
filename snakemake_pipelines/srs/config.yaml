@@ -32,3 +32,19 @@ vep_assembly: "GRCh38"
 # deepvariant_use_conda: false
 
 condaenv: "envs/"
+
+# --- Genome-wide human phenotype discovery ---
+# Monarch KG API. Used only for human gene -> phenotype associations.
+monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
+
+# Transparent optic-neuropathy phenotype anchors used for candidate ranking.
+# These are disease/phenotype reference terms, NOT patient HPO terms.
+discovery_hpo_file: "/reference/optic_neuropathy_hpo_terms.tsv"
+
+# Optional: leave unset unless you have actual patient HPO terms.
+# hpo_terms: "HP:0000505,HP:0007675"
+
+# AnnotSV benign population-frequency threshold used by its benign-SV/ranking logic.
+# 0.01 = 1%; this does not silently discard variants from the genome-wide TSV.
+annotsv_benign_af: 0.01
+
