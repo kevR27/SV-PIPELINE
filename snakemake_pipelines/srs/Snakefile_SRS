@@ -6,7 +6,7 @@ PATH       = config["path"]
 REF        = config["ref"]
 THREADS    = config["threads"]
 BED        = config["bed"]                     # panel/target regions (used for DeepVariant --regions restriction)
-GENE_LIST  = config["candidate_genes_list"]     # plain gene-symbol list, same role as the LRS panel gene list
+GENE_LIST  = config["candidate_genes_list"]    # plain gene-symbol list, same role as the LRS panel gene list
 EXCLUDE    = config["exclude_bed"]              # Delly exclude regions (centromeres, telomeres, segdups)
 EH_CATALOG = config["expansionhunter_catalog"]
 MELT_DIR   = config["melt_dir"]                 # MELTv2 install dir - see envs/melt.yaml, NOT bioconda-installable
@@ -22,7 +22,10 @@ HPO_TERMS = config.get("hpo_terms", None)
 # downloaded once into this directory and reused by
 # every AnnotSV call via -annotationsDir (see annotsv_install_annotations
 # and annotsv_annotation below)
-ANNOTSV_ANNOTATIONS_DIR = config.get("annotsv_annotations_dir", PATH + "reference/AnnotSV_annotations")
+ANNOTSV_ANNOTATIONS_DIR = config.get(
+    "annotsv_annotations_dir",
+    PATH + "reference/AnnotSV_annotations"
+)
 
 # --- DeepVariant ---
 DEEPVARIANT_VERSION   = config.get("deepvariant_version", "1.6.1")
@@ -36,12 +39,15 @@ rule all:
         expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
         expand(PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES)
+
 
 #######
 # QC  #
@@ -58,6 +64,7 @@ rule mosdepth_coverage:
         """
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input.bam}
         """
+
 
 #####################################
 # SV CALLING - Manta + Delly        #
@@ -81,6 +88,7 @@ rule manta_sv:
         tabix -p vcf {output.vcf}
         """
 
+
 rule delly_sv:
     input:
         bam = lambda wc: BAMS[wc.sample],
@@ -98,6 +106,7 @@ rule delly_sv:
         bcftools view {params.bcf} -O z -o {output.vcf}
         tabix -p vcf {output.vcf}
         """
+
 
 #############################
 # WITHIN-PLATFORM SV MERGE  #
@@ -125,6 +134,7 @@ rule survivor_merge:
         SURVIVOR merge {output.list_file} 1000 1 1 1 0 50 {output.vcf}
         """
 
+
 ##########################################################################
 # AnnotSV                                                                #
 ##########################################################################
@@ -141,6 +151,7 @@ rule annotsv_install_annotations:
         INSTALL_annotations.sh
         touch {output.marker}
         """
+
 
 rule annotsv_annotation:
     input:
@@ -165,6 +176,24 @@ rule annotsv_annotation:
             {params.hpo_flag}
         """
 
+
+##################################################################
+# AnnotSV - optic-neuropathy panel-only view                     #
+##################################################################
+
+rule annotsv_annotation_panel_only:
+    input:
+        tsv = rules.annotsv_annotation.output.tsv,
+        genes = GENE_LIST
+    output:
+        tsv = PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.panel_only.tsv"
+    shell:
+        """
+        head -n 1 {input.tsv} > {output.tsv}
+        grep -Fwf {input.genes} {input.tsv} | grep -v '^#' >> {output.tsv} || true
+        """
+
+
 ##################################################################
 # VEP                                                             #
 ##################################################################
@@ -184,6 +213,24 @@ rule vep_sv_annotation:
             --canonical --overlaps --pick --symbol --biotype \
             --max_sv_size 250000000 --batch_size 100 --fork {THREADS}
         """
+
+
+##################################################################
+# VEP - optic-neuropathy panel-only view                           #
+##################################################################
+
+rule vep_sv_annotation_panel_only:
+    input:
+        txt = rules.vep_sv_annotation.output.txt,
+        genes = GENE_LIST
+    output:
+        txt = PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+    shell:
+        """
+        grep '^#' {input.txt} > {output.txt} || true
+        grep -Fwf {input.genes} {input.txt} >> {output.txt} || true
+        """
+
 
 ######################
 # MEI (MELT)         #
@@ -213,6 +260,7 @@ rule melt_mei:
         bcftools concat -a {params.outdir}/*.final_comp.vcf -O v -o {output.vcf}
         """
 
+
 ##############################
 # REPEAT EXPANSION (EH)      #
 ##############################
@@ -234,6 +282,7 @@ rule expansionhunter_str:
             --variant-catalog {input.catalog} --output-prefix {params.prefix} \
             --threads {THREADS}
         """
+
 
 ##################################
 # SMALL VARIANTS (DeepVariant)   #
@@ -287,6 +336,7 @@ else:
                 --intermediate_results_dir={params.outdir}/intermediate \
                 --regions={BED}
             """
+
 
 ######################
 # PHASING (WhatsHap)  #
