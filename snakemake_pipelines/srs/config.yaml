@@ -8,14 +8,14 @@ path: "/data/srs_results/"
 ref: "/refs/hg38/hg38.fa"
 threads: 16
 
-bed: "/panels/optic_neuropathy_mito_panel.bed"
-candidate_genes_list: "/panels/optic_neuropathy_mito_panel_genes.txt"
+bed: "/PANEL_OA/optic_neuropathy_panel.bed"
+candidate_genes_list: "/PANEL_OA/optic_neuropathy_genes.txt"
 
-exclude_bed: "/refs/hg38/delly_smoove_exclude.bed"
+exclude_bed: "/reference/delly_hg38_exclude.bed"
 
-expansionhunter_catalog: "/refs/hg38/eh_variant_catalog_panel.json"
+expansionhunter_catalog: "/reference/variant_catalog_hg38_repeats.json"
 
-melt_dir: "/tools/MELTv2.2.2"
+melt_dir: "/tools/MELTv2.2.2" #boh
 melt_transposons:
   - "/tools/MELTv2.2.2/me_refs/Hg38/ALU_MELT.zip"
   - "/tools/MELTv2.2.2/me_refs/Hg38/LINE1_MELT.zip"
