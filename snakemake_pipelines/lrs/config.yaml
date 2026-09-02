@@ -25,7 +25,7 @@ vep_assembly: "GRCh38"                 # optional - already the default if omitt
 
 
 # needLR population-AF backend - required for real AF output, not just annotation columns
-needlr_backend_files: "/refs/needlr/backend/"   # path of  needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle), must be included, opnly use when using customized control cohort
+needlr_backend_files: "/refs/needlr/backend/"   # path of  needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle), must be included
 
 # TLDR 
 tldr_elements: "/reference/teref.ont.human.fa"  # ALU/LINE1/SVA reference for TLDR
