@@ -9,8 +9,9 @@ BED        = config["bed"]                     # panel/target regions (used for 
 GENE_LIST  = config["candidate_genes_list"]    # plain gene-symbol list, same role as the LRS panel gene list
 EXCLUDE    = config["exclude_bed"]              # Delly exclude regions (centromeres, telomeres, segdups)
 EH_CATALOG = config["expansionhunter_catalog"]
-MELT_DIR   = config["melt_dir"]                 # MELTv2 install dir - see envs/melt.yaml, NOT bioconda-installable
-MELT_TRANSPOSONS = config["melt_transposons"]   # list of *_MELT.zip element refs (ALU, LINE1, SVA, HERVK...)
+MELT_DIR          = config["melt_dir"]
+MELT_TRANSPOSONS  = config["melt_transposons"]
+MELT_GENES_BED    = config["melt_genes_bed"]
 CONDAENV   = config["condaenv"]
 
 # --- VEP (transcript-level consequence detail, parity with the LRS pipeline) ---
@@ -235,29 +236,48 @@ rule vep_sv_annotation_panel_only:
 ######################
 # MEI (MELT)         #
 ######################
-# See envs/melt.yaml: bioconda's "melt" package is an unrelated tool.
-# This rule's conda env only supplies the Java runtime - MELT_DIR must
-# already point to a manually installed, registration-gated MELTv2.2.2.
+#######################
+# MEI (MELT)         #
+######################
+# MELT detects non-reference mobile element insertions (MEIs)
+# such as Alu, LINE-1, SVA and HERV-K in Illumina WGS data.
+#
+# MELT v2.2.2 provides the GRCh38 ME reference ZIP files
+# inside me_refs/Hg38/.
+#
+# melt_transposons points to mei_list.txt, which contains
+# one full path to each *_MELT.zip reference.
+#
+# melt_genes_bed is the Hg38 gene annotation BED supplied
+# with MELT and must correspond to the reference assembly.
 
 rule melt_mei:
     input:
         bam = lambda wc: BAMS[wc.sample],
-        ref = REF
+        ref = REF,
+        transposons = MELT_TRANSPOSONS,
+        genes = MELT_GENES_BED
     output:
         vcf = PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf"
     params:
-        outdir = PATH + "{sample}/mei/melt",
-        transposons = " ".join(MELT_TRANSPOSONS)
+        outdir = PATH + "{sample}/mei/melt"
     conda:
         CONDAENV + "melt.yaml"
     shell:
         """
-        java -jar {MELT_DIR}/MELT.jar Single \
-            -bamfile {input.bam} -h {input.ref} \
-            -n {MELT_DIR}/add_bed_files/Hg38/Hg38.genes.bed \
-            -t {params.transposons} \
+        mkdir -p {params.outdir}
+
+        java -Xmx8G -jar {MELT_DIR}/MELT.jar Single \
+            -bamfile {input.bam} \
+            -h {input.ref} \
+            -n {input.genes} \
+            -t {input.transposons} \
             -w {params.outdir}
-        bcftools concat -a {params.outdir}/*.final_comp.vcf -O v -o {output.vcf}
+
+        bcftools concat -a \
+            {params.outdir}/*.final_comp.vcf \
+            -O v \
+            -o {output.vcf}
         """
 
 
