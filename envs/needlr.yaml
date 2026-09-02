@@ -6,4 +6,4 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - bioconda::needlr=4.0
+  - bioconda::needlr=4.1
