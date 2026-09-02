@@ -24,9 +24,6 @@ NEEDLR_BACKEND = config.get("needlr_backend_files", None)
 VEP_CACHE_DIR  = config["vep_cache_dir"]
 VEP_ASSEMBLY   = config.get("vep_assembly", "GRCh38")
 
-# --- Confirmatory MEI caller (TLDR) + joint SNP+SV phasing (longphase) - always run ---
-
-
 rule all:
     input:
         # QC
@@ -328,10 +325,8 @@ rule modkit_extract:
         {MODKITENV} extract calls -t {THREADS} --reference {input.ref} --cpg --region {CPG} {input.bam} {output.tsv}
         """
 
-
 ########################################################################
-# SV-aware joint SNP+SV phasing (longphase) + confirmatory MEI calling  #
-# (TLDR).                                                               #
+# SV-aware joint SNP+SV phasing (longphase)                            #
 ########################################################################
 
 rule longphase_phasing:
@@ -354,6 +349,9 @@ rule longphase_phasing:
         bgzip -f {params.prefix}.vcf
         tabix -p vcf {output.vcf}
         """
+########################################################################
+#  confirmatory MEI calling (TLDR)                                     #
+########################################################################
 
 rule tldr_mei_confirmation:
     input:
