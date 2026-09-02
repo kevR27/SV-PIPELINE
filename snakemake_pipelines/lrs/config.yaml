@@ -1,15 +1,15 @@
 # PATH TO BE CHANGED 
 
 samples:
-  patient01: /data/lrs_bams/patient01.sort.bam
+  patient01: /data/lrs_bams/patient01.sort.bam #sample ID
   patient02: /data/lrs_bams/patient02.sort.bam
 
 path: "/data/lrs_results/"
 ref: "/refs/hg38/hg38.fa"
 threads: 16
 
-bed: "/panels/optic_neuropathy_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
-candidate_genes_list: "/panels/optic_neuropathy_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
+bed: "PANEL_OA/optic_neuropathy_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
+candidate_genes_list: "/PANEL_OA/optic_neuropathy_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
 cpg: "chr1:1-100000"                                            # region(s) for modkit CpG extraction - adjust as needed
 
 condaenv: "envs/"
@@ -17,14 +17,14 @@ modkitenv: "/tools/modkit/modkit"
 clair3env: "/tools/clair3/models/ont" # Clair3 ONT model directory (confirm it matches your basecaller model)
 
 # required by sniffles2_sv (--tandem-repeats)
-vntr_bed: "/refs/hg38/hg38_vntr.bed"   # TODO: point this at your actual reference-wide VNTR bed
+vntr_bed: "/reference/human_hs37d5.trf.bed"   # point this at your actual reference-wide VNTR bed
 
 # required by vep_sv_annotation
-vep_cache_dir: "/refs/vep_cache/"      # TODO: point this at your local VEP offline cache
+vep_cache_dir: "/refs/vep_cache/"      # point this at your local VEP offline cache
 vep_assembly: "GRCh38"                 # optional - already the default if omitted
 
 # needLR population-AF backend - required for real AF output, not just annotation columns
-needlr_backend_files: "/refs/needlr/backend/"   # path of  needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle)
+needlr_backend_files: "/refs/needlr/backend/"   # path of  needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle), must be included, opnly use when using customized control cohort
 
-# TLDR + longphase 
-tldr_elements: "/tools/tldr/ref/teref.human.fa"  # ALU/LINE1/SVA reference for TLDR
+# TLDR 
+tldr_elements: "/reference/teref.ont.human.fa"  # ALU/LINE1/SVA reference for TLDR
