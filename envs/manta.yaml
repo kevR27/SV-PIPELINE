@@ -1,0 +1,10 @@
+# NOTE: Manta is archived upstream (Illumina stopped development), but the
+# bioconda binary (last release 1.6.0) still runs fine on standard Linux
+# WGS BAMs. Pin the version so a future bioconda-index change doesn't
+# silently swap in something incompatible.
+name: manta
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::manta=1.6.0

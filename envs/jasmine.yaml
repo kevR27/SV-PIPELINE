@@ -1,0 +1,7 @@
+# Package name on bioconda is "jasminesv" (the tool CLI is still `jasmine`).
+name: jasmine
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::jasminesv=1.1.5
