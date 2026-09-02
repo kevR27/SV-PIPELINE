@@ -5,7 +5,7 @@ samples:
   patient02: /data/lrs_bams/patient02.sort.bam
 
 path: "/data/lrs_results/"
-ref: "/refs/hg38/hg38.fa"
+ref: "/DATA/Reference/hg38.fa"
 threads: 16
 
 bed: "PANEL_OA/optic_neuropathy_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
@@ -14,7 +14,7 @@ cpg: "chr1:1-100000"                                            # region(s) for 
 
 condaenv: "envs/"
 modkitenv: "/tools/modkit/modkit"     
-clair3env: "/tools/clair3/models/ont" # Clair3 ONT model directory (confirm it matches your basecaller model)
+clair3env: "/tools/clair3/models/ont" # Clair3 ONT model directory (confirm it matches your basecaller model) 
 
 # required by sniffles2_sv (--tandem-repeats)
 vntr_bed: "/reference/human_hs37d5.trf.bed"   # point this at your actual reference-wide VNTR bed
@@ -22,6 +22,7 @@ vntr_bed: "/reference/human_hs37d5.trf.bed"   # point this at your actual refere
 # required by vep_sv_annotation
 vep_cache_dir: "/refs/vep_cache/"      # point this at your local VEP offline cache
 vep_assembly: "GRCh38"                 # optional - already the default if omitted
+
 
 # needLR population-AF backend - required for real AF output, not just annotation columns
 needlr_backend_files: "/refs/needlr/backend/"   # path of  needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle), must be included, opnly use when using customized control cohort
