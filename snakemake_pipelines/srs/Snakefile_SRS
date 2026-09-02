@@ -110,7 +110,6 @@ rule mosdepth_coverage:
 
 #####################################
 # SV CALLING - Manta + Delly
-# IMPORTANT: no panel BED is supplied here.
 #####################################
 
 rule manta_sv:
@@ -154,7 +153,7 @@ rule delly_sv:
 
 
 #####################################
-# WITHIN-PLATFORM SV MERGE
+# WITHIN SV MERGE
 #####################################
 
 rule survivor_merge:
@@ -230,7 +229,7 @@ rule annotsv_annotation:
 
 
 # Explicit panel-focused AnnotSV run.
-# This uses the same genome-wide SV VCF but filters annotation to the panel.
+# This uses the same genome-wide SV VCF but filters annotation to the panel
 rule annotsv_annotation_panel_only:
     input:
         vcf=rules.survivor_merge.output.vcf,
