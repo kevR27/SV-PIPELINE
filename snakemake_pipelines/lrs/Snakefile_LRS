@@ -5,31 +5,38 @@ BAMS       = config["samples"]
 PATH       = config["path"]
 REF        = config["ref"]
 THREADS    = config["threads"]
-BED        = config["bed"]                    # panel regions (Clair3 target + AnnotSV candidate genes)
-GENE_LIST  = config["candidate_genes_list"]    # optic-neuropathy / mito-disease panel gene symbols
+BED        = config["bed"]                    # panel regions (Clair3 target + optional panel-only views)
+GENE_LIST  = config["candidate_genes_list"]   # optic-neuropathy / mito-disease panel gene symbols
 CPG        = config["cpg"]
 CONDAENV   = config["condaenv"]
 MODKITENV  = config["modkitenv"]
 CLAIRENV   = config["clair3env"]
 
-TLDR_ELTS  = config["tldr_elements"]           # only used by the OPTIONAL confirmatory rule below
+TLDR_ELTS  = config["tldr_elements"]
 
-VNTR_BED   = config["vntr_bed"]                # reference-wide VNTR bed (Zenodo hg38 bundle),
-                                                # used by sniffles2's --tandem-repeats
+VNTR_BED   = config["vntr_bed"]               # reference-wide VNTR bed for Sniffles2
 
-# --- needLR (used ONLY as an ONT-native population-AF filter, not as gene annotation) ---
+# --- needLR: ONT-native population-AF filtering only ---
 NEEDLR_BACKEND = config.get("needlr_backend_files", None)
+
+# --- AnnotSV ---
+HPO_TERMS = config.get("hpo_terms", None)
+ANNOTSV_ANNOTATIONS_DIR = config.get(
+    "annotsv_annotations_dir",
+    PATH + "reference/AnnotSV_annotations"
+)
 
 # --- VEP ---
 VEP_CACHE_DIR  = config["vep_cache_dir"]
 VEP_ASSEMBLY   = config.get("vep_assembly", "GRCh38")
+
 
 rule all:
     input:
         # QC
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
 
-        # small variants + phasing (control track)
+        # small variants + phasing (control track; Clair3 remains panel-targeted)
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
@@ -39,25 +46,30 @@ rule all:
         expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
 
-        # insertion / MEI mechanism classification (RepeatMasker TE classification of inserted sequences)
+        # insertion / MEI mechanism classification
         expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
 
-        # repeat expansion (straglr primary, annotated)
+        # repeat expansion
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
 
-        # population-AF filtering (ONT-native cohort, upstream of clinical annotation)
+        # population-AF filtering
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
-        # clinical/gene annotation (single source of truth) + transcript-level consequence detail
+        # genome-wide clinical/gene annotation + panel-only derived view
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
+
+        # genome-wide transcript annotation + panel-only derived view
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # methylation
         expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
 
-        # SV-aware joint SNP+SV phasing + confirmatory MEI calling (TLDR)
+        # SV-aware phasing + confirmatory MEI calling
         expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES)
+
 
 ################
 # QC           #
@@ -74,6 +86,7 @@ rule mosdepth_coverage:
         """
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input}
         """
+
 
 ##################################
 # Small variant calling (control) #
@@ -98,6 +111,7 @@ rule clair3_snp_calling:
         tabix -p vcf {output.vcf}
         """
 
+
 rule whatsHap_phasing:
     input:
         vcf = rules.clair3_snp_calling.output.vcf,
@@ -112,9 +126,12 @@ rule whatsHap_phasing:
         """
         whatshap phase --reference {input.ref} -o {output.phased} {input.vcf} {input.bam} --ignore-read-groups
         tabix -p vcf {output.phased}
-        whatshap haplotag -o {output.haplotag} --reference {input.ref} {output.phased} {input.bam} --ignore-read-groups
+
+        whatshap haplotag -o {output.haplotag} --reference {input.ref} \
+            {output.phased} {input.bam} --ignore-read-groups
         samtools index {output.haplotag}
         """
+
 
 ########################
 # SV calling + merge   #
@@ -135,6 +152,7 @@ rule sniffles2_sv:
             --output-rnames --tandem-repeats {VNTR_BED}
         """
 
+
 rule cutesv:
     input:
         bam = lambda wc: BAMS[wc.sample],
@@ -148,8 +166,9 @@ rule cutesv:
         cuteSV {input.bam} {input.ref} {output.vcf} {PATH}/{wildcards.sample}/sv/cutesv --threads {THREADS} \
             --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 \
             --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3 \
-            --min_support 3 --genotype -include_bed {BED}
+            --min_support 3 --genotype
         """
+
 
 rule jasmine_merge:
     input:
@@ -163,12 +182,14 @@ rule jasmine_merge:
     shell:
         """
         printf "%s\\n%s\\n" {input.sniffles} {input.cutesv} > {output.list_file}
+
         jasmine file_list={output.list_file} out_file={output.vcf} \
             threads={THREADS} --allow_intrasample --output_genotypes
         """
 
+
 ###########################################################################
-# Insertion sequence extraction + TE/mechanism classification (RepeatMasker) #
+# Insertion sequence extraction + TE/mechanism classification (RepeatMasker)
 ###########################################################################
 
 rule extract_insertion_seqs:
@@ -185,6 +206,7 @@ rule extract_insertion_seqs:
         sed 's/,.*$//' > {output.fasta}
         """
 
+
 rule repeatmasker_classify:
     input:
         fasta = rules.extract_insertion_seqs.output.fasta
@@ -200,8 +222,9 @@ rule repeatmasker_classify:
         mv {params.outdir}/{wildcards.sample}_insertions.fasta.out {output.out}
         """
 
+
 ##################################################################
-# Repeat expansion classification and annotation                 #
+# Repeat expansion classification and annotation
 ##################################################################
 
 rule straglr:
@@ -224,6 +247,7 @@ rule straglr:
             --max_num_clusters 10 --min_cluster_d 1 --regions {BED}
         """
 
+
 rule sv_annotation_stranger:
     input:
         vcf = rules.straglr.output.vvf
@@ -236,9 +260,9 @@ rule sv_annotation_stranger:
         stranger annotate --vcf {input.vcf} --output {output.annotated}
         """
 
+
 #####################################################################
 # needLR — population-AF filter ONLY (ONT-native 1KGP-LRSC cohort). #
-# Its OMIM/HPO/GenCC gene columns are NOT used downstream           #
 #####################################################################
 
 rule needlr_annotation:
@@ -256,40 +280,86 @@ rule needlr_annotation:
         """
         needLR annotate -O {params.outdir} -T {THREADS} {params.backend_flag} \
             --all {input.vcf}
+
         cp {params.outdir}/*/*_RESULTS.tsv {output.tsv}
         cp {params.outdir}/*/*_RESULTS.vcf.gz {output.vcf}
         """
 
+
 ##########################################################################
-# AnnotSV — single primary clinical/gene annotation + panel filter step  #
-# (gene overlap, regulatory context, ClinVar-SV, gnomAD-SV, OMIM morbid  #
-# gene flag, ACMG-SV ranking, candidate-gene-panel filtering)            #
+# AnnotSV — full annotation is the source of truth; panel-only is a view #
 ##########################################################################
+
+rule annotsv_install_annotations:
+    output:
+        marker = ANNOTSV_ANNOTATIONS_DIR + "/.installed"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        mkdir -p {ANNOTSV_ANNOTATIONS_DIR}
+        cd {ANNOTSV_ANNOTATIONS_DIR}
+        INSTALL_annotations.sh
+        touch {output.marker}
+        """
+
 
 rule annotsv_annotation:
     input:
-        vcf = rules.needlr_annotation.output.vcf   # AF-filtered upstream of clinical annotation
+        vcf = rules.needlr_annotation.output.vcf,
+        annotations = rules.annotsv_install_annotations.output.marker
     output:
         tsv = PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv"
     params:
-        outdir = PATH + "{sample}/sv/annotsv"
+        outdir = PATH + "{sample}/sv/annotsv",
+        hpo_flag = lambda wc: f"-hpo {HPO_TERMS}" if HPO_TERMS else ""
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
         """
         AnnotSV -SVinputFile {input.vcf} \
+            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
             -outputDir {params.outdir} \
             -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
             -genomeBuild GRCh38 \
             -candidateGenesFile {GENE_LIST} \
-            -candidateGenesFiltering 0
+            -candidateGenesFiltering 0 \
+            {params.hpo_flag}
         """
 
+
+rule annotsv_annotation_panel_only:
+    input:
+        tsv = rules.annotsv_annotation.output.tsv
+    output:
+        tsv = PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv"
+    params:
+        genes = GENE_LIST
+    shell:
+        """
+        awk -F'\\t' '
+        NR==1 {{
+            print
+            next
+        }}
+        {{
+            keep=0
+            for (i=1; i<=NF; i++) {{
+                if ($i != "" && $i ~ /(^|;|,)[[:space:]]*([^;,[:space:]]+)($|;|,)/) {{
+                    # Gene matching is handled below by the explicit grep fallback.
+                }}
+            }}
+            print $0
+        }}' {input.tsv} > {output.tsv}.tmp
+
+        head -n 1 {input.tsv} > {output.tsv}
+        grep -Fwf {params.genes} {input.tsv} >> {output.tsv} || true
+        rm -f {output.tsv}.tmp
+        """
+
+
 ##################################################################
-# VEP — transcript-level consequence detail on the AnnotSV-      #
-# prioritized set (which exon/intron is disrupted, frameshift    #
-# likelihood, canonical-transcript hit). Complements AnnotSV      #
-# rather than duplicating it.                                    #
+# VEP — full transcript-level annotation + panel-only derived view
 ##################################################################
 
 rule vep_sv_annotation:
@@ -308,8 +378,22 @@ rule vep_sv_annotation:
             --max_sv_size 250000000 --batch_size 100 --fork {THREADS}
         """
 
+
+rule vep_sv_annotation_panel_only:
+    input:
+        txt = rules.vep_sv_annotation.output.txt,
+        genes = GENE_LIST
+    output:
+        txt = PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+    shell:
+        """
+        grep '^#' {input.txt} > {output.txt} || true
+        grep -Fwf {input.genes} {input.txt} >> {output.txt} || true
+        """
+
+
 ##################################################################
-# Methylation                                                    #
+# Methylation
 ##################################################################
 
 rule modkit_extract:
@@ -325,12 +409,12 @@ rule modkit_extract:
         {MODKITENV} extract calls -t {THREADS} --reference {input.ref} --cpg --region {CPG} {input.bam} {output.tsv}
         """
 
+
 ########################################################################
-# SV-aware joint SNP+SV phasing (longphase)                            #
+# SV-aware joint SNP+SV phasing (LongPhase)
 ########################################################################
 
 rule longphase_phasing:
-    # SV-aware joint SNP+SV phasing.
     input:
         vcf = rules.clair3_snp_calling.output.vcf,
         sv_vcf = rules.sniffles2_sv.output.vcf,
@@ -346,11 +430,14 @@ rule longphase_phasing:
         """
         longphase phase -s {input.vcf} --sv-file {input.sv_vcf} \
             -b {input.bam} -r {input.ref} -t {THREADS} -o {params.prefix}
+
         bgzip -f {params.prefix}.vcf
         tabix -p vcf {output.vcf}
         """
+
+
 ########################################################################
-#  confirmatory MEI calling (TLDR)                                     #
+# Confirmatory MEI calling (TLDR)
 ########################################################################
 
 rule tldr_mei_confirmation:
@@ -367,5 +454,6 @@ rule tldr_mei_confirmation:
         """
         tldr -b {input.bam} -r {input.ref} -e {TLDR_ELTS} \
             -p {THREADS} --outdir {params.outdir}
+
         cp {params.outdir}/*.table.txt {output.table}
         """
