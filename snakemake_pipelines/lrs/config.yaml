@@ -17,7 +17,7 @@ modkitenv: "/tools/modkit/modkit"
 clair3env: "/tools/clair3/models/ont" # Clair3 ONT model directory (confirm it matches your basecaller model) 
 
 # required by sniffles2_sv (--tandem-repeats)
-vntr_bed: "/reference/human_hs37d5.trf.bed"   # point this at your actual reference-wide VNTR bed
+vntr_bed: "/reference/human_GRCh38_no_alt_analysis_set.trf.bed"   # point this at your actual reference-wide VNTR bed
 
 # required by vep_sv_annotation
 vep_cache_dir: "/refs/vep_cache/"      # point this at your local VEP offline cache
