@@ -15,12 +15,12 @@ exclude_bed: "/reference/delly_hg38_exclude.bed"
 
 expansionhunter_catalog: "/reference/variant_catalog_hg38_repeats.json"
 
-melt_dir: "/tools/MELTv2.2.2" #boh
-melt_transposons:
-  - "/tools/MELTv2.2.2/me_refs/Hg38/ALU_MELT.zip"
-  - "/tools/MELTv2.2.2/me_refs/Hg38/LINE1_MELT.zip"
-  - "/tools/MELTv2.2.2/me_refs/Hg38/SVA_MELT.zip"
-  - "/tools/MELTv2.2.2/me_refs/Hg38/HERVK_MELT.zip"
+# --- MELT: Mobile Element Insertions ---
+melt_dir: "/Volumes/Samsung_T5/Reference/MELT/MELTv2.2.2"
+
+melt_transposons: "/Volumes/Samsung_T5/Reference/MELT/MELTv2.2.2/me_refs/Hg38/mei_list.txt"
+
+melt_genes_bed: "/Volumes/Samsung_T5/Reference/MELT/MELTv2.2.2/add_bed_files/Hg38/Hg38.genes.bed"
 
 vep_cache_dir: "/refs/vep_cache"
 vep_assembly: "GRCh38"
