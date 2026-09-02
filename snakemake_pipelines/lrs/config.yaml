@@ -9,7 +9,7 @@ ref: "/DATA/Reference/hg38.fa"
 threads: 16
 
 bed: "PANEL_OA/optic_neuropathy_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
-candidate_genes_list: "/PANEL_OA/optic_neuropathy_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
+candidate_genes_list: "PANEL_OA/optic_neuropathy_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
 cpg: "chr1:1-100000"                                            # region(s) for modkit CpG extraction - adjust as needed
 
 condaenv: "envs/"
