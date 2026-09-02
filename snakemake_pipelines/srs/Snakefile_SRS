@@ -5,44 +5,84 @@ BAMS       = config["samples"]
 PATH       = config["path"]
 REF        = config["ref"]
 THREADS    = config["threads"]
-BED        = config["bed"]                     # panel/target regions (used for DeepVariant --regions restriction)
-GENE_LIST  = config["candidate_genes_list"]    # plain gene-symbol list, same role as the LRS panel gene list
-EXCLUDE    = config["exclude_bed"]              # Delly exclude regions (centromeres, telomeres, segdups)
+BED        = config["bed"]                     # panel/target regions (DeepVariant only)
+GENE_LIST  = config["candidate_genes_list"]    # optic-neuropathy panel, one symbol per line
+EXCLUDE    = config["exclude_bed"]
 EH_CATALOG = config["expansionhunter_catalog"]
-MELT_DIR          = config["melt_dir"]
-MELT_TRANSPOSONS  = config["melt_transposons"]
-MELT_GENES_BED    = config["melt_genes_bed"]
-CONDAENV   = config["condaenv"]
 
-# --- VEP (transcript-level consequence detail, parity with the LRS pipeline) ---
+# --- MELT: Mobile Element Insertions ---
+melt_dir = config["melt_dir"]
+MELT_DIR = melt_dir
+MELT_TRANSPOSONS = config["melt_transposons"]
+MELT_GENES_BED = config["melt_genes_bed"]
+
+# --- VEP ---
 VEP_CACHE_DIR = config["vep_cache_dir"]
-VEP_ASSEMBLY  = config.get("vep_assembly", "GRCh38")
+VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 
-# --- AnnotSV (optional HPO-term phenotype matching) ---
-HPO_TERMS = config.get("hpo_terms", None)
-# downloaded once into this directory and reused by
-# every AnnotSV call via -annotationsDir (see annotsv_install_annotations
-# and annotsv_annotation below)
+# --- AnnotSV ---
 ANNOTSV_ANNOTATIONS_DIR = config.get(
     "annotsv_annotations_dir",
     PATH + "reference/AnnotSV_annotations"
 )
 
+# Optional: only used if you intentionally provide patient HPO terms.
+# This is NOT required for genome-wide discovery.
+HPO_TERMS = config.get("hpo_terms", None)
+ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
+
+# --- Genome-wide human phenotype discovery ---
+MONARCH_BASE_URL = config.get(
+    "monarch_base_url",
+    "https://api-v3.monarchinitiative.org/v3/api"
+)
+DISCOVERY_HPO_TERMS = config.get(
+    "discovery_hpo_terms",
+    [
+        "HP:0000648",  # Optic atrophy
+        "HP:0007663",  # Reduced visual acuity
+        "HP:0000543",  # Optic disc pallor
+        "HP:0000649",  # Abnormality of visual evoked potentials
+    ]
+)
+DISCOVERY_HPO_FILE = config.get(
+    "discovery_hpo_file",
+    "reference/optic_neuropathy_hpo_terms.tsv"
+)
+
 # --- DeepVariant ---
-DEEPVARIANT_VERSION   = config.get("deepvariant_version", "1.6.1")
+DEEPVARIANT_VERSION = config.get("deepvariant_version", "1.6.1")
 DEEPVARIANT_USE_CONDA = config.get("deepvariant_use_conda", False)
+
+CONDAENV = config["condaenv"]
 
 
 rule all:
     input:
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
+
+        # Genome-wide SV discovery
         expand(PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
+
+        # Genome-wide AnnotSV
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+
+        # Panel-focused AnnotSV
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
+
+        # Genome-wide VEP + panel view
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
+
+        # Genome-wide non-panel gene discovery
+        expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
+
+        # Other existing analyses
         expand(PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
@@ -50,39 +90,42 @@ rule all:
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES)
 
 
-#######
-# QC  #
-#######
+#####################################
+# QC
+#####################################
 
 rule mosdepth_coverage:
     input:
-        bam = lambda wc: BAMS[wc.sample]
+        bam=lambda wc: BAMS[wc.sample]
     output:
         PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt"
     conda:
         CONDAENV + "mosdepth.yaml"
     shell:
         """
+        mkdir -p {PATH}/{wildcards.sample}/coverage
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input.bam}
         """
 
 
 #####################################
-# SV CALLING - Manta + Delly        #
+# SV CALLING - Manta + Delly
+# IMPORTANT: no panel BED is supplied here.
 #####################################
 
 rule manta_sv:
     input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
     output:
-        vcf = PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz"
+        vcf=PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz"
     params:
-        rundir = PATH + "{sample}/sv/manta/rundir"
+        rundir=PATH + "{sample}/sv/manta/rundir"
     conda:
         CONDAENV + "manta.yaml"
     shell:
         """
+        mkdir -p {PATH}/{wildcards.sample}/sv/manta
         configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir {params.rundir}
         {params.rundir}/runWorkflow.py -m local -j {THREADS}
         cp {params.rundir}/results/variants/diploidSV.vcf.gz {output.vcf}
@@ -92,38 +135,41 @@ rule manta_sv:
 
 rule delly_sv:
     input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF,
-        excl = EXCLUDE
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF,
+        excl=EXCLUDE
     output:
-        vcf = PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz"
+        vcf=PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz"
     params:
-        bcf = PATH + "{sample}/sv/delly/{sample}_delly.bcf"
+        bcf=PATH + "{sample}/sv/delly/{sample}_delly.bcf"
     conda:
         CONDAENV + "delly.yaml"
     shell:
         """
+        mkdir -p {PATH}/{wildcards.sample}/sv/delly
         delly call -x {input.excl} -g {input.ref} -o {params.bcf} {input.bam}
         bcftools view {params.bcf} -O z -o {output.vcf}
         tabix -p vcf {output.vcf}
         """
 
 
-#############################
-# WITHIN-PLATFORM SV MERGE  #
-#############################
+#####################################
+# WITHIN-PLATFORM SV MERGE
+#####################################
 
 rule survivor_merge:
     input:
-        manta = rules.manta_sv.output.vcf,
-        delly = rules.delly_sv.output.vcf
+        manta=rules.manta_sv.output.vcf,
+        delly=rules.delly_sv.output.vcf
     output:
-        list_file = PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
-        vcf = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf"
+        list_file=PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
+        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf"
     conda:
         CONDAENV + "survivor.yaml"
     shell:
         """
+        mkdir -p {PATH}/{wildcards.sample}/sv/merged
+
         zcat {input.manta} > {PATH}/{wildcards.sample}/sv/merged/manta.vcf
         zcat {input.delly} > {PATH}/{wildcards.sample}/sv/merged/delly.vcf
 
@@ -136,13 +182,13 @@ rule survivor_merge:
         """
 
 
-##########################################################################
-# AnnotSV                                                                #
-##########################################################################
+#####################################
+# AnnotSV
+#####################################
 
 rule annotsv_install_annotations:
     output:
-        marker = ANNOTSV_ANNOTATIONS_DIR + "/.installed"
+        marker=ANNOTSV_ANNOTATIONS_DIR + "/.installed"
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
@@ -154,19 +200,23 @@ rule annotsv_install_annotations:
         """
 
 
+# Full genome-wide annotation.
+# candidateGenesFiltering 0 means candidate genes do not restrict annotation.
 rule annotsv_annotation:
     input:
-        vcf = rules.survivor_merge.output.vcf,
-        annotations = rules.annotsv_install_annotations.output.marker
+        vcf=rules.survivor_merge.output.vcf,
+        annotations=rules.annotsv_install_annotations.output.marker
     output:
-        tsv = PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv"
+        tsv=PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv"
     params:
-        outdir = PATH + "{sample}/sv/merged",
-        hpo_flag = lambda wc: f"-hpo {HPO_TERMS}" if HPO_TERMS else ""
+        outdir=PATH + "{sample}/sv/merged",
+        hpo_flag=lambda wc: f"-hpo {HPO_TERMS}" if HPO_TERMS else ""
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
         """
+        mkdir -p {params.outdir}
+
         AnnotSV -SVinputFile {input.vcf} \
             -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
             -outputDir {params.outdir} \
@@ -174,40 +224,147 @@ rule annotsv_annotation:
             -genomeBuild GRCh38 \
             -candidateGenesFile {GENE_LIST} \
             -candidateGenesFiltering 0 \
+            -benignAF {ANNOTSV_BENIGN_AF} \
             {params.hpo_flag}
         """
 
 
-##################################################################
-# AnnotSV - optic-neuropathy panel-only view                     #
-##################################################################
-
+# Explicit panel-focused AnnotSV run.
+# This uses the same genome-wide SV VCF but filters annotation to the panel.
 rule annotsv_annotation_panel_only:
     input:
-        tsv = rules.annotsv_annotation.output.tsv,
-        genes = GENE_LIST
+        vcf=rules.survivor_merge.output.vcf,
+        annotations=rules.annotsv_install_annotations.output.marker,
+        genes=GENE_LIST
     output:
-        tsv = PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.panel_only.tsv"
+        tsv=PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.panel_only.tsv"
+    params:
+        outdir=PATH + "{sample}/sv/merged"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
-        head -n 1 {input.tsv} > {output.tsv}
-        grep -Fwf {input.genes} {input.tsv} | grep -v '^#' >> {output.tsv} || true
+        mkdir -p {params.outdir}
+
+        AnnotSV -SVinputFile {input.vcf} \
+            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
+            -outputDir {params.outdir} \
+            -outputFile {wildcards.sample}_merged_SV.annotsv.panel_only.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {input.genes} \
+            -candidateGenesFiltering 1 \
+            -benignAF {ANNOTSV_BENIGN_AF}
         """
 
 
-##################################################################
-# VEP                                                             #
-##################################################################
+#####################################
+# Extract genes from genome-wide AnnotSV
+#####################################
+
+rule extract_sv_genes:
+    input:
+        annotsv=rules.annotsv_annotation.output.tsv
+    output:
+        genes=PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        mkdir -p {PATH}/{wildcards.sample}/gene_discovery
+
+        python scripts/extract_annotsv_genes.py \
+            --annotsv {input.annotsv} \
+            --output {output.genes}
+        """
+
+
+rule extract_nonpanel_genes:
+    input:
+        genes=rules.extract_sv_genes.output.genes,
+        panel=GENE_LIST
+    output:
+        genes=PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python scripts/extract_nonpanel_genes.py \
+            --genes {input.genes} \
+            --panel {input.panel} \
+            --output {output.genes}
+        """
+
+
+#####################################
+# Human gene -> HPO phenotype layer
+#
+# Uses Monarch KG human gene/phenotype associations.
+# No patient HPO list is required.
+#
+# The script deliberately queries human HGNC gene entities and does
+# not traverse ortholog/model-organism associations.
+#####################################
+
+rule human_gene_phenotypes:
+    input:
+        genes=rules.extract_nonpanel_genes.output.genes,
+        hpo=DISCOVERY_HPO_FILE
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv"
+    params:
+        api=MONARCH_BASE_URL
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python scripts/monarch_human_gene_phenotypes.py \
+            --genes {input.genes} \
+            --hpo-anchors {input.hpo} \
+            --output {output.tsv} \
+            --api-base {params.api}
+        """
+
+
+#####################################
+# Integrated genome-wide candidate ranking
+#####################################
+
+rule rank_genomewide_candidates:
+    input:
+        annotsv=rules.annotsv_annotation.output.tsv,
+        genes=rules.extract_nonpanel_genes.output.genes,
+        phenotypes=rules.human_gene_phenotypes.output.tsv,
+        panel=GENE_LIST
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python scripts/rank_sv_gene_candidates.py \
+            --annotsv {input.annotsv} \
+            --genes {input.genes} \
+            --phenotypes {input.phenotypes} \
+            --panel {input.panel} \
+            --output {output.tsv}
+        """
+
+
+#####################################
+# VEP
+#####################################
 
 rule vep_sv_annotation:
     input:
-        vcf = rules.survivor_merge.output.vcf
+        vcf=rules.survivor_merge.output.vcf
     output:
-        txt = PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
+        txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
     conda:
         CONDAENV + "vep.yaml"
     shell:
         """
+        mkdir -p {PATH}/{wildcards.sample}/sv/vep
+
         vep --input_file {input.vcf} --format vcf \
             --output_file {output.txt} \
             --cache --offline --dir_cache {VEP_CACHE_DIR} --assembly {VEP_ASSEMBLY} \
@@ -216,16 +373,14 @@ rule vep_sv_annotation:
         """
 
 
-##################################################################
-# VEP - optic-neuropathy panel-only view                           #
-##################################################################
-
 rule vep_sv_annotation_panel_only:
     input:
-        txt = rules.vep_sv_annotation.output.txt,
-        genes = GENE_LIST
+        txt=rules.vep_sv_annotation.output.txt,
+        genes=GENE_LIST
     output:
-        txt = PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+        txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+    conda:
+        CONDAENV + "vep.yaml"
     shell:
         """
         grep '^#' {input.txt} > {output.txt} || true
@@ -233,34 +388,20 @@ rule vep_sv_annotation_panel_only:
         """
 
 
-######################
-# MEI (MELT)         #
-######################
-#######################
-# MEI (MELT)         #
-######################
-# MELT detects non-reference mobile element insertions (MEIs)
-# such as Alu, LINE-1, SVA and HERV-K in Illumina WGS data.
-#
-# MELT v2.2.2 provides the GRCh38 ME reference ZIP files
-# inside me_refs/Hg38/.
-#
-# melt_transposons points to mei_list.txt, which contains
-# one full path to each *_MELT.zip reference.
-#
-# melt_genes_bed is the Hg38 gene annotation BED supplied
-# with MELT and must correspond to the reference assembly.
+#####################################
+# MEI (MELT)
+#####################################
 
 rule melt_mei:
     input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF,
-        transposons = MELT_TRANSPOSONS,
-        genes = MELT_GENES_BED
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF,
+        transposons=MELT_TRANSPOSONS,
+        genes=MELT_GENES_BED
     output:
-        vcf = PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf"
+        vcf=PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf"
     params:
-        outdir = PATH + "{sample}/mei/melt"
+        outdir=PATH + "{sample}/mei/melt"
     conda:
         CONDAENV + "melt.yaml"
     shell:
@@ -281,48 +422,51 @@ rule melt_mei:
         """
 
 
-##############################
-# REPEAT EXPANSION (EH)      #
-##############################
+#####################################
+# REPEAT EXPANSION (EH)
+#####################################
 
 rule expansionhunter_str:
     input:
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF,
-        catalog = EH_CATALOG
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF,
+        catalog=EH_CATALOG
     output:
-        vcf = PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf"
+        vcf=PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf"
     params:
-        prefix = PATH + "{sample}/str/expansionhunter/{sample}_EH"
+        prefix=PATH + "{sample}/str/expansionhunter/{sample}_EH"
     conda:
         CONDAENV + "expansionhunter.yaml"
     shell:
         """
+        mkdir -p {PATH}/{wildcards.sample}/str/expansionhunter
+
         ExpansionHunter --reads {input.bam} --reference {input.ref} \
             --variant-catalog {input.catalog} --output-prefix {params.prefix} \
             --threads {THREADS}
         """
 
 
-##################################
-# SMALL VARIANTS (DeepVariant)   #
-##################################
+#####################################
+# SMALL VARIANTS (DeepVariant)
+#####################################
 
 if DEEPVARIANT_USE_CONDA:
 
     rule deepvariant_snp:
-        # Opt-in fallback - see envs/deepvariant.yaml caveats before using this.
         input:
-            bam = lambda wc: BAMS[wc.sample],
-            ref = REF
+            bam=lambda wc: BAMS[wc.sample],
+            ref=REF
         output:
-            vcf = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
+            vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
         params:
-            outdir = PATH + "{sample}/snp_deepvariant"
+            outdir=PATH + "{sample}/snp_deepvariant"
         conda:
             CONDAENV + "deepvariant.yaml"
         shell:
             """
+            mkdir -p {params.outdir}
+
             run_deepvariant --model_type=WGS \
                 --ref={input.ref} --reads={input.bam} \
                 --output_vcf={output.vcf} \
@@ -334,21 +478,19 @@ if DEEPVARIANT_USE_CONDA:
 else:
 
     rule deepvariant_snp:
-        # Default path: Google's officially supported Docker image, run
-        # via Snakemake's container: directive (needs --use-singularity
-        # or --use-apptainer at runtime; Snakemake pulls/converts the
-        # image automatically).
         input:
-            bam = lambda wc: BAMS[wc.sample],
-            ref = REF
+            bam=lambda wc: BAMS[wc.sample],
+            ref=REF
         output:
-            vcf = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
+            vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
         params:
-            outdir = PATH + "{sample}/snp_deepvariant"
+            outdir=PATH + "{sample}/snp_deepvariant"
         container:
             f"docker://google/deepvariant:{DEEPVARIANT_VERSION}"
         shell:
             """
+            mkdir -p {params.outdir}
+
             /opt/deepvariant/bin/run_deepvariant --model_type=WGS \
                 --ref={input.ref} --reads={input.bam} \
                 --output_vcf={output.vcf} \
@@ -358,22 +500,24 @@ else:
             """
 
 
-######################
-# PHASING (WhatsHap)  #
-######################
+#####################################
+# PHASING (WhatsHap)
+#####################################
 
 rule whatshap_phasing:
     input:
-        vcf = rules.deepvariant_snp.output.vcf,
-        bam = lambda wc: BAMS[wc.sample],
-        ref = REF
+        vcf=rules.deepvariant_snp.output.vcf,
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
     output:
-        phased = PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
-        haplotag = PATH + "{sample}/phasing/{sample}.phased.bam"
+        phased=PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
+        haplotag=PATH + "{sample}/phasing/{sample}.phased.bam"
     conda:
         CONDAENV + "whatshap.yaml"
     shell:
         """
+        mkdir -p {PATH}/{wildcards.sample}/phasing
+
         whatshap phase --reference {input.ref} -o {output.phased} \
             {input.vcf} {input.bam} --ignore-read-groups
 
