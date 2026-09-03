@@ -6,6 +6,8 @@ PATH       = config["path"]
 REF        = config["ref"]
 THREADS    = config["threads"]
 BED        = config["bed"]                    # panel regions (Clair3 target + optional panel-only views)
+STRAGLR_BED = config.get("straglr_bed", None)
+STRAGLR_REGIONS = f"--regions {STRAGLR_BED}" if STRAGLR_BED else "" # for straglr
 GENE_LIST  = config["candidate_genes_list"]   # optic-neuropathy / mito-disease panel gene symbols
 CPG        = config["cpg"]
 CONDAENV   = config["condaenv"]
@@ -58,7 +60,10 @@ rule all:
         # insertion / MEI mechanism classification
         expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
 
-        # repeat expansion
+       # repeat expansion
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv", sample=SAMPLES),
 
         # population-AF filtering
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
@@ -238,13 +243,15 @@ rule repeatmasker_classify:
 ##################################################################
 # Repeat expansion classification and annotation
 ##################################################################
+# Verify if any tandem repeats exists i the locus of genes
+#
 
 rule straglr:
     input:
         bam = lambda wc: BAMS[wc.sample],
         ref = REF
     output:
-        vvf = PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",
+        vcf = PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",
         bed = PATH + "{sample}/sv/straglr/{sample}_straglr.bed",
         tsv = PATH + "{sample}/sv/straglr/{sample}_straglr.tsv"
     params:
@@ -253,12 +260,20 @@ rule straglr:
         CONDAENV + "straglr.yaml"
     shell:
         """
-        {STRAGLR_SCRIPT} {input.bam} {input.ref} {params.prefix} \
-            --min_str_len 2 --min_support 1 --min_ins_size 1 --include_partials \
-            --nprocs {THREADS} --max_str_len 100000 --use_unpaired_clips \
-            --max_num_clusters 10 --min_cluster_d 1 --regions {BED}
-        """
+        mkdir -p {PATH}/{wildcards.sample}/sv/straglr
 
+        {STRAGLR_SCRIPT} {input.bam} {input.ref} {params.prefix} \
+            --min_str_len 2 \
+            --min_support 1 \
+            --min_ins_size 1 \
+            --include_partials \
+            --nprocs {THREADS} \
+            --max_str_len 100000 \
+            --use_unpaired_clips \
+            --max_num_clusters 10 \
+            --min_cluster_d 1 \
+            {STRAGLR_REGIONS}
+        """
 
 #####################################################################
 # needLR — ONT-native population/reference SV annotation and filtering. #
