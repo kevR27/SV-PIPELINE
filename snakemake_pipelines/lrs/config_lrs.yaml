@@ -9,21 +9,21 @@ path: "/data/lrs_results/"
 ref: "/DATA/Reference/hg38.fa"
 threads: 16
 
-bed: "PANEL_OA/optic_neuropathy_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
+bed: "../../PANEL_OA/optic_neuropathy_panel.bed"                  # panel regions for Clair3/cuteSV/straglr targeting
 
 # Straglr: null = genome-wide tandem-repeat expansion discovery
 straglr_bed: null
-gene_bed: "reference/gencode.genes.hg38.sorted.bed" #hg38 bed for annoptation
+gene_bed: "../../reference/gencode.genes.hg38.sorted.bed" #hg38 bed for annoptation
 
-candidate_genes_list: "PANEL_OA/optic_neuropathy_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
+candidate_genes_list: "../../PANEL_OA/optic_neuropathy_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
 cpg: null                                            # region(s) for modkit CpG extraction - adjust as needed
 
-condaenv: "envs/"
+condaenv: "../../envs/"
 modkitenv: "/tools/modkit/modkit"     
 clair3env: "/tools/clair3/models/ont" # Clair3 ONT model directory (confirm it matches your basecaller model) 
 
 # required by sniffles2_sv (--tandem-repeats)
-vntr_bed: "reference/human_GRCh38_no_alt_analysis_set.trf.bed"   # point this at your actual reference-wide VNTR bed
+vntr_bed: "../../reference/human_GRCh38_no_alt_analysis_set.trf.bed"   # point this at your actual reference-wide VNTR bed
 
 # required by vep_sv_annotation
 vep_cache_dir: "/refs/vep_cache/"      # point this at your local VEP offline cache
@@ -34,9 +34,9 @@ vep_assembly: "GRCh38"                 # optional - already the default if omitt
 needlr_backend_files: "/refs/needlr/backend/"   # path of  needLR cohort backend (e.g. the 1KGP-LRSC ONT bundle), must be included
 
 # TLDR 
-tldr_elements: "reference/teref.ont.human.fa"  # ALU/LINE1/SVA reference for TLDR
+tldr_elements: "../../reference/teref.ont.human.fa"  # ALU/LINE1/SVA reference for TLDR
 
 monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
-discovery_hpo_file: "reference/optic_neuropathy_hpo_terms.tsv"
+discovery_hpo_file: "../../reference/optic_neuropathy_hpo_terms.tsv"
 annotsv_benign_af: 0.01
 sniffles_mosaic: false
