@@ -42,10 +42,6 @@ DISCOVERY_HPO_FILE = config.get(
     "reference/optic_neuropathy_hpo_terms.tsv"
 )
 
-# --- DeepVariant ---
-DEEPVARIANT_VERSION = config.get("deepvariant_version", "1.6.1")
-DEEPVARIANT_USE_CONDA = config.get("deepvariant_use_conda", False)
-
 # get the .py file from 'script'folder
 REPO = "../../"
 SCRIPTS = REPO + "scripts"
@@ -186,11 +182,12 @@ rule survivor_high_confidence:
     output:
         vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.SUPP2.vcf"
     conda:
-        CONDAENV + "annotsv.yaml"
+        CONDAENV + "survivor.yaml"
     shell:
         """
         bcftools view -i 'INFO/SUPP>=2' -Ov {input.vcf} -o {output.vcf}
         """
+
 #####################################
 # AnnotSV
 #####################################
@@ -380,7 +377,7 @@ rule vep_sv_annotation:
         """
 
 
-rule vep_sv_annotation_panel_only:
+rule vep_sv_annotation_panel_only: #safer approach 
     input:
         txt=rules.vep_sv_annotation.output.txt,
         genes=GENE_LIST
@@ -390,8 +387,10 @@ rule vep_sv_annotation_panel_only:
         CONDAENV + "vep.yaml"
     shell:
         """
-        grep '^#' {input.txt} > {output.txt} || true
-        grep -Fwf {input.genes} {input.txt} >> {output.txt} || true
+        python {SCRIPTS}/filter_vep_panel.py \
+            --vep {input.txt} \
+            --genes {input.genes} \
+            --output {output.txt}
         """
 
 
@@ -458,54 +457,32 @@ rule expansionhunter_str:
 # SMALL VARIANTS (DeepVariant)
 #####################################
 
-if DEEPVARIANT_USE_CONDA:
+rule deepvariant_snp:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz",
+        tbi=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi"
+    params:
+        outdir=PATH + "{sample}/snp_deepvariant"
+    threads:
+        THREADS
+    conda:
+        CONDAENV + "deepvariant.yaml"
+    shell:
+        """
+        mkdir -p {params.outdir}
 
-    rule deepvariant_snp:
-        input:
-            bam=lambda wc: BAMS[wc.sample],
-            ref=REF
-        output:
-            vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
-        params:
-            outdir=PATH + "{sample}/snp_deepvariant"
-        conda:
-            CONDAENV + "deepvariant.yaml"
-        shell:
-            """
-            mkdir -p {params.outdir}
-
-            run_deepvariant --model_type=WGS \
-                --ref={input.ref} --reads={input.bam} \
-                --output_vcf={output.vcf} \
-                --num_shards={THREADS} \
-                --intermediate_results_dir={params.outdir}/intermediate \
-                --regions={PANEL_BED}
-            """
-
-else:
-
-    rule deepvariant_snp:
-        input:
-            bam=lambda wc: BAMS[wc.sample],
-            ref=REF
-        output:
-            vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
-        params:
-            outdir=PATH + "{sample}/snp_deepvariant"
-        container:
-            f"docker://google/deepvariant:{DEEPVARIANT_VERSION}"
-        shell:
-            """
-            mkdir -p {params.outdir}
-
-            /opt/deepvariant/bin/run_deepvariant --model_type=WGS \
-                --ref={input.ref} --reads={input.bam} \
-                --output_vcf={output.vcf} \
-                --num_shards={THREADS} \
-                --intermediate_results_dir={params.outdir}/intermediate \
-                --regions={PANEL_BED}
-            """
-
+        run_deepvariant \
+            --model_type=WGS \
+            --ref={input.ref} \
+            --reads={input.bam} \
+            --output_vcf={output.vcf} \
+            --num_shards={threads} \
+            --intermediate_results_dir={params.outdir}/intermediate \
+            --regions={PANEL_BED}
+        """
 
 #####################################
 # PHASING (WhatsHap)
@@ -514,6 +491,7 @@ else:
 rule whatshap_phasing:
     input:
         vcf=rules.deepvariant_snp.output.vcf,
+        vcf_tbi=rules.deepvariant_snp.output.tbi,
         bam=lambda wc: BAMS[wc.sample],
         ref=REF
     output:
