@@ -64,6 +64,7 @@ rule all:
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed", sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
 
         # population-AF filtering
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
@@ -245,7 +246,6 @@ rule repeatmasker_classify:
 ##################################################################
 # Verify if any tandem repeats exists i the locus of genes
 #
-
 rule straglr:
     input:
         bam = lambda wc: BAMS[wc.sample],
@@ -278,7 +278,8 @@ rule straglr:
 rule straglr_annotation:
     input:
         tsv = rules.straglr.output.tsv,
-        vcf = rules.straglr.output.vcf
+        bed = rules.straglr.output.bed,
+        genes = config["gene_bed"]
     output:
         tsv = PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv"
     conda:
@@ -287,7 +288,8 @@ rule straglr_annotation:
         """
         python scripts/annotate_straglr.py \
             --straglr-tsv {input.tsv} \
-            --straglr-vcf {input.vcf} \
+            --straglr-bed {input.bed} \
+            --gene-bed {input.genes} \
             --output {output.tsv}
         """
 
