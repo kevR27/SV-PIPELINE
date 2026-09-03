@@ -13,6 +13,7 @@ bed: "PANEL_OA/optic_neuropathy_panel.bed"                  # panel regions for 
 
 # Straglr: null = genome-wide tandem-repeat expansion discovery
 straglr_bed: null
+gene_bed: "reference/gencode.genes.hg38.sorted.bed" #hg38 bed for annoptation
 
 candidate_genes_list: "PANEL_OA/optic_neuropathy_genes.txt" # plain gene-symbol list (one per line) for AnnotSV
 cpg: null                                            # region(s) for modkit CpG extraction - adjust as needed
