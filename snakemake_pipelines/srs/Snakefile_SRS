@@ -182,6 +182,20 @@ rule survivor_merge:
 
 
 #####################################
+# High-confidence SV companion set
+#####################################
+rule survivor_high_confidence:
+    input:
+        vcf=rules.survivor_merge.output.vcf
+    output:
+        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.SUPP2.vcf"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        bcftools view -i 'INFO/SUPP>=2' -Ov {input.vcf} -o {output.vcf}
+        """
+#####################################
 # AnnotSV
 #####################################
 

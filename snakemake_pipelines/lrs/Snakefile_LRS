@@ -19,6 +19,15 @@ VNTR_BED   = config["vntr_bed"]               # reference-wide VNTR bed for Snif
 # --- needLR: ONT-native population-AF filtering only ---
 NEEDLR_BACKEND = config.get("needlr_backend_files", None)
 
+MONARCH_BASE_URL = config.get("monarch_base_url", "https://api-v3.monarchinitiative.org/v3/api")
+DISCOVERY_HPO_FILE = config.get("discovery_hpo_file", "reference/optic_neuropathy_hpo_terms.tsv")
+ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
+SNIFFLES_MOSAIC = config.get("sniffles_mosaic", False)
+SNIFFLES_MOSAIC_FLAG = "--mosaic" if SNIFFLES_MOSAIC else ""
+CPG_REGION = config.get("cpg", None)
+CPG_FLAG = f"--region {CPG_REGION}" if CPG_REGION else ""
+STRAGLR_SCRIPT = config.get("straglr_script", "straglr.py")
+
 # --- AnnotSV ---
 HPO_TERMS = config.get("hpo_terms", None)
 ANNOTSV_ANNOTATIONS_DIR = config.get(
@@ -50,7 +59,6 @@ rule all:
         expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
 
         # repeat expansion
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf", sample=SAMPLES),
 
         # population-AF filtering
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
@@ -58,6 +66,10 @@ rule all:
         # genome-wide clinical/gene annotation + panel-only derived view
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
 
         # genome-wide transcript annotation + panel-only derived view
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
@@ -148,7 +160,7 @@ rule sniffles2_sv:
     shell:
         """
         sniffles --input {input.bam} --vcf {output.vcf} --reference {input.ref} --threads {THREADS} \
-            --minsupport 3 --no-qc --mosaic --allow-overwrite --min-alignment-length 100 \
+            --minsupport 3 --no-qc {SNIFFLES_MOSAIC_FLAG} --allow-overwrite --min-alignment-length 100 \
             --output-rnames --tandem-repeats {VNTR_BED}
         """
 
@@ -241,28 +253,15 @@ rule straglr:
         CONDAENV + "straglr.yaml"
     shell:
         """
-        python /path/to/straglr/straglr.py {input.bam} {input.ref} {params.prefix} \
+        {STRAGLR_SCRIPT} {input.bam} {input.ref} {params.prefix} \
             --min_str_len 2 --min_support 1 --min_ins_size 1 --include_partials \
             --nprocs {THREADS} --max_str_len 100000 --use_unpaired_clips \
             --max_num_clusters 10 --min_cluster_d 1 --regions {BED}
         """
 
 
-rule sv_annotation_stranger:
-    input:
-        vcf = rules.straglr.output.vvf
-    output:
-        annotated = PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.vcf"
-    conda:
-        CONDAENV + "stranger.yaml"
-    shell:
-        """
-        stranger annotate --vcf {input.vcf} --output {output.annotated}
-        """
-
-
 #####################################################################
-# needLR — population-AF filter ONLY (ONT-native 1KGP-LRSC cohort). #
+# needLR — ONT-native population/reference SV annotation and filtering. #
 #####################################################################
 
 rule needlr_annotation:
@@ -281,8 +280,13 @@ rule needlr_annotation:
         needLR annotate -O {params.outdir} -T {THREADS} {params.backend_flag} \
             --all {input.vcf}
 
-        cp {params.outdir}/*/*_RESULTS.tsv {output.tsv}
-        cp {params.outdir}/*/*_RESULTS.vcf.gz {output.vcf}
+        results_tsv=$(find {params.outdir} -type f -name '*_RESULTS.tsv' -print -quit)
+        results_vcf=$(find {params.outdir} -type f -name '*_RESULTS.vcf.gz' -print -quit)
+        test -n "$results_tsv"
+        test -n "$results_vcf"
+        cp "$results_tsv" {output.tsv}
+        cp "$results_vcf" {output.vcf}
+        tabix -f -p vcf {output.vcf}
         """
 
 
@@ -324,40 +328,97 @@ rule annotsv_annotation:
             -genomeBuild GRCh38 \
             -candidateGenesFile {GENE_LIST} \
             -candidateGenesFiltering 0 \
+            -benignAF {ANNOTSV_BENIGN_AF} \
             {params.hpo_flag}
         """
 
 
 rule annotsv_annotation_panel_only:
     input:
-        tsv = rules.annotsv_annotation.output.tsv
+        vcf = rules.needlr_annotation.output.vcf,
+        annotations = rules.annotsv_install_annotations.output.marker,
+        genes = GENE_LIST
     output:
         tsv = PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv"
     params:
-        genes = GENE_LIST
+        outdir = PATH + "{sample}/sv/annotsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
-        awk -F'\\t' '
-        NR==1 {{
-            print
-            next
-        }}
-        {{
-            keep=0
-            for (i=1; i<=NF; i++) {{
-                if ($i != "" && $i ~ /(^|;|,)[[:space:]]*([^;,[:space:]]+)($|;|,)/) {{
-                    # Gene matching is handled below by the explicit grep fallback.
-                }}
-            }}
-            print $0
-        }}' {input.tsv} > {output.tsv}.tmp
-
-        head -n 1 {input.tsv} > {output.tsv}
-        grep -Fwf {params.genes} {input.tsv} >> {output.tsv} || true
-        rm -f {output.tsv}.tmp
+        mkdir -p {params.outdir}
+        AnnotSV -SVinputFile {input.vcf} \
+            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
+            -outputDir {params.outdir} \
+            -outputFile {wildcards.sample}_merged_SV.annotsv.panel_only.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {input.genes} \
+            -candidateGenesFiltering 1 \
+            -benignAF {ANNOTSV_BENIGN_AF}
+        """
+#####################################
+# Genome-wide human gene discovery
+#####################################
+rule extract_sv_genes:
+    input:
+        annotsv=rules.annotsv_annotation.output.tsv
+    output:
+        genes=PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        mkdir -p {PATH}/{wildcards.sample}/gene_discovery
+        python scripts/extract_annotsv_genes.py --annotsv {input.annotsv} --output {output.genes}
         """
 
+rule extract_nonpanel_genes:
+    input:
+        genes=rules.extract_sv_genes.output.genes,
+        panel=GENE_LIST
+    output:
+        genes=PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python scripts/extract_nonpanel_genes.py --genes {input.genes} --panel {input.panel} --output {output.genes}
+        """
 
+rule human_gene_phenotypes:
+    input:
+        genes=rules.extract_nonpanel_genes.output.genes,
+        hpo=DISCOVERY_HPO_FILE
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv"
+    params:
+        api=MONARCH_BASE_URL
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python scripts/monarch_human_gene_phenotypes.py \
+            --genes {input.genes} --hpo-anchors {input.hpo} \
+            --output {output.tsv} --api-base {params.api}
+        """
+
+rule rank_genomewide_candidates:
+    input:
+        annotsv=rules.annotsv_annotation.output.tsv,
+        genes=rules.extract_nonpanel_genes.output.genes,
+        phenotypes=rules.human_gene_phenotypes.output.tsv,
+        panel=GENE_LIST
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python scripts/rank_sv_gene_candidates.py \
+            --annotsv {input.annotsv} --genes {input.genes} \
+            --phenotypes {input.phenotypes} --panel {input.panel} \
+            --output {output.tsv}
+        """
 ##################################################################
 # VEP — full transcript-level annotation + panel-only derived view
 ##################################################################
@@ -406,7 +467,7 @@ rule modkit_extract:
         CONDAENV + "modkit.yaml"
     shell:
         """
-        {MODKITENV} extract calls -t {THREADS} --reference {input.ref} --cpg --region {CPG} {input.bam} {output.tsv}
+        {MODKITENV} extract calls -t {THREADS} --reference {input.ref} --cpg {CPG_FLAG} {input.bam} {output.tsv}
         """
 
 
@@ -417,7 +478,7 @@ rule modkit_extract:
 rule longphase_phasing:
     input:
         vcf = rules.clair3_snp_calling.output.vcf,
-        sv_vcf = rules.sniffles2_sv.output.vcf,
+        sv_vcf = rules.jasmine_merge.output.vcf,
         bam = lambda wc: BAMS[wc.sample],
         ref = REF
     output:
@@ -429,7 +490,7 @@ rule longphase_phasing:
     shell:
         """
         longphase phase -s {input.vcf} --sv-file {input.sv_vcf} \
-            -b {input.bam} -r {input.ref} -t {THREADS} -o {params.prefix}
+            -b {input.bam} -r {input.ref} -t {THREADS} -o {params.prefix} --ont
 
         bgzip -f {params.prefix}.vcf
         tabix -p vcf {output.vcf}
