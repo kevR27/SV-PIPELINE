@@ -5,7 +5,7 @@ BAMS       = config["samples"]
 PATH       = config["path"]
 REF        = config["ref"]
 THREADS    = config["threads"]
-BED        = config["bed"]                     # panel/target regions (DeepVariant only)
+PANEL_BED        = config["bed"]                     # panel/target regions (DeepVariant only)
 GENE_LIST  = config["candidate_genes_list"]    # optic-neuropathy panel, one symbol per line
 EXCLUDE    = config["exclude_bed"]
 EH_CATALOG = config["expansionhunter_catalog"]
@@ -36,15 +36,7 @@ MONARCH_BASE_URL = config.get(
     "monarch_base_url",
     "https://api-v3.monarchinitiative.org/v3/api"
 )
-DISCOVERY_HPO_TERMS = config.get(
-    "discovery_hpo_terms",
-    [
-        "HP:0000648",  # Optic atrophy
-        "HP:0007663",  # Reduced visual acuity
-        "HP:0000543",  # Optic disc pallor
-        "HP:0000649",  # Abnormality of visual evoked potentials
-    ]
-)
+
 DISCOVERY_HPO_FILE = config.get(
     "discovery_hpo_file",
     "reference/optic_neuropathy_hpo_terms.tsv"
@@ -106,7 +98,6 @@ rule mosdepth_coverage:
         mkdir -p {PATH}/{wildcards.sample}/coverage
         mosdepth -t {THREADS} {PATH}/{wildcards.sample}/coverage/{wildcards.sample} {input.bam}
         """
-
 
 #####################################
 # SV CALLING - Manta + Delly
@@ -212,9 +203,8 @@ rule annotsv_install_annotations:
         touch {output.marker}
         """
 
-
-# Full genome-wide annotation.
-# candidateGenesFiltering 0 means candidate genes do not restrict annotation.
+# Full genome-wide annotation
+# candidateGenesFiltering 0 means candidate genes do not restrict annotation
 rule annotsv_annotation:
     input:
         vcf=rules.survivor_merge.output.vcf,
@@ -242,7 +232,7 @@ rule annotsv_annotation:
         """
 
 
-# Explicit panel-focused AnnotSV run.
+# Explicit panel-focused AnnotSV run
 # This uses the same genome-wide SV VCF but filters annotation to the panel
 rule annotsv_annotation_panel_only:
     input:
@@ -289,7 +279,6 @@ rule extract_sv_genes:
             --annotsv {input.annotsv} \
             --output {output.genes}
         """
-
 
 rule extract_nonpanel_genes:
     input:
@@ -485,7 +474,7 @@ if DEEPVARIANT_USE_CONDA:
                 --output_vcf={output.vcf} \
                 --num_shards={THREADS} \
                 --intermediate_results_dir={params.outdir}/intermediate \
-                --regions={BED}
+                --regions={PANEL_BED}
             """
 
 else:
@@ -509,7 +498,7 @@ else:
                 --output_vcf={output.vcf} \
                 --num_shards={THREADS} \
                 --intermediate_results_dir={params.outdir}/intermediate \
-                --regions={BED}
+                --regions={PANEL_BED}
             """
 
 
