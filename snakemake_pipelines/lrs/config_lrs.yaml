@@ -1,7 +1,8 @@
-# PATH TO BE CHANGED 
+# USE CORRECT PATH FOR ANALYSIS 
 
 samples:
-  patient01: /data/lrs_bams/patient01.sort.bam #sample ID
+# sample name = insert correct sample ID 
+  patient01: /data/lrs_bams/patient01.sort.bam 
   patient02: /data/lrs_bams/patient02.sort.bam
 
 path: "/data/lrs_results/"
