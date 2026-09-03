@@ -9,11 +9,9 @@ The repository provides two complementary analysis workflows:
 
 Both workflows preserve sequencing-platform-specific variant discovery while converging on a common downstream clinical interpretation strategy based on **AnnotSV, gene extraction, human gene–phenotype associations, and candidate ranking**.
 
-Repository: https://github.com/kevR27/SV-PIPELINE
-
 ---
 
-## 1. Pipeline concept
+## 1. Concept
 
 The main design principle is:
 
