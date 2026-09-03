@@ -275,6 +275,22 @@ rule straglr:
             {STRAGLR_REGIONS}
         """
 
+rule straglr_annotation:
+    input:
+        tsv = rules.straglr.output.tsv,
+        vcf = rules.straglr.output.vcf
+    output:
+        tsv = PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv"
+    conda:
+        CONDAENV + "straglr.yaml"
+    shell:
+        """
+        python scripts/annotate_straglr.py \
+            --straglr-tsv {input.tsv} \
+            --straglr-vcf {input.vcf} \
+            --output {output.tsv}
+        """
+
 #####################################################################
 # needLR — ONT-native population/reference SV annotation and filtering. #
 #####################################################################
