@@ -51,7 +51,7 @@ The main design principle is:
         Platform-specific analyses
 ```
 
-The **genome-wide AnnotSV result is the source of truth for gene discovery**. The panel-only AnnotSV result is maintained as a separate clinical view.
+The **genome-wide AnnotSV result give us an overview of all genes that overlaps from structural variants discovery obtained through SV callers **; while the panel-only AnnotSV result is used as a separate clinical view that uses all known genes that are directly associated to Optic Neuropathies 
 
 ---
 
@@ -111,16 +111,13 @@ SV-PIPELINE/
 ├── README.md
 └── .gitattributes
 ```
-
-The repository currently exposes separate SRS and LRS workflow directories and the panel/reference/script structure shown above.
-
 ---
 
 # 3. SRS pipeline
 
 ## 3.1 Purpose
 
-The SRS workflow is designed for BAM files obtained from short-read sequencing.
+The SRS workflow is designed for BAM files obtained from short-read sequencing such as Illumina which uses pair end sequencing mode to obtained the whole genome sequence of patients 
 
 ### Main workflow
 
@@ -161,7 +158,7 @@ Sorted BAM
                    ranked candidates
 ```
 
-The current SRS Snakefile implements mosdepth, Manta, Delly, SURVIVOR, AnnotSV, VEP, MELT, ExpansionHunter, DeepVariant and WhatsHap.
+The current SRS Snakefile implements mosdepth for QC , Manta, + Delly for SV discovery , SURVIVOR, AnnotSV, VEP, MELT, ExpansionHunter, DeepVariant and WhatsHap.
 
 ## 3.2 SRS tools
 
@@ -197,6 +194,7 @@ A separate **SUPP>=2 high-confidence companion SV set** is also defined for revi
 ## 4.1 Purpose
 
 The LRS workflow is designed primarily for long-read sequencing data, particularly Oxford Nanopore BAM files.
+[INSERT PIPELINE OF BASECALLING FROM POD5 USING DORADO]
 
 ### Main workflow
 
@@ -450,7 +448,7 @@ The included HPO terms are **reference optic-neuropathy phenotype anchors**.
 
 Important:
 
-> The HPO layer represents gene-associated phenotype evidence. It is not a prediction of the individual patient's actual phenotype.
+> The HPO layer represents gene-associated phenotype evidence. It is not a prediction of the individual patient's actual phenotype,but from here, it will be possible to infer possible clinical diagnosis 
 
 ## Step 4 — Candidate ranking
 
