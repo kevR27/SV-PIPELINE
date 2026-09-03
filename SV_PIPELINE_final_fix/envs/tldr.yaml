@@ -1,0 +1,13 @@
+name: tldr
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - samtools
+  - minimap2
+  - mafft=7.480
+  - exonerate
+  - pip
+  - pip:
+      - git+https://github.com/adamewing/tldr.git
