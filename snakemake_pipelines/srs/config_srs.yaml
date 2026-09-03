@@ -4,25 +4,25 @@ samples:
   patient01: /data/srs_bams/patient01.sorted.bam
   patient02: /data/srs_bams/patient02.sorted.bam
 
-path: "/data/srs_results/"
-ref: "/refs/hg38/hg38.fa"
+path: "/DATA/srs_results/"
+ref: "/DATA/Reference/hg38.fa"
 threads: 16
 
-bed: "/PANEL_OA/optic_neuropathy_panel.bed"
-candidate_genes_list: "/PANEL_OA/optic_neuropathy_genes.txt"
+bed: "PANEL_OA/optic_neuropathy_panel.bed"
+candidate_genes_list: "PANEL_OA/optic_neuropathy_genes.txt"
 
-exclude_bed: "/reference/delly_hg38_exclude.bed"
+exclude_bed: "reference/delly_hg38_exclude.bed"
 
-expansionhunter_catalog: "/reference/variant_catalog_hg38_repeats.json"
+expansionhunter_catalog: "reference/variant_catalog_hg38_repeats.json"
 
 # --- MELT: Mobile Element Insertions ---
-melt_dir: "/Volumes/Samsung_T5/Reference/MELT/MELTv2.2.2"
+melt_dir: "path/reference/MELT/MELTv2.2.2"
 
-melt_transposons: "/Volumes/Samsung_T5/Reference/MELT/MELTv2.2.2/me_refs/Hg38/mei_list.txt"
+melt_transposons: "path/reference/MELT/MELTv2.2.2/me_refs/Hg38/mei_list.txt"
 
-melt_genes_bed: "/Volumes/Samsung_T5/Reference/MELT/MELTv2.2.2/add_bed_files/Hg38/Hg38.genes.bed"
+melt_genes_bed: "path/reference/MELT/MELTv2.2.2/add_bed_files/Hg38/Hg38.genes.bed"
 
-vep_cache_dir: "/refs/vep_cache"
+vep_cache_dir: "path/reference/vep_cache"
 vep_assembly: "GRCh38"
 
 # Optional
@@ -39,7 +39,7 @@ monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
 
 # Transparent optic-neuropathy phenotype anchors used for candidate ranking.
 # These are disease/phenotype reference terms, NOT patient HPO terms.
-discovery_hpo_file: "/reference/optic_neuropathy_hpo_terms.tsv"
+discovery_hpo_file: "reference/optic_neuropathy_hpo_terms.tsv"
 
 # Optional: leave unset unless you have actual patient HPO terms.
 # hpo_terms: "HP:0000505,HP:0007675"
