@@ -41,6 +41,9 @@ ANNOTSV_ANNOTATIONS_DIR = config.get(
 VEP_CACHE_DIR  = config["vep_cache_dir"]
 VEP_ASSEMBLY   = config.get("vep_assembly", "GRCh38")
 
+# --- PYTHON SCRIPT ---
+REPO = "../../"
+SCRIPTS = REPO + "scripts"
 
 rule all:
     input:
@@ -286,7 +289,7 @@ rule straglr_annotation:
         CONDAENV + "straglr.yaml"
     shell:
         """
-        python scripts/annotate_straglr.py \
+        python {SCRIPTS}/annotate_straglr.py \
             --straglr-tsv {input.tsv} \
             --straglr-bed {input.bed} \
             --gene-bed {input.genes} \
@@ -402,7 +405,7 @@ rule extract_sv_genes:
     shell:
         """
         mkdir -p {PATH}/{wildcards.sample}/gene_discovery
-        python scripts/extract_annotsv_genes.py --annotsv {input.annotsv} --output {output.genes}
+        python {SCRIPTS}/extract_annotsv_genes.py --annotsv {input.annotsv} --output {output.genes}
         """
 
 rule extract_nonpanel_genes:
@@ -415,7 +418,7 @@ rule extract_nonpanel_genes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python scripts/extract_nonpanel_genes.py --genes {input.genes} --panel {input.panel} --output {output.genes}
+        python {SCRIPTS}/extract_nonpanel_genes.py --genes {input.genes} --panel {input.panel} --output {output.genes}
         """
 
 rule human_gene_phenotypes:
@@ -430,7 +433,7 @@ rule human_gene_phenotypes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python scripts/monarch_human_gene_phenotypes.py \
+        python {SCRIPTS}/monarch_human_gene_phenotypes.py \
             --genes {input.genes} --hpo-anchors {input.hpo} \
             --output {output.tsv} --api-base {params.api}
         """
@@ -447,7 +450,7 @@ rule rank_genomewide_candidates:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python scripts/rank_sv_gene_candidates.py \
+        python {SCRIPTS}/rank_sv_gene_candidates.py \
             --annotsv {input.annotsv} --genes {input.genes} \
             --phenotypes {input.phenotypes} --panel {input.panel} \
             --output {output.tsv}
@@ -472,19 +475,21 @@ rule vep_sv_annotation:
             --max_sv_size 250000000 --batch_size 100 --fork {THREADS}
         """
 
-
-rule vep_sv_annotation_panel_only:
+rule vep_sv_annotation_panel_only: #safer approach 
     input:
-        txt = rules.vep_sv_annotation.output.txt,
-        genes = GENE_LIST
+        txt=rules.vep_sv_annotation.output.txt,
+        genes=GENE_LIST
     output:
-        txt = PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+        txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+    conda:
+        CONDAENV + "vep.yaml"
     shell:
         """
-        grep '^#' {input.txt} > {output.txt} || true
-        grep -Fwf {input.genes} {input.txt} >> {output.txt} || true
+        python {SCRIPTS}/filter_vep_panel.py \
+            --vep {input.txt} \
+            --genes {input.genes} \
+            --output {output.txt}
         """
-
 
 ##################################################################
 # Methylation
