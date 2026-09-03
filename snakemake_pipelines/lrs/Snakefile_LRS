@@ -166,7 +166,7 @@ rule sniffles2_sv:
     shell:
         """
         sniffles --input {input.bam} --vcf {output.vcf} --reference {input.ref} --threads {THREADS} \
-            --minsupport 3 --no-qc {SNIFFLES_MOSAIC_FLAG} --allow-overwrite --min-alignment-length 100 \
+            --minsupport 2 --no-qc {SNIFFLES_MOSAIC_FLAG} --allow-overwrite --min-alignment-length 100 \
             --output-rnames --tandem-repeats {VNTR_BED}
         """
 
@@ -184,7 +184,7 @@ rule cutesv:
         cuteSV {input.bam} {input.ref} {output.vcf} {PATH}/{wildcards.sample}/sv/cutesv --threads {THREADS} \
             --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 \
             --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3 \
-            --min_support 3 --genotype
+            --min_support 2 --genotype
         """
 
 
