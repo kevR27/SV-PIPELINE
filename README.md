@@ -319,7 +319,7 @@ The current default configuration sets:
 cpg: null
 ```
 
-meaning that no hard-coded `chr1:1-100000` region is imposed.
+thus, no chromosome region is imposed.
 
 ## LongPhase
 
