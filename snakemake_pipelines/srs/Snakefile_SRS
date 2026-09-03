@@ -46,6 +46,10 @@ DISCOVERY_HPO_FILE = config.get(
 DEEPVARIANT_VERSION = config.get("deepvariant_version", "1.6.1")
 DEEPVARIANT_USE_CONDA = config.get("deepvariant_use_conda", False)
 
+# get the .py file from 'script'folder
+REPO = "../../"
+SCRIPTS = REPO + "scripts"
+
 CONDAENV = config["condaenv"]
 
 
@@ -57,6 +61,7 @@ rule all:
         expand(PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.SUPP2.vcf", sample=SAMPLES), #addtional filter/QC
 
         # Genome-wide AnnotSV
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
@@ -275,7 +280,7 @@ rule extract_sv_genes:
         """
         mkdir -p {PATH}/{wildcards.sample}/gene_discovery
 
-        python scripts/extract_annotsv_genes.py \
+        python {SCRIPTS}/extract_annotsv_genes.py \
             --annotsv {input.annotsv} \
             --output {output.genes}
         """
@@ -290,7 +295,7 @@ rule extract_nonpanel_genes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python scripts/extract_nonpanel_genes.py \
+        python {SCRIPTS}/extract_nonpanel_genes.py \
             --genes {input.genes} \
             --panel {input.panel} \
             --output {output.genes}
@@ -319,7 +324,7 @@ rule human_gene_phenotypes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python scripts/monarch_human_gene_phenotypes.py \
+        python {SCRIPTS}/monarch_human_gene_phenotypes.py \
             --genes {input.genes} \
             --hpo-anchors {input.hpo} \
             --output {output.tsv} \
@@ -343,7 +348,7 @@ rule rank_genomewide_candidates:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python scripts/rank_sv_gene_candidates.py \
+        python {SCRIPTS}/rank_sv_gene_candidates.py \
             --annotsv {input.annotsv} \
             --genes {input.genes} \
             --phenotypes {input.phenotypes} \
