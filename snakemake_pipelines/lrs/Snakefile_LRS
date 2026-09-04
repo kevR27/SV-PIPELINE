@@ -57,132 +57,56 @@ SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
 rule all:
     input:
         # QC
-        expand(
-            PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
 
         # Small variants + phasing
-        expand(
-            PATH + "{sample}/snp_clair3/{sample}.vcf.gz",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/phasing/{sample}.phased.bam",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz",sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.bam",sample=SAMPLES),
 
         # SV calling + merge
-        expand(
-            PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/sv/delly/{sample}_delly.vcf",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf",sample=SAMPLES),
 
         # Insertion / MEI mechanism classification
-        expand(
-            PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
 
         # Repeat expansion
-        expand(
-            PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/sv/straglr/{sample}_straglr.bed",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/sv/straglr/{sample}_straglr.tsv",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv",sample=SAMPLES),
 
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
+            sample=SAMPLES),
+    
         # Population-AF filtering
-        expand(
-            PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
         # AnnotSV + panel-only view
-        expand(
-            PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv",sample=SAMPLES),
 
         # Gene discovery
-        expand(
-            PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt",sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt",sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",sample=SAMPLES),
 
         # VEP + panel-only view
-        expand(
-            PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt",
-            sample=SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # Methylation
-        expand(
-            PATH + "{sample}/methylation/{sample}.modkit.tsv",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
 
         # SV-aware phasing
-        expand(
-            PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
-            sample=SAMPLES,
-        ),
+        expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",sample=SAMPLES),
 
         # Confirmatory MEI calling
-        expand(
-            PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",
-            sample=SAMPLES,
-        )
+        expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",sample=SAMPLES)
 
 
 ################
