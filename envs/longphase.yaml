@@ -4,3 +4,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::longphase=1.7.*
+  - bioconda::htslib
