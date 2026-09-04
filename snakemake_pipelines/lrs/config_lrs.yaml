@@ -6,20 +6,13 @@ samples:
   patient01: "/data/lrs_bams/patient01.sort.bam"
   patient02: "/data/lrs_bams/patient02.sort.bam"
 
-# Main output directory
 path: "/data/lrs_results/"
-
-# Reference genome
 ref: "/DATA/Reference/hg38.fa"
-
-# Number of CPU threads
 threads: 16
 
 # ============================================================
 # TARGET PANEL AND ANNOTATION FILES
 # ============================================================
-
-# Optic neuropathy panel BED.
 # Used by Clair3, cuteSV and targeted Straglr analysis.
 bed: "/DATA/PANEL_OA/optic_neuropathy_panel.bed"
 
@@ -29,44 +22,23 @@ gene_bed: "/DATA/reference/gencode.genes.hg38.sorted.bed"
 # Plain-text candidate gene list, one gene symbol per line
 candidate_genes_list: "/DATA/PANEL_OA/optic_neuropathy_genes.txt"
 
-# ============================================================
-# DELLY
-# ============================================================
 
-# DELLY long-read mode for Oxford Nanopore data
 delly_genome: "ont"
-
-# ============================================================
-# STRAGLR
-# ============================================================
-
-# null = genome-wide tandem-repeat expansion discovery
-straglr_bed: null
-
-# ============================================================
-# MODKIT
-# ============================================================
+straglr_bed: null # genome-wide tandem-repeat expansion discovery
 
 # null = extract CpG methylation genome-wide
 # Set a region such as "chr3:193600000-193700000" if needed
 cpg: null
-
+# ============================================================
+# ENVIRONMENTS
+# ============================================================
 # Modkit executable
 modkitenv: "/tools/modkit/modkit"
-
-# ============================================================
-# CLAIR3
-# ============================================================
 
 # Clair3 ONT model directory.
 # Confirm that this model matches the Dorado basecaller model.
 clair3env: "/tools/modkit/models/ont"
 
-# ============================================================
-# CONDA ENVIRONMENTS
-# ============================================================
-
-# Directory containing the pipeline environment YAML files
 condaenv: "/DATA/envs/"
 
 # ============================================================
@@ -85,33 +57,17 @@ vep_cache_dir: "/refs/vep_cache/"
 
 vep_assembly: "GRCh38"
 
-# ============================================================
-# NEEDLR
-# ============================================================
-
 # needLR population-AF backend.
 # Must contain the required 1KGP-LRSC ONT backend files.
 needlr_backend_files: "/refs/needlr/backend/"
 
-# ============================================================
-# TLDR
-# ============================================================
 
-# TElomere and transposable-element reference
 # Must contain the ALU/LINE1/SVA reference sequences required by TLDR.
 tldr_elements: "/DATA/reference/teref.ont.human.fa"
-
-# ============================================================
-# MONARCH AND GENE DISCOVERY
-# ============================================================
 
 monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
 
 discovery_hpo_file: "/DATA/reference/optic_neuropathy_hpo_terms.tsv"
-
-# ============================================================
-# ANNOTSV
-# ============================================================
 
 # Benign population AF threshold
 annotsv_benign_af: 0.01
