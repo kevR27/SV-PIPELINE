@@ -4,3 +4,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::needlr=4.1
+    - bioconda::tabix
