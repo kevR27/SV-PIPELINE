@@ -26,6 +26,7 @@ DISCOVERY_HPO_FILE = config.get("discovery_hpo_file", "reference/optic_neuropath
 ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
 SNIFFLES_MOSAIC = config.get("sniffles_mosaic", False)
 SNIFFLES_MOSAIC_FLAG = "--mosaic" if SNIFFLES_MOSAIC else ""
+DELLY_GENOME = config.get("delly_genome", "ont")
 CPG_REGION = config.get("cpg", None)
 CPG_FLAG = f"--region {CPG_REGION}" if CPG_REGION else ""
 STRAGLR_SCRIPT = config.get("straglr_script", "straglr.py")
@@ -58,6 +59,7 @@ rule all:
         # SV calling + merge
         expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf", sample=SAMPLES),
 
         # insertion / MEI mechanism classification
@@ -190,22 +192,61 @@ rule cutesv:
             --min_support 2 --genotype
         """
 
+rule delly_lr:
+    input:
+        bam = lambda wc: BAMS[wc.sample],
+        ref = REF
+    output:
+        bcf = PATH + "{sample}/sv/delly/{sample}_delly.bcf",
+        vcf = PATH + "{sample}/sv/delly/{sample}_delly.vcf"
+    params:
+        outdir = PATH + "{sample}/sv/delly"
+    conda:
+        CONDAENV + "delly.yaml"
+    shell:
+        """
+        mkdir -p {params.outdir}
+
+        delly lr \
+            -y {DELLY_GENOME} \
+            -g {input.ref} \
+            -o {output.bcf} \
+            {input.bam}
+
+        bcftools view \
+            {output.bcf} \
+            -Ov \
+            -o {output.vcf}
+        """
 
 rule jasmine_merge:
     input:
         sniffles = rules.sniffles2_sv.output.vcf,
-        cutesv   = rules.cutesv.output.vcf
+        cutesv   = rules.cutesv.output.vcf,
+        delly    = rules.delly_lr.output.vcf
     output:
         list_file = PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
         vcf = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf"
+    params:
+        outdir = PATH + "{sample}/sv/merged"
     conda:
         CONDAENV + "jasmine.yaml"
     shell:
         """
-        printf "%s\\n%s\\n" {input.sniffles} {input.cutesv} > {output.list_file}
+        mkdir -p {params.outdir}
 
-        jasmine file_list={output.list_file} out_file={output.vcf} \
-            threads={THREADS} --allow_intrasample --output_genotypes
+        printf "%s\\n%s\\n%s\\n" \
+            {input.sniffles} \
+            {input.cutesv} \
+            {input.delly} \
+            > {output.list_file}
+
+        jasmine \
+            file_list={output.list_file} \
+            out_file={output.vcf} \
+            threads={THREADS} \
+            --allow_intrasample \
+            --output_genotypes
         """
 
 
