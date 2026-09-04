@@ -852,7 +852,6 @@ rule longphase_phasing:
 ########################################################################
 # Confirmatory MEI calling (TLDR)
 ########################################################################
-
 rule tldr_mei_confirmation:
     input:
         bam=lambda wc: BAMS[wc.sample],
@@ -874,57 +873,9 @@ rule tldr_mei_confirmation:
             -p {THREADS} \
             --outdir {params.outdir}
 
-        tables=( {params.outdir}/*.table.txt )
-        test -e "${tables[0]}"
+        mapfile -t tables < <(find {params.outdir} -maxdepth 1 -type f -name "*.table.txt" -print)
+
         test "${#tables[@]}" -eq 1
         cp "${tables[0]}" {output.table}
         """
 
-
-##############################
-# Caller-specific parsing
-##############################
-
-rule sniffles2_caller_parse:
-    input:
-        vcf=rules.sniffles2_sv.output.vcf
-    output:
-        tsv=PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv"
-    shell:
-        """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_sv_caller_vcf.py \
-            --vcf {input.vcf} \
-            --caller Sniffles2 \
-            --output {output.tsv}
-        """
-
-
-rule cutesv_caller_parse:
-    input:
-        vcf=rules.cutesv.output.vcf
-    output:
-        tsv=PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv"
-    shell:
-        """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_sv_caller_vcf.py \
-            --vcf {input.vcf} \
-            --caller cuteSV \
-            --output {output.tsv}
-        """
-
-
-rule delly_caller_parse:
-    input:
-        vcf=rules.delly_lr.output.vcf
-    output:
-        tsv=PATH + "{sample}/parsed/{sample}.delly.caller.tsv"
-    shell:
-        """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_sv_caller_vcf.py \
-            --vcf {input.vcf} \
-            --caller delly \
-            --output {output.tsv}
-        """
