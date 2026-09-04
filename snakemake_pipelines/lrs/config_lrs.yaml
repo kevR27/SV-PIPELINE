@@ -60,7 +60,7 @@ vep_assembly: "GRCh38"
 
 # needLR population-AF backend.
 # Must contain the required 1KGP-LRSC ONT backend files.
-needlr_backend_files: "/home/casadei7/SV-PIPELINE/reference/needlr/backend/" # da scaricare e caricare sul folder 
+needlr_backend_files: null #"/home/casadei7/SV-PIPELINE/reference/needlr/backend/" # da scaricare e caricare sul folder 
 
 
 # Must contain the ALU/LINE1/SVA reference sequences required by TLDR.
