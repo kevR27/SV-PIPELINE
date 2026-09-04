@@ -1,3 +1,5 @@
+import os
+
 configfile: "config_lrs.yaml"
 
 SAMPLES = list(config["samples"].keys())
@@ -6,6 +8,7 @@ PATH = config["path"].rstrip("/") + "/"
 REF = config["ref"]
 THREADS = config["threads"]
 BED = config["bed"]
+BEDCUTESV = config["bedcutesv"]
 STRAGLR_BED = config.get("straglr_bed")
 STRAGLR_REGIONS = f"--regions {STRAGLR_BED}" if STRAGLR_BED else ""
 GENE_LIST = config["candidate_genes_list"]
@@ -248,6 +251,7 @@ rule cutesv:
             --min_mapq 20 \
             --min_read_len 500 \
             --genotype
+            -- include_bed {BEDCUTESV}
         """
 
 
