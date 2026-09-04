@@ -14,14 +14,14 @@ threads: 16
 # TARGET PANEL AND ANNOTATION FILES
 # ============================================================
 # Used by Clair3, cuteSV and targeted Straglr analysis.
-bed: "/DATA/PANEL_OA/optic_neuropathy_panel.bed"
-bedcutesv: "/DATA/PANEL_OA/optic_neuropathy_panel.bed"
+bed: "home/casadei7/SV-PIPELINE/PANEL_OA/optic_neuropathy_panel.bed"
+bedcutesv: "home/casadei7/SV-PIPELINE/PANEL_OA/optic_neuropathy_panel.bed"
 
 # Gencode gene BED file for gene annotation
-gene_bed: "/DATA/reference/gencode.genes.hg38.sorted.bed"
+gene_bed: "home/casadei7/SV-PIPELINE/reference/gencode.genes.hg38.sorted.bed"
 
 # Plain-text candidate gene list, one gene symbol per line
-candidate_genes_list: "/DATA/PANEL_OA/optic_neuropathy_genes.txt"
+candidate_genes_list: "home/casadei7/SV-PIPELINE/PANEL_OA/optic_neuropathy_genes.txt"
 
 delly_genome: "ont"
 straglr_bed: null # genome-wide tandem-repeat expansion discovery
@@ -47,7 +47,7 @@ clair3env: "home/casadei7/BrainAging/Clair_Models/r1041_e82_400bps_sup_v520/"
 # ============================================================
 
 # Reference-wide VNTR BED file required by Sniffles2
-vntr_bed: "/DATA/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
+vntr_bed: "home/casadei7/SV-PIPELINE/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
 
 # ============================================================
 # VEP
@@ -55,12 +55,12 @@ vntr_bed: "/DATA/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
 
 # Local offline VEP cache
 # do this vep_install -a cf -s homo_sapiens -y GRCh38 -c /refs/vep_cache --CONVERT
-vep_cache_dir: "/refs/vep_cache/"
+vep_cache_dir: "home/casadei7/SV-PIPELINE/reference/vep_cache/"
 vep_assembly: "GRCh38"
 
 # needLR population-AF backend.
 # Must contain the required 1KGP-LRSC ONT backend files.
-needlr_backend_files: "/refs/needlr/backend/" # da scaricare e caricare sul folder 
+needlr_backend_files: "home/casadei7/SV-PIPELINE/reference/needlr/backend/" # da scaricare e caricare sul folder 
 
 
 # Must contain the ALU/LINE1/SVA reference sequences required by TLDR.
@@ -68,7 +68,7 @@ tldr_elements: "/DATA/reference/teref.ont.human.fa"
 
 monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
 
-discovery_hpo_file: "/DATA/reference/optic_neuropathy_hpo_terms.tsv"
+discovery_hpo_file: "home/casadei7/SV-PIPELINE/reference/optic_neuropathy_hpo_terms.tsv"
 
 # Benign population AF threshold
 annotsv_benign_af: 0.01
