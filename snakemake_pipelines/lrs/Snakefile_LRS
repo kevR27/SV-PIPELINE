@@ -189,7 +189,7 @@ rule cutesv:
         cuteSV {input.bam} {input.ref} {output.vcf} {PATH}/{wildcards.sample}/sv/cutesv --threads {THREADS} \
             --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 \
             --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3 \
-            --min_support 2 --genotype
+            --min_support 2 --min_size 50 --min_mapq 20 --min_read_len 500 --genotype
         """
 
 rule delly_lr:
