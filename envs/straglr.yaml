@@ -4,3 +4,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::straglr=1.5.6
+  - bioconda::bedtools
