@@ -49,7 +49,7 @@ The main design principle is:
         Platform-specific analyses
 ```
 
-The **genome-wide AnnotSV result give us an overview of all genes that overlaps from structural variants discovery obtained through SV callers **; while the panel-only AnnotSV result is used as a separate clinical view that uses all known genes that are directly associated to Optic Neuropathies 
+The **genome-wide AnnotSV result give us an overview of all genes that overlaps from structural variants discovery obtained through SV callers**; while the panel-only AnnotSV result is used as a separate clinical view that uses all known genes that are directly associated to Optic Neuropathies 
 
 ---
 
