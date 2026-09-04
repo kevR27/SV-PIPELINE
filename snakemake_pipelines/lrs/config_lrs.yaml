@@ -6,7 +6,7 @@ samples:
   patient01: "/data/lrs_bams/patient01.sort.bam"
   patient02: "/data/lrs_bams/patient02.sort.bam"
 
-path: "/data/lrs_results/"
+path: "/home/casadei7/SV-PIPELINE-main/outs"
 ref: "/DATA/Reference/hg38.fa"
 threads: 16
 
@@ -15,6 +15,7 @@ threads: 16
 # ============================================================
 # Used by Clair3, cuteSV and targeted Straglr analysis.
 bed: "/DATA/PANEL_OA/optic_neuropathy_panel.bed"
+bedcutesv: "/DATA/PANEL_OA/optic_neuropathy_panel.bed"
 
 # Gencode gene BED file for gene annotation
 gene_bed: "/DATA/reference/gencode.genes.hg38.sorted.bed"
@@ -22,24 +23,24 @@ gene_bed: "/DATA/reference/gencode.genes.hg38.sorted.bed"
 # Plain-text candidate gene list, one gene symbol per line
 candidate_genes_list: "/DATA/PANEL_OA/optic_neuropathy_genes.txt"
 
-
 delly_genome: "ont"
 straglr_bed: null # genome-wide tandem-repeat expansion discovery
 
 # null = extract CpG methylation genome-wide
 # Set a region such as "chr3:193600000-193700000" if needed
 cpg: null
+
 # ============================================================
 # ENVIRONMENTS
 # ============================================================
+condaenv: "home/casadei7/SV-PIPELINE/envs/"
 # Modkit executable
-modkitenv: "/tools/modkit/modkit"
+modkitenv: "home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
 
 # Clair3 ONT model directory.
 # Confirm that this model matches the Dorado basecaller model.
-clair3env: "/tools/modkit/models/ont"
+clair3env: "home/casadei7/BrainAging/Clair_Models/r1041_e82_400bps_sup_v520/"
 
-condaenv: "/DATA/envs/"
 
 # ============================================================
 # SNIFFLES2
@@ -53,13 +54,13 @@ vntr_bed: "/DATA/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
 # ============================================================
 
 # Local offline VEP cache
+# do this vep_install -a cf -s homo_sapiens -y GRCh38 -c /refs/vep_cache --CONVERT
 vep_cache_dir: "/refs/vep_cache/"
-
 vep_assembly: "GRCh38"
 
 # needLR population-AF backend.
 # Must contain the required 1KGP-LRSC ONT backend files.
-needlr_backend_files: "/refs/needlr/backend/"
+needlr_backend_files: "/refs/needlr/backend/" # da scaricare e caricare sul folder 
 
 
 # Must contain the ALU/LINE1/SVA reference sequences required by TLDR.
