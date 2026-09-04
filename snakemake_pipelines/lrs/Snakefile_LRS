@@ -8,7 +8,7 @@ PATH = config["path"].rstrip("/") + "/"
 REF = config["ref"]
 THREADS = config["threads"]
 BED = config["bed"]
-BEDCUTESV = config["bedcutesv"]
+BEDCUTESV = config.get("bedcutesv", BED)
 STRAGLR_BED = config.get("straglr_bed")
 STRAGLR_REGIONS = f"--regions {STRAGLR_BED}" if STRAGLR_BED else ""
 GENE_LIST = config["candidate_genes_list"]
@@ -45,8 +45,9 @@ SNIFFLES_MOSAIC_FLAG = "--mosaic" if SNIFFLES_MOSAIC else ""
 DELLY_GENOME = config.get("delly_genome", "ont")
 STRAGLR_SCRIPT = config.get("straglr_script", "straglr.py")
 
-# Methylation region (optional). Use cpg_region in config for a genomic region.
-CPG_REGION = config.get("cpg_region")
+# Methylation region (optional). Accept cpg_region or the original cpg key.
+CPG = config.get("cpg")
+CPG_REGION = config.get("cpg_region", CPG)
 CPG_REGION_FLAG = f"--region {CPG_REGION}" if CPG_REGION else ""
 
 # VEP
@@ -250,8 +251,8 @@ rule cutesv:
             --min_size 50 \
             --min_mapq 20 \
             --min_read_len 500 \
-            --genotype
-            -- include_bed {BEDCUTESV}
+            --genotype \
+            --include_bed {BEDCUTESV}
         """
 
 
@@ -280,6 +281,53 @@ rule delly_lr:
             {output.bcf} \
             -Ov \
             -o {output.vcf}
+        """
+
+
+
+# Original generic VCF-to-TSV parsing
+rule parse_sniffles_vcf:
+    input:
+        vcf=rules.sniffles2_sv.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.sniffles.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_vcf_to_tsv.py \
+            --vcf {input.vcf} \
+            --caller Sniffles2 \
+            --output {output.tsv}
+        """
+
+
+rule parse_cutesv_vcf:
+    input:
+        vcf=rules.cutesv.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.cutesv.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_vcf_to_tsv.py \
+            --vcf {input.vcf} \
+            --caller cuteSV \
+            --output {output.tsv}
+        """
+
+
+rule parse_delly_vcf:
+    input:
+        vcf=rules.delly_lr.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.delly.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_vcf_to_tsv.py \
+            --vcf {input.vcf} \
+            --caller delly \
+            --output {output.tsv}
         """
 
 
@@ -317,6 +365,36 @@ rule jasmine_merge:
 ##################################################################
 # Insertion sequence extraction + TE/mechanism classification
 ##################################################################
+
+
+rule parse_merged_vcf:
+    input:
+        vcf=rules.jasmine_merge.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.merged.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_vcf_to_tsv.py \
+            --vcf {input.vcf} \
+            --caller Jasmine \
+            --output {output.tsv}
+        """
+
+
+rule summarize_caller_support:
+    input:
+        vcf=rules.jasmine_merge.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.caller_support.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/summarize_sv_caller_support.py \
+            --vcf {input.vcf} \
+            --output {output.tsv}
+        """
+
 
 rule extract_insertion_seqs:
     input:
@@ -456,6 +534,22 @@ rule needlr_annotation:
         cp "$results_tsv" {output.tsv}
         cp "$results_vcf" {output.vcf}
         tabix -f -p vcf {output.vcf}
+        """
+
+
+
+rule parse_needlr_vcf:
+    input:
+        vcf=rules.needlr_annotation.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.needlr.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_vcf_to_tsv.py \
+            --vcf {input.vcf} \
+            --caller needLR \
+            --output {output.tsv}
         """
 
 
