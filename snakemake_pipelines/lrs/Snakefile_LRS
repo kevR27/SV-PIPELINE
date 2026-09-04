@@ -670,8 +670,8 @@ rule vep_sv_annotation:
             --symbol \
             --biotype \
             --max_sv_size 250000000 \
-            --batch_size 100 \
-            --fork {THREADS}
+            --buffer_size 100 \
+            --fork 16
         """
 
 
