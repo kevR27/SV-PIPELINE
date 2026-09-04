@@ -671,7 +671,8 @@ rule vep_sv_annotation:
             --biotype \
             --max_sv_size 250000000 \
             --buffer_size 100 \
-            --fork 16
+            --force_overwrite \
+            --fork {THREADS}
         """
 
 
@@ -683,12 +684,13 @@ rule vep_sv_annotation_panel_only:
         txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
     shell:
         """
+        mkdir -p {PATH}{wildcards.sample}/sv/vep
+
         python {SCRIPTS}/filter_vep_panel.py \
             --vep {input.txt} \
             --genes {input.genes} \
             --output {output.txt}
         """
-
 
 ##################################################################
 # Methylation
