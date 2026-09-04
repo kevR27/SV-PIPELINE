@@ -9,8 +9,11 @@
 # the Java runtime MELT needs; melt_dir in the config must still point
 # to your manually downloaded MELTv2.2.2 install.
 name: melt
+
 channels:
   - conda-forge
   - bioconda
+
 dependencies:
   - conda-forge::openjdk=17
+  - bioconda::bcftools=1.20
