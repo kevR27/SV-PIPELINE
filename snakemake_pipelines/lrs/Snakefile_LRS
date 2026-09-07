@@ -82,8 +82,7 @@ rule all:
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed",sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv",sample=SAMPLES),
 
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
-            sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
     
         # Population-AF filtering
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
@@ -152,7 +151,7 @@ rule clair3_snp_calling:
             -t {THREADS} \
             -p ont \
             -o {PATH}{wildcards.sample}/snp_clair3 \
-            -m {CLAIRENV} \
+            -model_path= {CLAIRENV} \  
             --bed_fn={BED}
 
         cp {PATH}{wildcards.sample}/snp_clair3/merge_output.vcf.gz {output.vcf}
