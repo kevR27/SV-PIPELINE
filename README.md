@@ -11,7 +11,7 @@ Both workflows preserve sequencing-platform-specific variant discovery while con
 
 ---
 
-## 1. Concept
+## Concept
 
 The main design principle is:
 
@@ -23,7 +23,7 @@ The main design principle is:
               SRS                           LRS
         Short-read BAM                 Long-read BAM
                │                             │
-        Manta + Delly                Sniffles2 + cuteSV
+        Manta + Delly                Sniffles2 + cuteSV + Delly lr
                │                             │
            SURVIVOR                       Jasmine
                │                             │
