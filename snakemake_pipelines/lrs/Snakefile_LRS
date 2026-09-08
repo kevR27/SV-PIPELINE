@@ -63,11 +63,11 @@ rule all:
         expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf",sample=SAMPLES),
         expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf",sample=SAMPLES),
         expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz",sample=SAMPLES),
 
         # Insertion / MEI mechanism classification
-        expand(PATH + "{sample}/sv/insertions/{sample}_insertions.fasta", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
+        #expand(PATH + "{sample}/sv/insertions/{sample}_insertions.fasta", sample=SAMPLES),
+        #expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
 
         # Repeat expansion
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",sample=SAMPLES),
@@ -326,7 +326,7 @@ rule jasmine_merge:
         delly=rules.delly_lr.output.vcf
     output:
         list_file=PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
-        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf"
+        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"
     params:
         outdir=PATH + "{sample}/sv/merged"
     conda:
@@ -349,61 +349,84 @@ rule jasmine_merge:
             --output_genotypes
         """
 
+rule prepare_needlr_vcf:
+    input:
+        vcf=rules.jasmine_merge.output.vcf,
+        fai=REF + ".fai"
+    output:
+        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz",
+        tbi=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz.tbi"
+    threads: 32
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        mkdir -p $(dirname {output.vcf})
+
+        python {SCRIPTS}/prepare_needlr_vcf.py \
+            --input {input.vcf} \
+            --output {output.vcf} \
+            --reference-fai {input.fai}
+        """
+
 
 ##################################################################
 # Insertion sequence extraction + TE/mechanism classification
 ##################################################################
 
-rule extract_insertion_seqs:
-    input:
-        vcf=rules.jasmine_merge.output.vcf
-    output:
-        fasta=PATH + "{sample}/sv/insertions/{sample}_insertions.fasta"
-    conda:
-        CONDAENV + "annotsv.yaml"
-    shell:
-        """
-        mkdir -p {PATH}{wildcards.sample}/sv/insertions
-
-        bcftools view -i 'INFO/SVTYPE="INS"' {input.vcf} | \
-        bcftools query -f '>%ID\\n%ALT\\n' - | \
-        sed 's/,.*$//' > {output.fasta}
-        """
-
-
-rule repeatmasker_classify:
-    input:
-        fasta=rules.extract_insertion_seqs.output.fasta
-    output:
-        out=PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out"
-    params:
-        outdir=PATH + "{sample}/sv/insertions"
-    conda:
-        CONDAENV + "repeatmasker.yaml"
-    shell:
-        """
-        mkdir -p {params.outdir}
-
-        if [ ! -s {input.fasta} ]; then
-            touch {output.out}
-        else
-            RepeatMasker \
-                -species human \
-                -pa {THREADS} \
-                -dir {params.outdir} \
-                {input.fasta}
-
-            test -f {params.outdir}/{wildcards.sample}_insertions.fasta.out
-            mv {params.outdir}/{wildcards.sample}_insertions.fasta.out {output.out}
-        fi
-        """
+#rule extract_insertion_seqs:
+#    input:
+#        vcf=rules.jasmine_merge.output.vcf
+#    output:
+#        fasta=PATH + "{sample}/sv/insertions/{sample}_insertions.fasta"
+#    conda:
+#        CONDAENV + "annotsv.yaml"
+#    shell:
+#        """
+#        mkdir -p {PATH}{wildcards.sample}/sv/insertions
+#
+#        bcftools view -i 'INFO/SVTYPE="INS"' {input.vcf} | \
+#        bcftools query -f '>%ID\\n%ALT\\n' - | \
+#        sed 's/,.*$//' > {output.fasta}
+#        """
 
 
+#rule repeatmasker_classify:
+#    input:
+#        fasta=rules.extract_insertion_seqs.output.fasta
+#    output:
+#        out=PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out"
+#    params:
+#        outdir=PATH + "{sample}/sv/insertions"
+#    threads: THREADS
+#    conda:
+#        CONDAENV + "repeatmasker.yaml"
+#    shell:
+#        """
+#        set -euo pipefail
+#
+#        mkdir -p {params.outdir}
+#
+#        if [ ! -s {input.fasta} ]; then
+#            : > {output.out}
+#        else
+#            RepeatMasker \
+#                -species human \
+#                -pa {threads} \
+#                -dir {params.outdir} \
+#                {input.fasta}
+#
+#            test -s {input.fasta}.out
+#            mv {input.fasta}.out {output.out}
+#        fi
+#        """
+        
 ##################################################################
 # Repeat expansion classification and annotation
 ##################################################################
 
 #{STRAGLR_SCRIPT} \
+
 rule straglr:
     input:
         bam=lambda wc: BAMS[wc.sample],
@@ -425,17 +448,13 @@ rule straglr:
             {input.ref} \
             {params.prefix} \
             --min_str_len 2 \
-            --min_support 1 \
-            --min_ins_size 1 \
-            --include_partials \
+            --min_support 2 \
+            --min_ins_size 100 \
             --nprocs {THREADS} \
             --max_str_len 100000 \
-            --use_unpaired_clips \
-            --max_num_clusters 10 \
-            --min_cluster_d 1 \
-            {STRAGLR_REGIONS} \
-        """
-
+            --max_num_clusters 2 \
+            --min_cluster_d 1
+ """
 
 rule straglr_annotation:
     input:
@@ -466,22 +485,23 @@ rule straglr_annotation:
 
 rule needlr_annotation:
     input:
-        vcf=rules.jasmine_merge.output.vcf
+        vcf=rules.prepare_needlr_vcf.output.vcf
     output:
         tsv=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
         vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
     params:
         outdir=PATH + "{sample}/sv/needlr",
         backend_flag=lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
+    threads: 8
     conda:
         CONDAENV + "needlr.yaml"
     shell:
         """
-        mkdir -p {params.outdir}
+        set -euo pipefail
 
         needLR annotate \
             -O {params.outdir} \
-            -T {THREADS} \
+            -T {threads} \
             {params.backend_flag} \
             --all \
             {input.vcf}
@@ -494,6 +514,7 @@ rule needlr_annotation:
 
         cp "$results_tsv" {output.tsv}
         cp "$results_vcf" {output.vcf}
+
         tabix -f -p vcf {output.vcf}
         """
 
@@ -802,18 +823,18 @@ rule tldr_mei_confirmation:
     conda:
         CONDAENV + "tldr.yaml"
     shell:
-          """
-    mkdir -p {PATH}{wildcards.sample}/mei/tldr
+        """
+        set -euo pipefail
 
-    tldr \
-        -b {input.bam} \
-        -r {input.ref} \
-        -e {TLDR_ELTS} \
-        -p {THREADS} \
-        -o {params.outbase} \
-        > {params.outbase}.log 2>&1
+        mkdir -p {PATH}{wildcards.sample}/mei/tldr
 
-    test -f {params.outbase}.table.txt
+        tldr \
+            -b {input.bam} \
+            -r {input.ref} \
+            -e {TLDR_ELTS} \
+            -p {THREADS} \
+            --color_consensus \
+            -o {params.outbase}
 
-    cp {params.outbase}.table.txt {output.table}
-    """
+        cp {params.outbase}.table.txt {output.table}
+        """
