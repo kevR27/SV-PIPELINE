@@ -6,23 +6,23 @@ samples:
   patient01: "/DATA/casadei7/nanopore/DM1/14655native/bam/sup_met_hg38/14655native.bam" #/data/lrs_bams/patient01.sort.bam
   patient02: "/DATA/casadei7/nanopore/DM1/22_9814native/bam/sup_met_hg38/22_9814native.bam" #/data/lrs_bams/patient02.sort.bam
 
-path: "/home/casadei7/SV-PIPELINE-main/outs"
+path: "/DATA/casadei7/tools/SV-PIPELINE-main/outs_test"
 ref: "/DATA/Reference/hg38.fa"
 threads: 32
 
 # ============================================================
 # TARGET PANEL AND ANNOTATION FILES
 # ============================================================
-# Used by Clair3, cuteSV and targeted Straglr analysis
+# Used by Clair3, cuteSV and targeted Straglr analysis.
 
-bed: "/home/casadei7/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel.bed"
-bedcutesv: "/home/casadei7/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel_cutesv.bed"
+bed: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel.bed"
+bedcutesv: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel_cutesv.bed"
 
 # Gencode gene BED file for gene annotation
-gene_bed: "/home/casadei7/SV-PIPELINE-main/reference/gencode.genes.hg38.sorted.bed"
+gene_bed: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/gencode.genes.hg38.sorted.bed"
 
 # Plain-text candidate gene list, one gene symbol per line
-candidate_genes_list: "/home/casadei7/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_genes.txt"
+candidate_genes_list: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_genes.txt"
 
 delly_genome: "ont"
 
@@ -36,7 +36,7 @@ cpg_region: null
 # ============================================================
 # ENVIRONMENTS
 # ============================================================
-condaenv: "/home/casadei7/SV-PIPELINE-main/envs/"
+condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/"
 # Modkit executable
 modkitenv: "/home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
 
@@ -49,10 +49,7 @@ clair3env: "/DATA/casadei7/BrainAging/Clair3_Models/r1041_e82_400bps_sup_v520/"
 # ============================================================
 
 # Reference-wide VNTR BED file required by Sniffles2
-vntr_bed: "/home/casadei7/SV-PIPELINE-main/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
-# false = standard SV calling
-# true  = mosaic SV calling
-sniffles_mosaic: false
+vntr_bed: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
 
 # ============================================================
 # VEP
@@ -61,37 +58,34 @@ sniffles_mosaic: false
 # Local offline VEP cache
 # do this vep_install -a cf -s homo_sapiens -y GRCh38 -c /refs/vep_cache --CONVERT
 
-reference_dir: "/DATA/Reference" # "/home/casadei7/SV-PIPELINE-main/reference"
-vep_cache_dir: "/DATA/Reference/vep" # "/home/casadei7/SV-PIPELINE-main/reference/vep" 
+reference_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference" # "/home/casadei7/SV-PIPELINE-main/reference"
+vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/vep" # "/home/casadei7/SV-PIPELINE-main/reference/vep" 
 vep_assembly: "GRCh38"
-
-# ============================================================
-# needLR
-# ============================================================
 
 # needLR population-AF backend.
 # Must contain the required 1KGP-LRSC ONT backend files.
-needlr_backend_files: null #"/home/casadei7/SV-PIPELINE-main/reference/needlr/backend/" # da scaricare e caricare sul folder 
+needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/needlr/release/backend_files/"
 
 
-
-# ============================================================
-# TLDR
-# ============================================================
-
-# Must contain the ALU/LINE1/SVA reference sequences required by TLDR.
-tldr_elements: "/home/casadei7/SV-PIPELINE-main/reference/teref.ont.human.fa"
-
-# ============================================================
-# phenotype correlation
-# ============================================================
+# Must contain the ALU/LINE1/SVA reference sequences required by TLDR
+tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/teref.ont.human.fa"
 
 monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
-discovery_hpo_file: "/home/casadei7/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
+
+discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
+
+# Benign population AF threshold
+annotsv_benign_af: 0.01
 
 # ============================================================
 # ANNOTSV
 #=============================================================
-annotsv_annotations_dir: "/home/casadei7/SV-PIPELINE-main/reference/AnnotSV_annotations"
-# Benign population AF threshold
-annotsv_benign_af: 0.01
+annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/AnnotSV_annotations"
+
+# ============================================================
+# SNIFFLES2 OPTIONS
+# ============================================================
+
+# false = standard SV calling
+# true  = mosaic SV calling
+sniffles_mosaic: false
