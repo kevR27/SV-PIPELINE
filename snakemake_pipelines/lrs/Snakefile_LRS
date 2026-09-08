@@ -462,6 +462,7 @@ rule straglr_annotation:
 #####################################################################
 # needLR — ONT-native population/reference SV annotation/filtering #
 #####################################################################
+## NEED TO INSTALL .SH FROM GITHUB #####
 
 rule needlr_annotation:
     input:
