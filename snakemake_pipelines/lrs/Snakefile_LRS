@@ -49,7 +49,6 @@ VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 # Python scripts: anchor to the Snakefile location rather than current working directory.
 SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
 
-
 rule all:
     input:
         # QC
@@ -67,6 +66,7 @@ rule all:
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf",sample=SAMPLES),
 
         # Insertion / MEI mechanism classification
+        expand(PATH + "{sample}/sv/insertions/{sample}_insertions.fasta", sample=SAMPLES),
         expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
 
         # Repeat expansion
@@ -74,11 +74,15 @@ rule all:
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed",sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv",sample=SAMPLES),
 
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
-            sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
     
         # Population-AF filtering
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
+
+        # Caller-aware parsed evidence
+        expand(PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.caller.tsv", sample=SAMPLES),
 
         # AnnotSV + panel-only view
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",sample=SAMPLES),
@@ -92,8 +96,8 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",sample=SAMPLES),
 
         # VEP + panel-only view
-        #expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
-        #expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # Methylation
         expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
@@ -103,7 +107,6 @@ rule all:
 
         # Confirmatory MEI calling
         expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",sample=SAMPLES)
-
 
 ################
 # QC           #
@@ -431,9 +434,6 @@ rule straglr:
             --max_num_clusters 10 \
             --min_cluster_d 1 \
             {STRAGLR_REGIONS} \
-
-            
-       # da cambiare 
         """
 
 
@@ -500,8 +500,8 @@ rule needlr_annotation:
 ##########################################################################
 # AnnotSV — full annotation is the source of truth; panel-only is a view #
 ##########################################################################
+# Shared reference directory; intentionally outside per-sample outputs.
 
-#check if reference needed are present in the directory
 rule annotsv_annotations_check:
     output:
         marker=ANNOTSV_ANNOTATIONS_DIR + "/.installed"
@@ -541,7 +541,6 @@ rule annotsv_annotation:
             -benignAF {ANNOTSV_BENIGN_AF} \
             {params.hpo_flag}
         """
-
 
 rule annotsv_annotation_panel_only:
     input:
@@ -589,7 +588,6 @@ rule extract_sv_genes:
             --output {output.genes}
         """
 
-
 rule extract_nonpanel_genes:
     input:
         genes=rules.extract_sv_genes.output.genes,
@@ -605,7 +603,6 @@ rule extract_nonpanel_genes:
             --panel {input.panel} \
             --output {output.genes}
         """
-
 
 rule human_gene_phenotypes:
     input:
@@ -626,7 +623,6 @@ rule human_gene_phenotypes:
             --api-base {params.api}
         """
 
-
 rule rank_genomewide_candidates:
     input:
         annotsv=rules.annotsv_annotation.output.tsv,
@@ -646,7 +642,6 @@ rule rank_genomewide_candidates:
             --panel {input.panel} \
             --output {output.tsv}
         """
-
 
 ##############################
 # INTEGRATION OF INFO
@@ -682,7 +677,6 @@ rule integrated_sv_gene_table:
             --output {output.tsv}
         """
 
-
 ##################################################################
 # VEP — full transcript-level annotation + panel-only derived view
 ##################################################################
@@ -716,7 +710,6 @@ rule vep_sv_annotation:
             --force_overwrite \
             --fork {THREADS}
         """
-
 
 rule vep_sv_annotation_panel_only:
     input:
@@ -758,7 +751,6 @@ rule modkit_extract:
             {output.tsv}
         """
 
-
 ########################################################################
 # SV-aware joint SNP+SV phasing (LongPhase)
 ########################################################################
@@ -788,10 +780,11 @@ rule longphase_phasing:
             -o {params.prefix} \
             --ont
 
+        test -s {params.prefix}.vcf
         bgzip -f {params.prefix}.vcf
+        test -s {output.vcf}
         tabix -f -p vcf {output.vcf}
         """
-
 
 ########################################################################
 # Confirmatory MEI calling (TLDR)
@@ -823,4 +816,3 @@ rule tldr_mei_confirmation:
 
     cp {params.outbase}.table.txt {output.table}
     """
-
