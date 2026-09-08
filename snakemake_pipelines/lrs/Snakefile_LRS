@@ -8,8 +8,10 @@ PATH = config["path"].rstrip("/") + "/"
 REF = config["ref"]
 THREADS = config["threads"]
 BED = config["bed"]
-BEDCUTESV = config.get("bedcutesv", BED)
+GENEBED = config["gene_bed"]
+BEDCUTESV = config["bedcutesv"]
 STRAGLR_BED = config.get("straglr_bed")
+gene_bed = config["gene_bed"]
 STRAGLR_REGIONS = f"--regions {STRAGLR_BED}" if STRAGLR_BED else ""
 GENE_LIST = config["candidate_genes_list"]
 CONDAENV = config["condaenv"]
@@ -22,32 +24,22 @@ VNTR_BED = config["vntr_bed"]
 NEEDLR_BACKEND = config.get("needlr_backend_files")
 
 # Gene/HPO discovery
-MONARCH_BASE_URL = config.get(
-    "monarch_base_url",
-    "https://api-v3.monarchinitiative.org/v3/api",
-)
-DISCOVERY_HPO_FILE = config.get(
-    "discovery_hpo_file",
-    "reference/optic_neuropathy_hpo_terms.tsv",
-)
+MONARCH_BASE_URL = config.get("monarch_base_url","https://api-v3.monarchinitiative.org/v3/api")
+DISCOVERY_HPO_FILE = config.get("discovery_hpo_file","reference/optic_neuropathy_hpo_terms.tsv")
 
 # AnnotSV
 ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
 HPO_TERMS = config.get("hpo_terms")
-ANNOTSV_ANNOTATIONS_DIR = config.get(
-    "annotsv_annotations_dir",
-    PATH + "reference/AnnotSV_annotations",
-)
+ANNOTSV_ANNOTATIONS_DIR = config.get("annotsv_annotations_dir", PATH + "reference/AnnotSV_annotations")
 
 # Sniffles2 / DELLY / STRAGLR
 SNIFFLES_MOSAIC = config.get("sniffles_mosaic", False)
 SNIFFLES_MOSAIC_FLAG = "--mosaic" if SNIFFLES_MOSAIC else ""
 DELLY_GENOME = config.get("delly_genome", "ont")
-STRAGLR_SCRIPT = config.get("straglr_script", "straglr.py")
+STRAGLR_SCRIPT = config.get("straglr_script")#, "straglr.py")
 
-# Methylation region (optional). Accept cpg_region or the original cpg key.
-CPG = config.get("cpg")
-CPG_REGION = config.get("cpg_region", CPG)
+# Methylation region (optional). Use cpg_region in config for a genomic region.
+CPG_REGION = config.get("cpg_region")
 CPG_REGION_FLAG = f"--region {CPG_REGION}" if CPG_REGION else ""
 
 # VEP
@@ -82,7 +74,8 @@ rule all:
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed",sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv",sample=SAMPLES),
 
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
+            sample=SAMPLES),
     
         # Population-AF filtering
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
@@ -99,8 +92,8 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",sample=SAMPLES),
 
         # VEP + panel-only view
-        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
+        #expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        #expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # Methylation
         expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
@@ -151,7 +144,7 @@ rule clair3_snp_calling:
             -t {THREADS} \
             -p ont \
             -o {PATH}{wildcards.sample}/snp_clair3 \
-            -model_path= {CLAIRENV} \  
+            --model_path={CLAIRENV} \
             --bed_fn={BED}
 
         cp {PATH}{wildcards.sample}/snp_clair3/merge_output.vcf.gz {output.vcf}
@@ -189,7 +182,7 @@ rule whatsHap_phasing:
             {input.bam} \
             --ignore-read-groups
 
-        samtools index -f {output.haplotag}
+        samtools index {output.haplotag}
         """
 
 
@@ -223,6 +216,19 @@ rule sniffles2_sv:
             --tandem-repeats {VNTR_BED}
         """
 
+rule sniffles2_caller_parse:
+    input:
+        vcf=rules.sniffles2_sv.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf} \
+            --caller Sniffles2 \
+            --output {output.tsv}
+        """
 
 rule cutesv:
     input:
@@ -232,6 +238,7 @@ rule cutesv:
         vcf=PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf"
     conda:
         CONDAENV + "cutesv.yaml"
+    threads: THREADS
     shell:
         """
         mkdir -p {PATH}{wildcards.sample}/sv/cutesv
@@ -241,7 +248,7 @@ rule cutesv:
             {input.ref} \
             {output.vcf} \
             {PATH}{wildcards.sample}/sv/cutesv \
-            --threads {THREADS} \
+            --threads {threads} \
             --max_cluster_bias_INS 100 \
             --diff_ratio_merging_INS 0.3 \
             --max_cluster_bias_DEL 100 \
@@ -251,9 +258,22 @@ rule cutesv:
             --min_mapq 20 \
             --min_read_len 500 \
             --genotype \
-            --include_bed {BEDCUTESV}
+            -include_bed {BEDCUTESV}
         """
 
+rule cutesv_caller_parse:
+    input:
+        vcf=rules.cutesv.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf} \
+            --caller cuteSV \
+            --output {output.tsv}
+        """
 
 rule delly_lr:
     input:
@@ -282,53 +302,19 @@ rule delly_lr:
             -o {output.vcf}
         """
 
-
-
-# Original generic VCF-to-TSV parsing
-rule parse_sniffles_vcf:
-    input:
-        vcf=rules.sniffles2_sv.output.vcf
-    output:
-        tsv=PATH + "{sample}/parsed/{sample}.sniffles.tsv"
-    shell:
-        """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_vcf_to_tsv.py \
-            --vcf {input.vcf} \
-            --caller Sniffles2 \
-            --output {output.tsv}
-        """
-
-
-rule parse_cutesv_vcf:
-    input:
-        vcf=rules.cutesv.output.vcf
-    output:
-        tsv=PATH + "{sample}/parsed/{sample}.cutesv.tsv"
-    shell:
-        """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_vcf_to_tsv.py \
-            --vcf {input.vcf} \
-            --caller cuteSV \
-            --output {output.tsv}
-        """
-
-
-rule parse_delly_vcf:
+rule delly_caller_parse:
     input:
         vcf=rules.delly_lr.output.vcf
     output:
-        tsv=PATH + "{sample}/parsed/{sample}.delly.tsv"
+        tsv=PATH + "{sample}/parsed/{sample}.delly.caller.tsv"
     shell:
         """
         mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_vcf_to_tsv.py \
+        python {SCRIPTS}/parse_sv_caller_vcf.py \
             --vcf {input.vcf} \
             --caller delly \
             --output {output.tsv}
         """
-
 
 rule jasmine_merge:
     input:
@@ -364,36 +350,6 @@ rule jasmine_merge:
 ##################################################################
 # Insertion sequence extraction + TE/mechanism classification
 ##################################################################
-
-
-rule parse_merged_vcf:
-    input:
-        vcf=rules.jasmine_merge.output.vcf
-    output:
-        tsv=PATH + "{sample}/parsed/{sample}.merged.tsv"
-    shell:
-        """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_vcf_to_tsv.py \
-            --vcf {input.vcf} \
-            --caller Jasmine \
-            --output {output.tsv}
-        """
-
-
-rule summarize_caller_support:
-    input:
-        vcf=rules.jasmine_merge.output.vcf
-    output:
-        tsv=PATH + "{sample}/parsed/{sample}.caller_support.tsv"
-    shell:
-        """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/summarize_sv_caller_support.py \
-            --vcf {input.vcf} \
-            --output {output.tsv}
-        """
-
 
 rule extract_insertion_seqs:
     input:
@@ -444,6 +400,7 @@ rule repeatmasker_classify:
 # Repeat expansion classification and annotation
 ##################################################################
 
+#{STRAGLR_SCRIPT} \
 rule straglr:
     input:
         bam=lambda wc: BAMS[wc.sample],
@@ -460,7 +417,7 @@ rule straglr:
         """
         mkdir -p {PATH}{wildcards.sample}/sv/straglr
 
-        {STRAGLR_SCRIPT} \
+        python /home/casadei7/straglr/straglr.py \
             {input.bam} \
             {input.ref} \
             {params.prefix} \
@@ -473,7 +430,10 @@ rule straglr:
             --use_unpaired_clips \
             --max_num_clusters 10 \
             --min_cluster_d 1 \
-            {STRAGLR_REGIONS}
+            {STRAGLR_REGIONS} \
+
+            
+       # da cambiare 
         """
 
 
@@ -481,7 +441,8 @@ rule straglr_annotation:
     input:
         tsv=rules.straglr.output.tsv,
         bed=rules.straglr.output.bed,
-        genes=config["gene_bed"]
+        genes=GENEBED
+        
     output:
         tsv=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv"
     conda:
@@ -536,44 +497,28 @@ rule needlr_annotation:
         """
 
 
-
-rule parse_needlr_vcf:
-    input:
-        vcf=rules.needlr_annotation.output.vcf
-    output:
-        tsv=PATH + "{sample}/parsed/{sample}.needlr.tsv"
-    shell:
-        """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_vcf_to_tsv.py \
-            --vcf {input.vcf} \
-            --caller needLR \
-            --output {output.tsv}
-        """
-
-
 ##########################################################################
 # AnnotSV — full annotation is the source of truth; panel-only is a view #
 ##########################################################################
 
-rule annotsv_install_annotations:
+#check if reference needed are present in the directory
+rule annotsv_annotations_check:
     output:
         marker=ANNOTSV_ANNOTATIONS_DIR + "/.installed"
-    conda:
-        CONDAENV + "annotsv.yaml"
     shell:
         """
-        mkdir -p {ANNOTSV_ANNOTATIONS_DIR}
-        cd {ANNOTSV_ANNOTATIONS_DIR}
-        INSTALL_annotations.sh
+        set -euo pipefail
+
+        test -d {ANNOTSV_ANNOTATIONS_DIR}/Annotations_Human
+        test -d {ANNOTSV_ANNOTATIONS_DIR}/Annotations_Exomiser
+
         touch {output.marker}
         """
-
 
 rule annotsv_annotation:
     input:
         vcf=rules.needlr_annotation.output.vcf,
-        annotations=rules.annotsv_install_annotations.output.marker
+        annotations=rules.annotsv_annotations_check.output.marker
     output:
         tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv"
     params:
@@ -601,7 +546,7 @@ rule annotsv_annotation:
 rule annotsv_annotation_panel_only:
     input:
         vcf=rules.needlr_annotation.output.vcf,
-        annotations=rules.annotsv_install_annotations.output.marker,
+        annotations=rules.annotsv_annotations_check.output.marker,
         genes=GENE_LIST
     output:
         tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv"
@@ -851,6 +796,7 @@ rule longphase_phasing:
 ########################################################################
 # Confirmatory MEI calling (TLDR)
 ########################################################################
+
 rule tldr_mei_confirmation:
     input:
         bam=lambda wc: BAMS[wc.sample],
@@ -858,23 +804,23 @@ rule tldr_mei_confirmation:
     output:
         table=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
     params:
-        outdir=PATH + "{sample}/mei/tldr"
+        outbase=PATH + "{sample}/mei/tldr/{sample}"
     conda:
         CONDAENV + "tldr.yaml"
     shell:
-        """
-        mkdir -p {params.outdir}
+          """
+    mkdir -p {PATH}{wildcards.sample}/mei/tldr
 
-        tldr \
-            -b {input.bam} \
-            -r {input.ref} \
-            -e {TLDR_ELTS} \
-            -p {THREADS} \
-            --outdir {params.outdir}
+    tldr \
+        -b {input.bam} \
+        -r {input.ref} \
+        -e {TLDR_ELTS} \
+        -p {THREADS} \
+        -o {params.outbase} \
+        > {params.outbase}.log 2>&1
 
-        mapfile -t tables < <(find {params.outdir} -maxdepth 1 -type f -name "*.table.txt" -print)
+    test -f {params.outbase}.table.txt
 
-        test "${#tables[@]}" -eq 1
-        cp "${tables[0]}" {output.table}
-        """
+    cp {params.outbase}.table.txt {output.table}
+    """
 
