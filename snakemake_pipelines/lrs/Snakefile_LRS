@@ -481,7 +481,6 @@ rule straglr_annotation:
 #####################################################################
 # needLR — ONT-native population/reference SV annotation/filtering #
 #####################################################################
-## NEED TO INSTALL .SH FROM GITHUB #####
 
 rule needlr_annotation:
     input:
@@ -492,7 +491,6 @@ rule needlr_annotation:
     params:
         outdir=PATH + "{sample}/sv/needlr",
         backend_flag=lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
-    threads: 8
     conda:
         CONDAENV + "needlr.yaml"
     shell:
@@ -501,7 +499,7 @@ rule needlr_annotation:
 
         needLR annotate \
             -O {params.outdir} \
-            -T {threads} \
+            -T {THREADS} \
             {params.backend_flag} \
             --all \
             {input.vcf}
