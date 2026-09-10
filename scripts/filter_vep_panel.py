@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-import argparse
+# TO BE DEFINED, FIRST RESULT IS NEEDED 
 
+import argparse
 
 def load_genes(path):
     with open(path) as f:
