@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-filter_annotsv_panel.py
-
 Derives the panel-only AnnotSV view by filtering the already-computed
 genome-wide AnnotSV TSV on the candidate gene list, instead of re-running
 AnnotSV a second time with -candidateGenesFiltering 1.
 
 AnnotSV's gene symbol column name has varied slightly across versions
-(commonly "Gene_name"); this script checks a small list of known aliases
-and fails loudly if none is found, rather than silently emitting an
-(almost) empty file.
+(commonly "Gene_name"); this script checks a small list of known genes of the panel
+and fails if none is found, rather than silently emitting an (almost) empty file.
+doesn't bring the information connected to those genes
 """
 from __future__ import annotations
 import argparse
@@ -29,7 +27,7 @@ def load_genes(path):
                 genes.add(g)
     return genes
 
-
+#checks gene column and performs comparison with the given list of genes 
 def find_gene_column(fieldnames):
     for cand in GENE_COL_CANDIDATES:
         if cand in fieldnames:
@@ -38,7 +36,7 @@ def find_gene_column(fieldnames):
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Filter genome-wide AnnotSV TSV to a candidate gene panel.")
+    ap = argparse.ArgumentParser(description="Filter genome-wide AnnotSV TSV to a candidate gene panel")
     ap.add_argument("--annotsv", required=True, help="Genome-wide AnnotSV output TSV")
     ap.add_argument("--genes", required=True, help="Candidate gene list, one symbol per line")
     ap.add_argument("--output", required=True)
