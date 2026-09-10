@@ -46,6 +46,24 @@ CPG_REGION_FLAG = f"--region {CPG_REGION}" if CPG_REGION else ""
 VEP_CACHE_DIR = config["vep_cache_dir"]
 VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 
+# ------------------------------------------------------------------
+# Pre-merge SV evidence filtering (new) 
+# ------------------------------------------------------------------
+# Applied to each caller's VCF, on the harmonized evidence table
+# produced by parse_sv_caller_vcf.py, *before* Jasmine merge. See
+# scripts/filter_sv_evidence.py for the exact logic. Hard filters
+# (FILTER, min support, size range) determine what reaches Jasmine;
+# soft flags (precision, low GQ, blacklist overlap) are preserved as
+# annotation columns for the integrated table rather than dropped.
+
+EVIDENCE_MIN_SUPPORT = config.get("evidence_min_support", 2)
+EVIDENCE_MIN_SVLEN = config.get("evidence_min_svlen", 50)
+EVIDENCE_MAX_SVLEN = config.get("evidence_max_svlen", 5_000_000)
+EVIDENCE_MIN_GQ = config.get("evidence_min_gq")
+EVIDENCE_MIN_GQ_FLAG = f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else ""
+EVIDENCE_BLACKLIST_BED = config.get("evidence_blacklist_bed")
+EVIDENCE_BLACKLIST_FLAG = f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
+
 # Python scripts: anchor to the Snakefile location rather than current working directory.
 SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
 
