@@ -56,30 +56,45 @@ vntr_bed: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/human_GRCh38_no_alt_a
 # ============================================================
 
 # Local offline VEP cache
-# do this vep_install -a cf -s homo_sapiens -y GRCh38 -c /refs/vep_cache --CONVERT
+# do this: vep_install -a cf -s homo_sapiens -y GRCh38 -c /refs/vep_cache --CONVERT
 
 reference_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference" # "/home/casadei7/SV-PIPELINE-main/reference"
+
 vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/vep" # "/home/casadei7/SV-PIPELINE-main/reference/vep" 
+
 vep_assembly: "GRCh38"
 
-# needLR population-AF backend.
+# ============================================================
+# needLR population-AF backend
+# ============================================================
 # Must contain the required 1KGP-LRSC ONT backend files.
+
 needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/needlr/release/backend_files/"
 
 
+# ============================================================
+# TLDR
+# ============================================================
 # Must contain the ALU/LINE1/SVA reference sequences required by TLDR
+
 tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/teref.ont.human.fa"
+
+# ============================================================
+# ANNOTATION
+# ============================================================
 
 monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
 
 discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
 
 # Benign population AF threshold
+
 annotsv_benign_af: 0.01
 
 # ============================================================
 # ANNOTSV
 #=============================================================
+
 annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/AnnotSV_annotations"
 
 # ============================================================
@@ -89,3 +104,21 @@ annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/AnnotS
 # false = standard SV calling
 # true  = mosaic SV calling
 sniffles_mosaic: false
+
+# ============================================================
+# PRE-MERGE SV EVIDENCE FILTERING 
+# ============================================================
+# Applied per-caller, before Jasmine merge. Does NOT change the
+# sniffles2/cuteSV/delly command-line parameters themselves.
+
+# Hard filters (drop from merge input):
+evidence_min_support: 2          # min supporting reads (CALLER_SUPPORT)
+evidence_min_svlen: 50           # bp
+evidence_max_svlen: 5000000      # bp; raise if your panel expects larger CNVs
+
+# Soft filters (flagged in evidence TSV, not dropped):
+# evidence_min_gq: 10             # uncomment to flag low genotype-quality calls
+# evidence_blacklist_bed: "/path/to/low_mappability_segdup.bed"  # optional
+
+# High-confidence multi-caller companion set (Jasmine SUPP field)
+high_confidence_min_supp: 2       # e.g. 2 of {sniffles2, cuteSV, delly} agree
