@@ -1,0 +1,943 @@
+import os
+
+configfile: "config_lrs.yaml"
+
+SAMPLES = list(config["samples"].keys())
+BAMS = config["samples"]
+PATH = config["path"].rstrip("/") + "/"
+REF = config["ref"]
+THREADS = config["threads"]
+BED = config["bed"]
+GENEBED = config["gene_bed"]
+BEDCUTESV = config["bedcutesv"]
+STRAGLR_BED = config.get("straglr_bed")
+gene_bed = config["gene_bed"]
+STRAGLR_REGIONS = f"--regions {STRAGLR_BED}" if STRAGLR_BED else ""
+GENE_LIST = config["candidate_genes_list"]
+CONDAENV = config["condaenv"]
+MODKITENV = config["modkitenv"]
+CLAIRENV = config["clair3env"]
+TLDR_ELTS = config["tldr_elements"]
+VNTR_BED = config["vntr_bed"]
+
+# needLR: ONT-native population-AF filtering only
+NEEDLR_BACKEND = config.get("needlr_backend_files")
+
+# Gene/HPO discovery
+MONARCH_BASE_URL = config.get("monarch_base_url","https://api-v3.monarchinitiative.org/v3/api")
+DISCOVERY_HPO_FILE = config.get("discovery_hpo_file","reference/optic_neuropathy_hpo_terms.tsv")
+
+# AnnotSV
+ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
+HPO_TERMS = config.get("hpo_terms")
+ANNOTSV_ANNOTATIONS_DIR = config.get("annotsv_annotations_dir", PATH + "reference/AnnotSV_annotations")
+
+# Sniffles2 / DELLY / STRAGLR
+# NOTE: caller command-line parameters below are left exactly as before
+# (see rules sniffles2_sv / cutesv / delly_lr) — nothing in this file changes
+# how the three SV callers themselves are invoked.
+SNIFFLES_MOSAIC = config.get("sniffles_mosaic", False)
+SNIFFLES_MOSAIC_FLAG = "--mosaic" if SNIFFLES_MOSAIC else ""
+DELLY_GENOME = config.get("delly_genome", "ont")
+STRAGLR_SCRIPT = config.get("straglr_script")#, "straglr.py")
+
+# Methylation region (optional). Use cpg_region in config for a genomic region.
+CPG_REGION = config.get("cpg_region")
+CPG_REGION_FLAG = f"--region {CPG_REGION}" if CPG_REGION else ""
+
+# VEP
+VEP_CACHE_DIR = config["vep_cache_dir"]
+VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
+
+# ------------------------------------------------------------------
+# Pre-merge SV evidence filtering (new)
+# ------------------------------------------------------------------
+# Applied to each caller's VCF, on the harmonized evidence table
+# produced by parse_sv_caller_vcf.py, *before* Jasmine merge. See
+# scripts/filter_sv_evidence.py for the exact logic. Hard filters
+# (FILTER, min support, size range) determine what reaches Jasmine;
+# soft flags (precision, low GQ, blacklist overlap) are preserved as
+# annotation columns for the integrated table rather than dropped.
+EVIDENCE_MIN_SUPPORT = config.get("evidence_min_support", 2)
+EVIDENCE_MIN_SVLEN = config.get("evidence_min_svlen", 50)
+EVIDENCE_MAX_SVLEN = config.get("evidence_max_svlen", 5_000_000)
+EVIDENCE_MIN_GQ = config.get("evidence_min_gq")
+EVIDENCE_MIN_GQ_FLAG = f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else ""
+EVIDENCE_BLACKLIST_BED = config.get("evidence_blacklist_bed")
+EVIDENCE_BLACKLIST_FLAG = f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
+
+# High-confidence multi-caller companion set: minimum number of callers
+# (out of sniffles2/cuteSV/delly) that must agree, via Jasmine's SUPP field.
+HIGH_CONF_MIN_SUPP = config.get("high_confidence_min_supp", 2)
+
+# Python scripts: anchor to the Snakefile location rather than current working directory.
+SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
+
+rule all:
+    input:
+        # QC
+        expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
+
+        # Small variants + phasing
+        expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz",sample=SAMPLES),
+        # NOTE: the haplotagged BAM below is a standalone QC/manual-review
+        # deliverable (e.g. for IGV inspection of phased reads). It is NOT
+        # consumed by any downstream rule — longphase_phasing re-derives
+        # joint SNP+SV phasing directly from the Clair3 VCF + Jasmine VCF +
+        # the original BAM. Drop this line from `rule all` if you don't
+        # need the standalone phased BAM.
+        expand(PATH + "{sample}/phasing/{sample}.phased.bam",sample=SAMPLES),
+
+        # SV calling (raw, per caller)
+        expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf",sample=SAMPLES),
+
+        # Pre-merge evidence-filtered caller VCFs + annotated evidence tables
+        expand(PATH + "{sample}/parsed/{sample}.sniffles.evidence.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.cutesv.evidence.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.evidence.tsv", sample=SAMPLES),
+
+        # Merge (evidence-filtered inputs) + high-confidence companion set
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.highconf.vcf.gz",sample=SAMPLES),
+
+        # Repeat expansion
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
+
+        # Population-AF filtering
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
+
+        # Caller-aware parsed evidence (raw, pre-filter — kept for traceability)
+        expand(PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.caller.tsv", sample=SAMPLES),
+
+        # AnnotSV: single genome-wide run + a derived panel-only view
+        # (no second AnnotSV execution — see annotsv_panel_only rule)
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv",sample=SAMPLES),
+
+        # Gene discovery
+        expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt",sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt",sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",sample=SAMPLES),
+
+        # VEP + panel-only view
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
+
+        # Methylation
+        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
+
+        # SV-aware phasing
+        expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",sample=SAMPLES),
+
+        # Confirmatory MEI calling
+        expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",sample=SAMPLES)
+
+################
+# QC           #
+################
+
+rule mosdepth_coverage:
+    input:
+        bam=lambda wc: BAMS[wc.sample]
+    output:
+        PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt"
+    conda:
+        CONDAENV + "mosdepth.yaml"
+    shell:
+        """
+        mkdir -p $(dirname {output})
+        mosdepth -t {THREADS} {PATH}{wildcards.sample}/coverage/{wildcards.sample} {input.bam}
+        """
+
+
+##################################
+# Small variant calling (control)
+##################################
+
+rule clair3_snp_calling:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        vcf=PATH + "{sample}/snp_clair3/{sample}.vcf.gz"
+    conda:
+        CONDAENV + "clair3.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/snp_clair3
+        run_clair3.sh \
+            -b {input.bam} \
+            -f {input.ref} \
+            -t {THREADS} \
+            -p ont \
+            -o {PATH}{wildcards.sample}/snp_clair3 \
+            --model_path={CLAIRENV} \
+            --bed_fn={BED}
+
+        cp {PATH}{wildcards.sample}/snp_clair3/merge_output.vcf.gz {output.vcf}
+        tabix -f -p vcf {output.vcf}
+        """
+
+
+rule whatsHap_phasing:
+    input:
+        vcf=rules.clair3_snp_calling.output.vcf,
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        phased=PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
+        haplotag=PATH + "{sample}/phasing/{sample}.phased.bam"
+    conda:
+        CONDAENV + "whatshap.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/phasing
+
+        whatshap phase \
+            --reference {input.ref} \
+            -o {output.phased} \
+            {input.vcf} \
+            {input.bam} \
+            --ignore-read-groups
+
+        tabix -f -p vcf {output.phased}
+
+        whatshap haplotag \
+            -o {output.haplotag} \
+            --reference {input.ref} \
+            {output.phased} \
+            {input.bam} \
+            --ignore-read-groups
+
+        samtools index {output.haplotag}
+        """
+
+
+########################
+# SV calling + merge   #
+########################
+# Caller settings below are unchanged from the original pipeline.
+
+rule sniffles2_sv:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        vcf=PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf"
+    conda:
+        CONDAENV + "sniffles2.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/sv/sniffles2
+
+        sniffles \
+            --input {input.bam} \
+            --vcf {output.vcf} \
+            --reference {input.ref} \
+            --threads {THREADS} \
+            --minsupport 2 \
+            --no-qc \
+            {SNIFFLES_MOSAIC_FLAG} \
+            --allow-overwrite \
+            --min-alignment-length 100 \
+            --output-rnames \
+            --tandem-repeats {VNTR_BED}
+        """
+
+rule sniffles2_caller_parse:
+    input:
+        vcf=rules.sniffles2_sv.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf} \
+            --caller Sniffles2 \
+            --output {output.tsv}
+        """
+
+rule cutesv:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        vcf=PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf"
+    conda:
+        CONDAENV + "cutesv.yaml"
+    threads: THREADS
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/sv/cutesv
+
+        cuteSV \
+            {input.bam} \
+            {input.ref} \
+            {output.vcf} \
+            {PATH}{wildcards.sample}/sv/cutesv \
+            --threads {threads} \
+            --max_cluster_bias_INS 100 \
+            --diff_ratio_merging_INS 0.3 \
+            --max_cluster_bias_DEL 100 \
+            --diff_ratio_merging_DEL 0.3 \
+            --min_support 2 \
+            --min_size 50 \
+            --min_mapq 20 \
+            --min_read_len 500 \
+            --genotype \
+            -include_bed {BEDCUTESV}
+        """
+
+rule cutesv_caller_parse:
+    input:
+        vcf=rules.cutesv.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf} \
+            --caller cuteSV \
+            --output {output.tsv}
+        """
+
+rule delly_lr:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        bcf=PATH + "{sample}/sv/delly/{sample}_delly.bcf",
+        vcf=PATH + "{sample}/sv/delly/{sample}_delly.vcf"
+    params:
+        outdir=PATH + "{sample}/sv/delly"
+    conda:
+        CONDAENV + "delly.yaml"
+    shell:
+        """
+        mkdir -p {params.outdir}
+
+        delly lr \
+            -y {DELLY_GENOME} \
+            -g {input.ref} \
+            -o {output.bcf} \
+            {input.bam}
+
+        bcftools view \
+            {output.bcf} \
+            -Ov \
+            -o {output.vcf}
+        """
+
+rule delly_caller_parse:
+    input:
+        vcf=rules.delly_lr.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.delly.caller.tsv"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf} \
+            --caller delly \
+            --output {output.tsv}
+        """
+
+##############################################################
+# Pre-merge SV evidence filtering (new)                       #
+# One rule per caller: derive PASS/FAIL + soft flags from the #
+# harmonized evidence table, then subset the raw caller VCF   #
+# to PASS-only IDs before it reaches Jasmine.                 #
+##############################################################
+
+rule sniffles2_evidence_filter:
+    input:
+        tsv=rules.sniffles2_caller_parse.output.tsv
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.sniffles.evidence.tsv",
+        ids=PATH + "{sample}/parsed/{sample}.sniffles.pass_ids.txt"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/filter_sv_evidence.py \
+            --caller-tsv {input.tsv} \
+            --caller Sniffles2 \
+            --min-support {EVIDENCE_MIN_SUPPORT} \
+            --min-svlen {EVIDENCE_MIN_SVLEN} \
+            --max-svlen {EVIDENCE_MAX_SVLEN} \
+            {EVIDENCE_MIN_GQ_FLAG} \
+            {EVIDENCE_BLACKLIST_FLAG} \
+            --output-tsv {output.tsv} \
+            --output-ids {output.ids}
+        """
+
+rule sniffles2_vcf_filtered:
+    input:
+        vcf=rules.sniffles2_sv.output.vcf,
+        ids=rules.sniffles2_evidence_filter.output.ids
+    output:
+        vcf=PATH + "{sample}/sv/sniffles2/{sample}_sniffles.filtered.vcf"
+    conda:
+        CONDAENV + "jasmine.yaml"
+    shell:
+        """
+        bcftools view -i 'ID=@{input.ids}' {input.vcf} -Ov -o {output.vcf}
+        """
+
+rule cutesv_evidence_filter:
+    input:
+        tsv=rules.cutesv_caller_parse.output.tsv
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.cutesv.evidence.tsv",
+        ids=PATH + "{sample}/parsed/{sample}.cutesv.pass_ids.txt"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/filter_sv_evidence.py \
+            --caller-tsv {input.tsv} \
+            --caller cuteSV \
+            --min-support {EVIDENCE_MIN_SUPPORT} \
+            --min-svlen {EVIDENCE_MIN_SVLEN} \
+            --max-svlen {EVIDENCE_MAX_SVLEN} \
+            {EVIDENCE_MIN_GQ_FLAG} \
+            {EVIDENCE_BLACKLIST_FLAG} \
+            --output-tsv {output.tsv} \
+            --output-ids {output.ids}
+        """
+
+rule cutesv_vcf_filtered:
+    input:
+        vcf=rules.cutesv.output.vcf,
+        ids=rules.cutesv_evidence_filter.output.ids
+    output:
+        vcf=PATH + "{sample}/sv/cutesv/{sample}_cutesv.filtered.vcf"
+    conda:
+        CONDAENV + "jasmine.yaml"
+    shell:
+        """
+        bcftools view -i 'ID=@{input.ids}' {input.vcf} -Ov -o {output.vcf}
+        """
+
+rule delly_evidence_filter:
+    input:
+        tsv=rules.delly_caller_parse.output.tsv
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.delly.evidence.tsv",
+        ids=PATH + "{sample}/parsed/{sample}.delly.pass_ids.txt"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/filter_sv_evidence.py \
+            --caller-tsv {input.tsv} \
+            --caller delly \
+            --min-support {EVIDENCE_MIN_SUPPORT} \
+            --min-svlen {EVIDENCE_MIN_SVLEN} \
+            --max-svlen {EVIDENCE_MAX_SVLEN} \
+            {EVIDENCE_MIN_GQ_FLAG} \
+            {EVIDENCE_BLACKLIST_FLAG} \
+            --output-tsv {output.tsv} \
+            --output-ids {output.ids}
+        """
+
+rule delly_vcf_filtered:
+    input:
+        vcf=rules.delly_lr.output.vcf,
+        ids=rules.delly_evidence_filter.output.ids
+    output:
+        vcf=PATH + "{sample}/sv/delly/{sample}_delly.filtered.vcf"
+    conda:
+        CONDAENV + "jasmine.yaml"
+    shell:
+        """
+        bcftools view -i 'ID=@{input.ids}' {input.vcf} -Ov -o {output.vcf}
+        """
+
+rule jasmine_merge:
+    input:
+        sniffles=rules.sniffles2_vcf_filtered.output.vcf,
+        cutesv=rules.cutesv_vcf_filtered.output.vcf,
+        delly=rules.delly_vcf_filtered.output.vcf
+    output:
+        list_file=PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
+        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"
+    params:
+        outdir=PATH + "{sample}/sv/merged"
+    conda:
+        CONDAENV + "jasmine.yaml"
+    shell:
+        """
+        mkdir -p {params.outdir}
+
+        printf "%s\\n%s\\n%s\\n" \
+            {input.sniffles} \
+            {input.cutesv} \
+            {input.delly} \
+            > {output.list_file}
+
+        jasmine \
+            file_list={output.list_file} \
+            out_file={output.vcf} \
+            threads={THREADS} \
+            --allow_intrasample \
+            --output_genotypes
+        """
+
+rule jasmine_high_confidence:
+    # Multi-caller consensus companion set: SVs supported by >= HIGH_CONF_MIN_SUPP
+    # of the three callers, based on Jasmine's own SUPP INFO field. This is a
+    # companion output, not a replacement — the complete merged callset above
+    # is still the source of truth for the AnnotSV/VEP/gene-discovery branch.
+    input:
+        vcf=rules.jasmine_merge.output.vcf
+    output:
+        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.highconf.vcf.gz"
+    conda:
+        CONDAENV + "jasmine.yaml"
+    shell:
+        """
+        bcftools view -i 'INFO/SUPP>={HIGH_CONF_MIN_SUPP}' {input.vcf} -Oz -o {output.vcf}
+        tabix -f -p vcf {output.vcf}
+        """
+
+rule prepare_needlr_vcf:
+    input:
+        vcf=rules.jasmine_merge.output.vcf,
+        fai=REF + ".fai"
+    output:
+        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz",
+        tbi=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz.tbi"
+    threads: 32
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        mkdir -p $(dirname {output.vcf})
+
+        python {SCRIPTS}/prepare_needlr_vcf.py \
+            --input {input.vcf} \
+            --output {output.vcf} \
+            --reference-fai {input.fai}
+        """
+
+
+##################################################################
+# Repeat expansion classification and annotation
+##################################################################
+
+rule straglr:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        vcf=PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",
+        bed=PATH + "{sample}/sv/straglr/{sample}_straglr.bed",
+        tsv=PATH + "{sample}/sv/straglr/{sample}_straglr.tsv"
+    params:
+        prefix=PATH + "{sample}/sv/straglr/{sample}_straglr"
+    conda:
+        CONDAENV + "straglr.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/sv/straglr
+
+        python /home/casadei7/straglr/straglr.py \
+            {input.bam} \
+            {input.ref} \
+            {params.prefix} \
+            --min_str_len 2 \
+            --min_support 2 \
+            --min_ins_size 100 \
+            --nprocs {THREADS} \
+            --max_str_len 100000 \
+            --max_num_clusters 2 \
+            --min_cluster_d 1
+ """
+
+rule straglr_annotation:
+    input:
+        tsv=rules.straglr.output.tsv,
+        bed=rules.straglr.output.bed,
+        genes=GENEBED
+
+    output:
+        tsv=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv"
+    conda:
+        CONDAENV + "straglr.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/sv/straglr
+
+        python {SCRIPTS}/annotate_straglr.py \
+            --straglr-tsv {input.tsv} \
+            --straglr-bed {input.bed} \
+            --gene-bed {input.genes} \
+            --output {output.tsv}
+        """
+
+
+#####################################################################
+# needLR — ONT-native population/reference SV annotation/filtering #
+#####################################################################
+
+rule needlr_annotation:
+    input:
+        vcf=rules.prepare_needlr_vcf.output.vcf
+    output:
+        tsv=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
+        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
+    params:
+        outdir=PATH + "{sample}/sv/needlr",
+        backend_flag=lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
+    conda:
+        CONDAENV + "needlr.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        needLR annotate \
+            -O {params.outdir} \
+            -T {THREADS} \
+            {params.backend_flag} \
+            --all \
+            {input.vcf}
+
+        results_tsv=$(find {params.outdir} -type f -name '*_RESULTS.tsv' -print -quit)
+        results_vcf=$(find {params.outdir} -type f -name '*_RESULTS.vcf.gz' -print -quit)
+
+        test -n "$results_tsv"
+        test -n "$results_vcf"
+
+        cp "$results_tsv" {output.tsv}
+        cp "$results_vcf" {output.vcf}
+
+        tabix -f -p vcf {output.vcf}
+        """
+
+
+##########################################################################
+# AnnotSV — one genome-wide run is the source of truth; panel-only is a #
+# derived view (no second AnnotSV execution)                            #
+##########################################################################
+
+rule annotsv_annotations_check:
+    output:
+        marker=ANNOTSV_ANNOTATIONS_DIR + "/.installed"
+    shell:
+        """
+        set -euo pipefail
+
+        test -d {ANNOTSV_ANNOTATIONS_DIR}/Annotations_Human
+        test -d {ANNOTSV_ANNOTATIONS_DIR}/Annotations_Exomiser
+
+        touch {output.marker}
+        """
+
+rule annotsv_annotation:
+    input:
+        vcf=rules.needlr_annotation.output.vcf,
+        annotations=rules.annotsv_annotations_check.output.marker
+    output:
+        tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv"
+    params:
+        outdir=PATH + "{sample}/sv/annotsv",
+        hpo_flag=lambda wc: f"-hpo {HPO_TERMS}" if HPO_TERMS else ""
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        mkdir -p {params.outdir}
+
+        AnnotSV \
+            -SVinputFile {input.vcf} \
+            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
+            -outputDir {params.outdir} \
+            -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {GENE_LIST} \
+            -candidateGenesFiltering 0 \
+            -benignAF {ANNOTSV_BENIGN_AF} \
+            {params.hpo_flag}
+        """
+
+rule annotsv_annotation_panel_only:
+    # Derived from the genome-wide AnnotSV TSV above — filters on the gene
+    # symbol column instead of re-running AnnotSV a second time.
+    input:
+        annotsv=rules.annotsv_annotation.output.tsv,
+        genes=GENE_LIST
+    output:
+        tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        python {SCRIPTS}/filter_annotsv_panel.py \
+            --annotsv {input.annotsv} \
+            --genes {input.genes} \
+            --output {output.tsv}
+        """
+
+
+#####################################
+# Genome-wide human gene discovery #
+#####################################
+
+rule extract_sv_genes:
+    input:
+        annotsv=rules.annotsv_annotation.output.tsv
+    output:
+        genes=PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/gene_discovery
+        python {SCRIPTS}/extract_annotsv_genes.py \
+            --annotsv {input.annotsv} \
+            --output {output.genes}
+        """
+
+rule extract_nonpanel_genes:
+    input:
+        genes=rules.extract_sv_genes.output.genes,
+        panel=GENE_LIST
+    output:
+        genes=PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python {SCRIPTS}/extract_nonpanel_genes.py \
+            --genes {input.genes} \
+            --panel {input.panel} \
+            --output {output.genes}
+        """
+
+rule human_gene_phenotypes:
+    input:
+        genes=rules.extract_nonpanel_genes.output.genes,
+        hpo=DISCOVERY_HPO_FILE
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv"
+    params:
+        api=MONARCH_BASE_URL
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python {SCRIPTS}/monarch_human_gene_phenotypes.py \
+            --genes {input.genes} \
+            --hpo-anchors {input.hpo} \
+            --output {output.tsv} \
+            --api-base {params.api}
+        """
+
+rule rank_genomewide_candidates:
+    input:
+        annotsv=rules.annotsv_annotation.output.tsv,
+        genes=rules.extract_nonpanel_genes.output.genes,
+        phenotypes=rules.human_gene_phenotypes.output.tsv,
+        panel=GENE_LIST
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python {SCRIPTS}/rank_sv_gene_candidates.py \
+            --annotsv {input.annotsv} \
+            --genes {input.genes} \
+            --phenotypes {input.phenotypes} \
+            --panel {input.panel} \
+            --output {output.tsv}
+        """
+
+##############################
+# INTEGRATION OF INFO
+##############################
+
+rule integrated_sv_gene_table:
+    input:
+        vcf=rules.jasmine_merge.output.vcf,
+        annotsv=rules.annotsv_annotation.output.tsv,
+        needlr=rules.needlr_annotation.output.tsv,
+        ranking=rules.rank_genomewide_candidates.output.tsv,
+        panel=GENE_LIST,
+        sniffles=rules.sniffles2_evidence_filter.output.tsv,
+        cutesv=rules.cutesv_evidence_filter.output.tsv,
+        delly=rules.delly_evidence_filter.output.tsv
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        mkdir -p $(dirname {output.tsv})
+
+        python {SCRIPTS}/build_integrated_sv_gene_tsv.py \
+            --vcf {input.vcf} \
+            --annotsv {input.annotsv} \
+            --needlr {input.needlr} \
+            --ranking {input.ranking} \
+            --panel {input.panel} \
+            --caller-tsv {input.sniffles} \
+            --caller-tsv {input.cutesv} \
+            --caller-tsv {input.delly} \
+            --output {output.tsv}
+        """
+
+##################################################################
+# VEP — full transcript-level annotation + panel-only derived view
+##################################################################
+
+rule vep_sv_annotation:
+    input:
+        vcf=rules.needlr_annotation.output.vcf
+    output:
+        txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
+    conda:
+        CONDAENV + "vep.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/sv/vep
+
+        vep \
+            --input_file {input.vcf} \
+            --format vcf \
+            --vcf \
+            --output_file {output.txt} \
+            --cache \
+            --offline \
+            --dir_cache {VEP_CACHE_DIR} \
+            --assembly {VEP_ASSEMBLY} \
+            --canonical \
+            --overlaps \
+            --pick \
+            --symbol \
+            --biotype \
+            --max_sv_size 250000000 \
+            --buffer_size 100 \
+            --force_overwrite \
+            --fork {THREADS}
+        """
+        # NOTE: --vcf added so the output carries a ##INFO=<ID=CSQ,...> header
+        # and per-record CSQ= field, which is what filter_vep_panel.py parses.
+        # Without --vcf, VEP emits its own default tabular format and the
+        # downstream panel filter would silently match nothing.
+
+rule vep_sv_annotation_panel_only:
+    input:
+        txt=rules.vep_sv_annotation.output.txt,
+        genes=GENE_LIST
+    output:
+        txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/sv/vep
+
+        python {SCRIPTS}/filter_vep_panel.py \
+            --vep {input.txt} \
+            --genes {input.genes} \
+            --output {output.txt}
+        """
+
+##################################################################
+# Methylation
+##################################################################
+
+rule modkit_extract:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        tsv=PATH + "{sample}/methylation/{sample}.modkit.tsv"
+    conda:
+        CONDAENV + "modkit.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/methylation
+
+        modkit extract calls \
+            -t {THREADS} \
+            --reference {input.ref} \
+            {CPG_REGION_FLAG} \
+            {input.bam} \
+            {output.tsv}
+        """
+
+########################################################################
+# SV-aware joint SNP+SV phasing (LongPhase)
+########################################################################
+
+rule longphase_phasing:
+    input:
+        vcf=rules.clair3_snp_calling.output.vcf,
+        sv_vcf=rules.jasmine_merge.output.vcf,
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        vcf=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
+    params:
+        prefix=PATH + "{sample}/phasing_longphase/{sample}.longphase"
+    conda:
+        CONDAENV + "longphase.yaml"
+    shell:
+        """
+        mkdir -p {PATH}{wildcards.sample}/phasing_longphase
+
+        longphase phase \
+            -s {input.vcf} \
+            --sv-file {input.sv_vcf} \
+            -b {input.bam} \
+            -r {input.ref} \
+            -t {THREADS} \
+            -o {params.prefix} \
+            --ont
+
+        test -s {params.prefix}.vcf
+        bgzip -f {params.prefix}.vcf
+        test -s {output.vcf}
+        tabix -f -p vcf {output.vcf}
+        """
+
+########################################################################
+# Confirmatory MEI calling (TLDR)
+########################################################################
+
+rule tldr_mei_confirmation:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        table=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
+    params:
+        outbase=PATH + "{sample}/mei/tldr/{sample}"
+    conda:
+        CONDAENV + "tldr.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        mkdir -p {PATH}{wildcards.sample}/mei/tldr
+
+        tldr \
+            -b {input.bam} \
+            -r {input.ref} \
+            -e {TLDR_ELTS} \
+            -p {THREADS} \
+            --color_consensus \
+            -o {params.outbase}
+
+        cp {params.outbase}.table.txt {output.table}
+        """
