@@ -534,6 +534,31 @@ rule needlr_annotation:
         tabix -f -p vcf {output.vcf}
         """
 
+##########################################################################
+# control if vcf obtained from needlr satisfy annitv input               #
+# and further function                                                  #
+##########################################################################
+# modify based on the script fix_needlrvcf_for_annotsv.py
+# rule prepare_needlr_vcf:
+#    input:
+#        vcf=rules.jasmine_merge.output.vcf,
+#        fai=REF + ".fai"
+#    output:
+#        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz",
+#        tbi=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz.tbi"
+#    threads: 32
+#    conda:
+#        CONDAENV + "annotsv.yaml"
+#    shell:
+#        """
+#        mkdir -p $(dirname {output.vcf})
+#
+#        python {SCRIPTS}/prepare_needlr_vcf.py \
+#           --input {input.vcf} \
+#            --output {output.vcf} \
+#            --reference-fai {input.fai}
+#        """
+
 
 ##########################################################################
 # AnnotSV — full annotation is the source of truth; panel-only is a view #
