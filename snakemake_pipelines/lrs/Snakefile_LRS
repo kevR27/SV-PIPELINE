@@ -684,7 +684,14 @@ rule human_gene_phenotypes:
             --output {output.tsv} \
             --api-base {params.api}
         """
-
+"""
+#python3 monarch_human_gene_phenotypes_offline.py \
+#    --genes patient2__nonpanel_genes.txt \
+#    --hpo-anchors optic_neuropathy_hpo_terms.tsv \
+#    --nodes monarch-kg_nodes.tsv \
+#    --edges monarch-kg_edges.tsv \
+#    --output patient2__human_gene_phenotypes.tsv
+"""
 rule rank_genomewide_candidates:
     input:
         annotsv=rules.annotsv_annotation.output.tsv,
