@@ -339,28 +339,48 @@ def main():
     # ------------------------------------------------------------
     # STEP 6: Index
     # ------------------------------------------------------------
+    # ------------------------------------------------------------
+    # STEP 6: Sort and index
+    # ------------------------------------------------------------
+
+    print("\n[ SORTING VCF ]")
+
+    sorted_vcf = output_vcf.with_name(
+        output_vcf.stem + ".sorted.vcf.gz"
+    )
+
+    run_command([
+        args.bcftools,
+        "sort",
+        "-Oz",
+        "-o",
+        str(sorted_vcf),
+        str(output_vcf)
+    ])
+
+    print("\n[SORTING] Sorted VCF:")
+    print(sorted_vcf)
 
     print("\n[INDEXING]")
 
     run_command([
         args.bcftools,
         "index",
-        "-f",
-        str(output_vcf)
+        str(sorted_vcf)
     ])
 
     print("\n" + "=" * 70)
     print("SUCCESS")
     print("=" * 70)
 
-    print(f"\nCorrected VCF:")
-    print(output_vcf)
+    print("\nCorrected and sorted VCF:")
+    print(sorted_vcf)
 
-    print(f"\nIndex:")
-    print(str(output_vcf) + ".csi")
+    print("\nIndex:")
+    print(str(sorted_vcf) + ".csi")
 
     print("\nThe corrected VCF is ready for AnnotSV.")
-
+  
 
 if __name__ == "__main__":
     main()
