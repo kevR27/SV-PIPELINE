@@ -11,7 +11,6 @@ BED = config["bed"]
 GENEBED = config["gene_bed"]
 BEDCUTESV = config["bedcutesv"]
 STRAGLR_BED = config.get("straglr_bed")
-gene_bed = config["gene_bed"]
 STRAGLR_REGIONS = f"--regions {STRAGLR_BED}" if STRAGLR_BED else ""
 GENE_LIST = config["candidate_genes_list"]
 CONDAENV = config["condaenv"]
