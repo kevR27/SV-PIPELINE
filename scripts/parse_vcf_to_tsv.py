@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Expand a VCF/VCF.GZ into a TSV without losing INFO or FORMAT data."""
+"""
+Expand a VCF/VCF.GZ into a TSV without losing INFO or FORMAT data
+NOT ACTUALLY INCLUDED IN THE SNAKEMAKE DAG 
+CAN BE APPLIED MANUALLY TO VISUALIZED VCFs
+"""
 
 from __future__ import annotations
 
