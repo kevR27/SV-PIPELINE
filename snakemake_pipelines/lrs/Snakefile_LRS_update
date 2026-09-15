@@ -91,10 +91,6 @@ rule all:
         expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf",sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz",sample=SAMPLES),
 
-        # Insertion / MEI mechanism classification
-        #expand(PATH + "{sample}/sv/insertions/{sample}_insertions.fasta", sample=SAMPLES),
-        #expand(PATH + "{sample}/sv/insertions/{sample}_repeatmasker.out", sample=SAMPLES),
-
         # Repeat expansion
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",sample=SAMPLES),
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed",sample=SAMPLES),
