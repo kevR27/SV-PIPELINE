@@ -27,6 +27,11 @@ import sys
 from collections import OrderedDict, defaultdict
 from pathlib import Path
 
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    csv.field_size_limit(2**31 - 1)
+
 # Placeholder used everywhere a value is absent, to keep the output table
 # free of blank cells.
 MISSING = "."
@@ -58,20 +63,20 @@ def parse_info(raw: str) -> dict:
 
     return info
 
+# """
+#    Return the value of the first column name (in order) present in `row`
+#    with a non-empty value. Tries an exact match first, then falls back to
+#    a case-insensitive match — different tool versions capitalize column
+#    names inconsistently (e.g. "Gene_name" vs "gene_name").
+#	"""
 
 def first(row: dict, names: list[str]) -> str:
-    """
-    Return the value of the first column name (in order) present in `row`
-    with a non-empty value. Tries an exact match first, then falls back to
-    a case-insensitive match — different tool versions capitalize column
-    names inconsistently (e.g. "Gene_name" vs "gene_name").
-    """
     for name in names:
         value = row.get(name, MISSING)
         if value not in ("", MISSING, None):
             return str(value)
 
-    lowercase_row = {key.lower(): value for key, value in row.items()}
+    lowercase_row = {key.lower(): value for key, value in row.items() if isinstance(key, str)}
     for name in names:
         value = lowercase_row.get(name.lower(), MISSING)
         if value not in ("", MISSING, None):
@@ -90,11 +95,11 @@ def split_genes(value) -> list[str]:
 
 
 def read_tsv(path: str) -> list[dict]:
-    """Read a TSV into a list of row dicts. Returns [] if path is falsy."""
+    """Read a TSV into a list of row dicts. Returns [] if path is false"""
     if not path:
         return []
     with open_text(path) as fh:
-        return list(csv.DictReader(fh, delimiter="\t"))
+        return list(csv.DictReader(fh, delimiter="\t", quoting=csv.QUOTE_NONE))
 
 
 def read_panel(path: str) -> set[str]:
@@ -176,11 +181,15 @@ def read_vcf(path: str):
 
 def index_by_id(rows: list[dict]) -> dict:
     """Index a list of row dicts by SV_ID (trying SV_ID/ID/AnnotSV_ID),
-    returning {sv_id: [matching rows]}."""
+    returning {sv_id: [matching rows]}. Strips a leading 'needLR.' prefix
+    if present, since AnnotSV here was run on a needLR-relabeled VCF
+    while SV_ID in this pipeline comes from the original merged VCF."""
     index = defaultdict(list)
     for row in rows:
         sv_id = first(row, ["SV_ID", "ID", "AnnotSV_ID"])
         if sv_id != MISSING:
+            if sv_id.startswith("needLR."):
+                sv_id = sv_id[len("needLR."):]
             index[sv_id].append(row)
     return index
 
