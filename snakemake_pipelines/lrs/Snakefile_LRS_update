@@ -9,7 +9,9 @@ REF = config["ref"]
 THREADS = config["threads"]
 BED = config["bed"]
 GENEBED = config["gene_bed"]
-BEDCUTESV = config["bedcutesv"]
+BEDCUTESV = config["bedcutesv"]   # cuteSV kept panel-restricted deliberately: higher sensitivity/precision
+                                   # caller, more prone to genome-wide noise. sniffles2 + delly_lr remain
+                                   # genome-wide so a 2-of-3 consensus outside the panel is still possible.
 STRAGLR_BED = config.get("straglr_bed")
 STRAGLR_REGIONS = f"--regions {STRAGLR_BED}" if STRAGLR_BED else ""
 GENE_LIST = config["candidate_genes_list"]
@@ -50,10 +52,6 @@ VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 # ------------------------------------------------------------------
 # Pre-merge SV evidence filtering
 # ------------------------------------------------------------------
-# Applied to each caller after caller-specific parsing and before
-# Jasmine merge. The original caller VCFs and caller TSVs are kept.
-# Only the filtered VCFs are supplied to Jasmine.
-
 FILTER_SV_EVIDENCE_SCRIPT = config["filter_sv_evidence_script"]
 EVIDENCE_MIN_SUPPORT = config.get("evidence_min_support", 2)
 EVIDENCE_MIN_SVLEN = config.get("evidence_min_svlen", 50)
@@ -70,64 +68,69 @@ EVIDENCE_BLACKLIST_FLAG = (
     if EVIDENCE_BLACKLIST_BED
     else ""
 )
+
+# High-confidence multi-caller companion set (Jasmine SUPP field)
 HIGH_CONFIDENCE_MIN_SUPP = config.get("high_confidence_min_supp", 2)
 
-# Python scripts: anchor to the Snakefile location rather than current working directory.
+# Python scripts: anchor to the Snakefile location rather than current working directory
 SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
 
 rule all:
     input:
         # QC
-        expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/COVERAGE/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
 
         # Small variants + phasing
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz",sample=SAMPLES),
-        expand(PATH + "{sample}/phasing/{sample}.phased.bam",sample=SAMPLES),
+        expand(PATH + "{sample}/Phasing/{sample}.phased.vcf.gz",sample=SAMPLES),
+        expand(PATH + "{sample}/Phasing/{sample}.phased.bam",sample=SAMPLES),
 
         # SV calling + merge
-        expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/sniffles2/{sample}_sniffles.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/cutesv/{sample}_cutesv.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/delly/{sample}_delly.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/merged/{sample}_merged_SV.vcf.gz",sample=SAMPLES),
+
+        # High-confidence multi-caller FILTER (high_confidence_min_supp was configured but never used)
+        expand(PATH + "{sample}/SV/merged/{sample}_merged_SV.high_confidence.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/merged/{sample}_caller_support_summary.tsv", sample=SAMPLES),
 
         # Repeat expansion
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed",sample=SAMPLES),
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/straglr/{sample}_straglr.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/straglr/{sample}_straglr.bed",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/straglr/{sample}_straglr.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
 
-        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
-    
         # Population-AF filtering
-        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
         # Caller-aware parsed evidence
-        expand(PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed/{sample}.delly.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.sniffles.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.cutesv.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.delly.caller.tsv", sample=SAMPLES),
 
         # Pre-merge filtered caller evidence + PASS IDs + VCFs used by Jasmine
-        expand(PATH + "{sample}/parsed/{sample}.sniffles.evidence.filtered.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed/{sample}.sniffles.pass.ids.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed/{sample}.cutesv.evidence.filtered.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed/{sample}.cutesv.pass.ids.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed/{sample}.delly.evidence.filtered.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed/{sample}.delly.pass.ids.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.sniffles.evidence.filtered.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.sniffles.pass.ids.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.cutesv.evidence.filtered.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.cutesv.pass.ids.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.delly.evidence.filtered.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed_vcf/{sample}.delly.pass.ids.txt", sample=SAMPLES),
 
         # Pre-merge filtered caller VCFs used by Jasmine
-        expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.filtered.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.filtered.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/delly/{sample}_delly.filtered.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/sniffles2/{sample}_sniffles.filtered.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/cutesv/{sample}_cutesv.filtered.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/delly/{sample}_delly.filtered.vcf", sample=SAMPLES),
 
         # AnnotSV-compatible NeedLR VCFs; original NeedLR result is retained
-        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.sorted.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.sorted.vcf.gz.csi", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_input.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_repaired.vcf.sorted.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_repaired.vcf.sorted.vcf.gz.csi", sample=SAMPLES),
 
         # AnnotSV + panel-only view
-        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",sample=SAMPLES),
-        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/annotsv/{sample}_merged_SV.annotsv.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/SV/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv",sample=SAMPLES),
 
         # Gene discovery
         expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt",sample=SAMPLES),
@@ -136,18 +139,18 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",sample=SAMPLES),
 
-        # VEP + panel-only view
-        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
+        # VEP + panel-only 
+        expand(PATH + "{sample}/SV/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/SV/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # Methylation
-        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/Methylation/{sample}.modkit.tsv", sample=SAMPLES),
 
         # SV-aware phasing
-        expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",sample=SAMPLES),
+        expand(PATH + "{sample}/Phasing_longphase/{sample}.longphase.vcf.gz",sample=SAMPLES),
 
         # Confirmatory MEI calling
-        expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",sample=SAMPLES)
+        expand(PATH + "{sample}/MEI/tldr/{sample}.tldr.table.txt",sample=SAMPLES)
 
 ################
 # QC           #
@@ -515,6 +518,31 @@ rule jasmine_merge:
         tabix -f -p vcf {output.vcf}
         """
 
+rule summarize_caller_support:
+    input:
+        vcf=rules.jasmine_merge.output.vcf
+    output:
+        summary=PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv",
+        high_conf_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf.gz"
+    params:
+        raw_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.summary})
+
+        python {SCRIPTS}/summarize_sv_caller_support.py \
+            --vcf {input.vcf} \
+            --output {output.summary} \
+            --min-callers {HIGH_CONFIDENCE_MIN_SUPP} \
+            --high-confidence-vcf {params.raw_vcf}
+
+        bgzip -f {params.raw_vcf}
+        tabix -f -p vcf {output.high_conf_vcf}
+        """
+
 rule prepare_needlr_vcf:
     input:
         vcf=rules.jasmine_merge.output.vcf,
@@ -538,8 +566,6 @@ rule prepare_needlr_vcf:
 ##################################################################
 # Repeat expansion classification and annotation
 ##################################################################
-
-#{STRAGLR_SCRIPT} \
 
 rule straglr:
     input:
@@ -569,14 +595,14 @@ rule straglr:
             --max_str_len 100000 \
             --max_num_clusters 2 \
             --min_cluster_d 1
- """
+        """
 
 rule straglr_annotation:
     input:
         tsv=rules.straglr.output.tsv,
         bed=rules.straglr.output.bed,
         genes=GENEBED
-        
+
     output:
         tsv=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv"
     conda:
@@ -633,22 +659,21 @@ rule needlr_annotation:
         """
 
 ##########################################################################
-# Validate / repair NeedLR VCF before AnnotSV                        #
+# Validate/repair NeedLR VCF before AnnotSV                              #
 ##########################################################################
 # This rule NEVER modifies the original NeedLR RESULTS VCF.
-# fix_needlrvcf_for_annotsv.py writes a new repaired VCF and then creates
-# a separate sorted/indexed VCF for AnnotSV.
+# This writes a new repaired VCF and then creates a separate sorted/indexed VCF for AnnotSV
 
 rule fix_needlrvcf_for_annotsv:
     input:
         vcf=rules.needlr_annotation.output.vcf
     output:
-        repaired=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz",
-        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.sorted.vcf.gz",
-        csi=PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.sorted.vcf.gz.csi"
+        repaired=PATH + "{sample}/sv/needlr/{sample}_needLR_repaired.vcf.gz",
+        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_repaired.vcf.sorted.vcf.gz",
+        csi=PATH + "{sample}/sv/needlr/{sample}_needLR_repaired.vcf.sorted.vcf.gz.csi"
     params:
         tmpdir=PATH + "{sample}/sv/needlr/.fix_needlrvcf",
-        tmp_output=PATH + "{sample}/sv/needlr/.fix_needlrvcf/{sample}_needLR_input.vcf.gz"
+        tmp_output=PATH + "{sample}/sv/needlr/.fix_needlrvcf/{sample}_needLR_repaired.vcf.gz"
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
@@ -681,11 +706,10 @@ rule fix_needlrvcf_for_annotsv:
         rm -f {params.tmp_output}.sorted.vcf.gz.csi
         """
 
-
 ##########################################################################
-# AnnotSV — full annotation is the source of truth; panel-only is a view #
+# AnnotSV — genome-wide is the source of truth; panel-only is a filtered #
+# post-hoc view (no second AnnotSV execution)                            #
 ##########################################################################
-# Shared reference directory; intentionally outside per-sample outputs.
 
 rule annotsv_annotations_check:
     output:
@@ -723,34 +747,26 @@ rule annotsv_annotation:
             -genomeBuild GRCh38 \
             -candidateGenesFile {GENE_LIST} \
             -candidateGenesFiltering 0 \
+            -tx ENSEMBL \
+            -REreport 1\
             -benignAF {ANNOTSV_BENIGN_AF} \
             {params.hpo_flag}
         """
 
 rule annotsv_annotation_panel_only:
     input:
-        vcf=rules.fix_needlrvcf_for_annotsv.output.vcf,
-        annotations=rules.annotsv_annotations_check.output.marker,
+        tsv=rules.annotsv_annotation.output.tsv,
         genes=GENE_LIST
     output:
         tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv"
-    params:
-        outdir=PATH + "{sample}/sv/annotsv"
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
         """
-        mkdir -p {params.outdir}
-
-        AnnotSV \
-            -SVinputFile {input.vcf} \
-            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
-            -outputDir {params.outdir} \
-            -outputFile {wildcards.sample}_merged_SV.annotsv.panel_only.tsv \
-            -genomeBuild GRCh38 \
-            -candidateGenesFile {input.genes} \
-            -candidateGenesFiltering 1 \
-            -benignAF {ANNOTSV_BENIGN_AF}
+        python {SCRIPTS}/filter_annotsv_panel.py \
+            --annotsv {input.tsv} \
+            --genes {input.genes} \
+            --output {output.tsv}
         """
 
 
@@ -810,6 +826,7 @@ rule human_gene_phenotypes:
             --edges {input.edges} \
             --output {output.tsv}
         """
+
 rule rank_genomewide_candidates:
     input:
         annotsv=rules.annotsv_annotation.output.tsv,
