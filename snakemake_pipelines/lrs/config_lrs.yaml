@@ -83,7 +83,7 @@ tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/teref.ont.human.
 # ANNOTATION
 # ============================================================
 
-monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
+monarch_"/DATA/casadei7/tools/SV-PIPELINE-main/reference/...": 
 
 discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
 
