@@ -83,8 +83,10 @@ tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/teref.ont.human.
 # ANNOTATION
 # ============================================================
 
-monarch_"/DATA/casadei7/tools/SV-PIPELINE-main/reference/...": 
-
+# Offline Monarch Knowledge Graph.
+# The offline script expects the KGX TSV node and edge files.
+monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_nodes.tsv"
+monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_edges.tsv"
 discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
 
 # Benign population AF threshold
@@ -110,6 +112,9 @@ sniffles_mosaic: false
 # ============================================================
 # Applied per-caller, before Jasmine merge. Does NOT change the
 # sniffles2/cuteSV/delly command-line parameters themselves.
+
+# Script used after caller-specific evidence parsing and before Jasmine.
+filter_sv_evidence_script: "/DATA/casadei7/tools/SV-PIPELINE-main/scripts/filter_sv_evidence.py"
 
 # Hard filters (drop from merge input):
 evidence_min_support: 2          # min supporting reads (CALLER_SUPPORT)
