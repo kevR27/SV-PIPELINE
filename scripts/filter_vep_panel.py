@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
+"""
+Filter VEP's default tab-delimited text output to only the rows whose
+gene SYMBOL (parsed from the Extra column) is in a supplied gene list,
+and write the result as a clean TSV with the Extra column expanded
+into its own named fields (SYMBOL, IMPACT, BIOTYPE, ...).
 
-# TO BE DEFINED, FIRST RESULT IS NEEDED 
+Usage:
+    python3 filter_and_clean_vep.py \
+        --vep vep_output.txt \
+        --genes gene_panel.txt \
+        --output filtered_clean.tsv
+"""
 
 import argparse
+
 
 def load_genes(path):
     with open(path) as f:
@@ -13,71 +24,80 @@ def load_genes(path):
         }
 
 
+def parse_extra(extra_field):
+    """Parse the semicolon-separated key=value Extra column into a dict."""
+    extra = {}
+    if extra_field == "-" or extra_field == "":
+        return extra
+    for pair in extra_field.split(";"):
+        if "=" in pair:
+            key, value = pair.split("=", 1)
+            extra[key] = value
+    return extra
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vep", required=True)
-    parser.add_argument("--genes", required=True)
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--vep", required=True, help="VEP tab-delimited text output")
+    parser.add_argument("--genes", required=True, help="Gene list, one symbol per line")
+    parser.add_argument("--output", required=True, help="Filtered clean TSV output path")
     args = parser.parse_args()
 
     genes = load_genes(args.genes)
 
-    with open(args.vep) as fin, open(args.output, "w") as fout:
-        csq_fields = None
+    base_fields = None
+    extra_idx = None
+    extra_keys = []
+    extra_keys_seen = set()
+    matched_rows = []  # list of (fields, extra_dict) for genes of interest
 
+    # single pass over the raw VEP file: keep only rows matching the gene
+    # list, while tracking every Extra key seen among the matched rows
+    with open(args.vep) as fin:
         for line in fin:
-
-            if line.startswith("##INFO=<ID=CSQ"):
-                fout.write(line)
-
-                if "Format:" in line:
-                    fmt = line.split("Format:", 1)[1]
-                    fmt = fmt.split('">', 1)[0]
-                    csq_fields = fmt.split("|")
-
+            if line.startswith("##"):
                 continue
 
             if line.startswith("#"):
-                fout.write(line)
+                base_fields = line.lstrip("#").rstrip("\n").split("\t")
+                if "Extra" in base_fields:
+                    extra_idx = base_fields.index("Extra")
                 continue
 
-            if csq_fields is None:
+            if base_fields is None or extra_idx is None:
+                # no header seen yet, or file has no Extra column -> can't filter
                 continue
 
-            symbol_idx = (
-                csq_fields.index("SYMBOL")
-                if "SYMBOL" in csq_fields
-                else None
-            )
-
-            if symbol_idx is None:
+            fields = line.rstrip("\n").split("\t")
+            if extra_idx >= len(fields):
                 continue
 
-            info = line.rstrip("\n").split("\t")[7]
+            extra_dict = parse_extra(fields[extra_idx])
+            symbol = extra_dict.get("SYMBOL")
 
-            matched = False
+            if symbol is None or symbol not in genes:
+                continue
 
-            for field in info.split(";"):
-                if not field.startswith("CSQ="):
-                    continue
+            for key in extra_dict:
+                if key not in extra_keys_seen:
+                    extra_keys_seen.add(key)
+                    extra_keys.append(key)
 
-                csq = field[4:]
+            matched_rows.append((fields, extra_dict))
 
-                for annotation in csq.split(","):
-                    values = annotation.split("|")
+    if base_fields is None:
+        raise SystemExit("No header line found in input file.")
 
-                    if symbol_idx < len(values):
-                        symbol = values[symbol_idx]
+    # base columns minus Extra, since Extra gets expanded into extra_keys
+    out_base_fields = [f for i, f in enumerate(base_fields) if i != extra_idx]
 
-                        if symbol in genes:
-                            matched = True
-                            break
+    with open(args.output, "w") as fout:
+        fout.write("\t".join(out_base_fields + extra_keys) + "\n")
 
-                if matched:
-                    break
-
-            if matched:
-                fout.write(line)
+        for fields, extra_dict in matched_rows:
+            out_fields = [f for i, f in enumerate(fields) if i != extra_idx]
+            out_fields += [extra_dict.get(key, "") for key in extra_keys]
+            fout.write("\t".join(out_fields) + "\n")
 
 
 if __name__ == "__main__":
