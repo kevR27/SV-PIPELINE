@@ -4,18 +4,23 @@
 import argparse
 import csv
 import re
+import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--annotsv", required=True)
 parser.add_argument("--output", required=True)
 args = parser.parse_args()
 
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    csv.field_size_limit(2**31 - 1)
+
 genes = set()
 
 with open(args.annotsv, newline="", encoding="utf-8") as fh:
     reader = csv.DictReader(fh, delimiter="\t")
-    if "Gene_name" not in (reader.fieldnames or []):
-        raise SystemExit("ERROR: AnnotSV output has no Gene_name column.")
+    ...
 
     for row in reader:
         value = row.get("Gene_name", "").strip()
