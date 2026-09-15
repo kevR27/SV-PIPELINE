@@ -6,6 +6,18 @@ by Jasmine/SURVIVOR and extracts caller provenance/support already represented
 in the merged record (e.g. CALLERS/SOURCES/SUPP_VEC/SUPP). If those fields are
 not present, optional individual caller VCFs can be supplied and records are
 matched approximately by chromosome, SV type and breakpoint tolerance.
+
+Optionally (--min-callers), it also derives a high-confidence companion VCF
+containing only the SVs supported by at least that many distinct callers
+(CALLER_COUNT). This is deliberately named --min-callers rather than
+--min-support: it counts distinct callers post-merge, not supporting reads
+within a single caller (that's filter_sv_evidence.py's --min-support, a
+different axis applied before merging) - keeping the names distinct avoids
+the two being confused for the same threshold.
+
+The companion VCF is written as plain text; bgzip/tabix it in the calling
+Snakemake rule, same as this script's other outputs are handled elsewhere
+in the pipeline.
 """
 
 from __future__ import annotations
@@ -78,14 +90,34 @@ def classify(count: int) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Summarize caller support in a merged SV VCF.")
     ap.add_argument("--vcf", required=True, help="Jasmine/SURVIVOR merged VCF or VCF.GZ")
-    ap.add_argument("--output", required=True, help="Output TSV")
+    ap.add_argument("--output", required=True, help="Output summary TSV")
+    ap.add_argument("--min-callers", type=int, default=None,
+                     help="If set, also write a high-confidence companion VCF containing only "
+                          "SVs supported by at least this many distinct callers (CALLER_COUNT). "
+                          "This counts callers post-merge, NOT supporting reads within a single "
+                          "caller - that threshold is filter_sv_evidence.py's --min-support, "
+                          "applied earlier, before merging. Omit to only write the summary TSV.")
+    ap.add_argument("--high-confidence-vcf", default=None,
+                     help="Output path for the high-confidence companion VCF (plain text). "
+                          "Required if --min-callers is set.")
     args = ap.parse_args()
 
+    if args.min_callers is not None and not args.high_confidence_vcf:
+        ap.error("--high-confidence-vcf is required when --min-callers is set")
+
     rows = []
+    header_lines: list[str] = []
+    # SV_ID -> (raw VCF line, caller_count), kept only when --min-callers is requested,
+    # to avoid holding onto every line's text for large genome-wide callsets otherwise.
+    lines_by_id: dict[str, tuple[str, int]] = {}
+
     with open_text(args.vcf) as fh:
         for line in fh:
             if line.startswith("#"):
+                if args.min_callers is not None:
+                    header_lines.append(line)
                 continue
+
             fields = line.rstrip("\n").split("\t")
             if len(fields) < 8:
                 continue
@@ -122,6 +154,9 @@ def main() -> int:
                 "SUPP_VEC": supp_vec,
             })
 
+            if args.min_callers is not None:
+                lines_by_id[sv_id] = (line, caller_count)
+
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     columns = [
@@ -134,6 +169,20 @@ def main() -> int:
         writer.writerows(rows)
 
     print(f"[OK] records={len(rows)} output={out}")
+
+    if args.min_callers is not None:
+        hc_out = Path(args.high_confidence_vcf)
+        hc_out.parent.mkdir(parents=True, exist_ok=True)
+        n_kept = 0
+        with hc_out.open("w", encoding="utf-8", newline="") as fh:
+            fh.writelines(header_lines)
+            for sv_id, (line, caller_count) in lines_by_id.items():
+                if caller_count >= args.min_callers:
+                    fh.write(line)
+                    n_kept += 1
+        print(f"[OK] high_confidence min_callers={args.min_callers} "
+              f"kept={n_kept}/{len(rows)} output={hc_out}")
+
     return 0
 
 
