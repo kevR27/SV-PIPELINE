@@ -1,26 +1,39 @@
 #!/usr/bin/env python3
-"""Remove optic-neuropathy panel genes from a genome-wide SV gene list."""
+
+"""Extract unique gene symbols from the Gene_name column of an AnnotSV TSV."""
 
 import argparse
+import csv
+import re
+import sys
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--genes", required=True)
-parser.add_argument("--panel", required=True)
+parser.add_argument("--annotsv", required=True)
 parser.add_argument("--output", required=True)
 args = parser.parse_args()
 
-def read_genes(path):
-    genes = set()
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            gene = line.strip().split()[0] if line.strip() else ""
-            if gene and not gene.startswith("#"):
-                genes.add(gene.upper())
-    return genes
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    csv.field_size_limit(2**31 - 1)
 
-all_genes = read_genes(args.genes)
-panel_genes = read_genes(args.panel)
+genes = set()
+
+with open(args.annotsv, newline="", encoding="utf-8") as fh:
+    reader = csv.DictReader(fh, delimiter="\t")
+    ...
+
+    for row in reader:
+        value = row.get("Gene_name", "").strip()
+        if not value or value == ".":
+            continue
+
+        # AnnotSV may represent multiple genes in one field.
+        for gene in re.split(r"[;,|]", value):
+            gene = gene.strip()
+            if gene and gene not in {".", "NA", "N/A"}:
+                genes.add(gene)
 
 with open(args.output, "w", encoding="utf-8") as out:
-    for gene in sorted(all_genes - panel_genes):
+    for gene in sorted(genes):
         out.write(gene + "\n")
