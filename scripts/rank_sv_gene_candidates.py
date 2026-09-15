@@ -21,7 +21,13 @@ Classification is:
 import argparse
 import csv
 import re
+import sys
 from collections import defaultdict
+
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    csv.field_size_limit(2**31 - 1)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--annotsv", required=True)
