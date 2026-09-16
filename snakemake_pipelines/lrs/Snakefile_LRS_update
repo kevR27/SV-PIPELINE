@@ -144,13 +144,13 @@ rule all:
         expand(PATH + "{sample}/SV/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # Methylation
-        expand(PATH + "{sample}/Methylation/{sample}.modkit.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/mthylation/{sample}.modkit.tsv", sample=SAMPLES),
 
         # SV-aware phasing
-        expand(PATH + "{sample}/Phasing_longphase/{sample}.longphase.vcf.gz",sample=SAMPLES),
+        expand(PATH + "{sample}/pasing_longphase/{sample}.longphase.vcf.gz",sample=SAMPLES),
 
         # Confirmatory MEI calling
-        expand(PATH + "{sample}/MEI/tldr/{sample}.tldr.table.txt",sample=SAMPLES)
+        expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",sample=SAMPLES)
 
 ################
 # QC           #
