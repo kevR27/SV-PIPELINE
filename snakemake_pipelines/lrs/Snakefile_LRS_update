@@ -78,59 +78,59 @@ SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
 rule all:
     input:
         # QC
-        expand(PATH + "{sample}/COVERAGE/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
 
         # Small variants + phasing
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/Phasing/{sample}.phased.vcf.gz",sample=SAMPLES),
-        expand(PATH + "{sample}/Phasing/{sample}.phased.bam",sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz",sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.bam",sample=SAMPLES),
 
         # SV calling + merge
-        expand(PATH + "{sample}/SV/sniffles2/{sample}_sniffles.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/SV/cutesv/{sample}_cutesv.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/SV/delly/{sample}_delly.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/SV/merged/{sample}_merged_SV.vcf.gz",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz",sample=SAMPLES),
 
         # High-confidence multi-caller FILTER (high_confidence_min_supp was configured but never used)
-        expand(PATH + "{sample}/SV/merged/{sample}_merged_SV.high_confidence.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/SV/merged/{sample}_caller_support_summary.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv", sample=SAMPLES),
 
         # Repeat expansion
-        expand(PATH + "{sample}/SV/straglr/{sample}_straglr.vcf",sample=SAMPLES),
-        expand(PATH + "{sample}/SV/straglr/{sample}_straglr.bed",sample=SAMPLES),
-        expand(PATH + "{sample}/SV/straglr/{sample}_straglr.tsv",sample=SAMPLES),
-        expand(PATH + "{sample}/SV/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.bed",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv", sample=SAMPLES),
 
         # Population-AF filtering
-        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
         # Caller-aware parsed evidence
-        expand(PATH + "{sample}/parsed_vcf/{sample}.sniffles.caller.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed_vcf/{sample}.cutesv.caller.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed_vcf/{sample}.delly.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.caller.tsv", sample=SAMPLES),
 
         # Pre-merge filtered caller evidence + PASS IDs + VCFs used by Jasmine
-        expand(PATH + "{sample}/parsed_vcf/{sample}.sniffles.evidence.filtered.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed_vcf/{sample}.sniffles.pass.ids.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed_vcf/{sample}.cutesv.evidence.filtered.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed_vcf/{sample}.cutesv.pass.ids.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed_vcf/{sample}.delly.evidence.filtered.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed_vcf/{sample}.delly.pass.ids.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.sniffles.evidence.filtered.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.sniffles.pass.ids.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.cutesv.evidence.filtered.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.cutesv.pass.ids.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.evidence.filtered.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.pass.ids.txt", sample=SAMPLES),
 
         # Pre-merge filtered caller VCFs used by Jasmine
-        expand(PATH + "{sample}/SV/sniffles2/{sample}_sniffles.filtered.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/SV/cutesv/{sample}_cutesv.filtered.vcf", sample=SAMPLES),
-        expand(PATH + "{sample}/SV/delly/{sample}_delly.filtered.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/sniffles2/{sample}_sniffles.filtered.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/cutesv/{sample}_cutesv.filtered.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/delly/{sample}_delly.filtered.vcf", sample=SAMPLES),
 
         # AnnotSV-compatible NeedLR VCFs; original NeedLR result is retained
-        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_input.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_repaired.vcf.sorted.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/SV/needlr/{sample}_needLR_repaired.vcf.sorted.vcf.gz.csi", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_input.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_repaired.vcf.sorted.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_repaired.vcf.sorted.vcf.gz.csi", sample=SAMPLES),
 
         # AnnotSV + panel-only view
-        expand(PATH + "{sample}/SV/annotsv/{sample}_merged_SV.annotsv.tsv",sample=SAMPLES),
-        expand(PATH + "{sample}/SV/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",sample=SAMPLES),
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv",sample=SAMPLES),
 
         # Gene discovery
         expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt",sample=SAMPLES),
