@@ -681,9 +681,7 @@ rule fix_needlrvcf_for_annotsv:
         set -euo pipefail
 
         mkdir -p {params.tmpdir}
-        rm -f {params.tmp_output}
-        rm -f {params.tmp_output}.sorted.vcf.gz
-        rm -f {params.tmp_output}.sorted.vcf.gz.csi
+        rm -f {params.tmp_output} {params.tmp_output}.sorted.vcf.gz {params.tmp_output}.sorted.vcf.gz.csi
 
         python {SCRIPTS}/fix_needlrvcf_for_annotsv.py \
             --input {input.vcf} \
@@ -693,19 +691,10 @@ rule fix_needlrvcf_for_annotsv:
         test -s {params.tmp_output}.sorted.vcf.gz
         test -s {params.tmp_output}.sorted.vcf.gz.csi
 
-        cp {params.tmp_output} {output.repaired}
-        cp {params.tmp_output}.sorted.vcf.gz {output.vcf}
-        cp {params.tmp_output}.sorted.vcf.gz.csi {output.csi}
-
-        test -s {output.repaired}
-        test -s {output.vcf}
-        test -s {output.csi}
-
-        rm -f {params.tmp_output}
-        rm -f {params.tmp_output}.sorted.vcf.gz
-        rm -f {params.tmp_output}.sorted.vcf.gz.csi
+        mv {params.tmp_output} {output.repaired}
+        mv {params.tmp_output}.sorted.vcf.gz {output.vcf}
+        mv {params.tmp_output}.sorted.vcf.gz.csi {output.csi}
         """
-
 ##########################################################################
 # AnnotSV — genome-wide is the source of truth; panel-only is a filtered #
 # post-hoc view (no second AnnotSV execution)                            #
