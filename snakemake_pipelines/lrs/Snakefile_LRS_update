@@ -305,7 +305,6 @@ rule cutesv:
             --min_mapq 20 \
             --min_read_len 500 \
             --genotype \
-            -include_bed {BEDCUTESV} #non includere bed? perché non cooinciderà con sniffles 
         """
 
 rule cutesv_caller_parse:
