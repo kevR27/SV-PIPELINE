@@ -482,19 +482,26 @@ rule jasmine_merge:
         sniffles=rules.filter_sniffles_sv.output.vcf,
         cutesv=rules.filter_cutesv_sv.output.vcf,
         delly=rules.filter_delly_sv.output.vcf
+
     output:
         list_file=PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
         raw_vcf=temp(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf"),
         vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"
+
     params:
         outdir=PATH + "{sample}/sv/merged",
-        sort_tmpdir=PATH + "{sample}/sv/merged/.bcftools_sort_tmp"
+        sort_tmpdir=PATH + "{sample}/sv/merged/.bcftools_sort_tmp",
+        sanitized_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.sanitized.vcf"
+
     conda:
         CONDAENV + "jasmine.yaml"
+
     threads: THREADS
+
     shell:
         """
         set -euo pipefail
+
         mkdir -p {params.outdir}
         mkdir -p {params.sort_tmpdir}
 
@@ -513,15 +520,20 @@ rule jasmine_merge:
             --allow_intrasample \
             --output_genotypes
 
+        python {SCRIPTS}/sanitize_jasmine_vcf.py \
+            --input {output.raw_vcf} \
+            --output {params.sanitized_vcf}
+
         bcftools sort \
             -T {params.sort_tmpdir} \
             -Oz \
             -o {output.vcf} \
-            {output.raw_vcf}
+            {params.sanitized_vcf}
 
         tabix -f -p vcf {output.vcf}
 
         rm -rf {params.sort_tmpdir}
+        rm -f {params.sanitized_vcf}
         """
 
 rule summarize_caller_support:
