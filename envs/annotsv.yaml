@@ -1,7 +1,4 @@
-# bioconda's annotsv package installs the binary/scripts only, not the
-# annotation databases - see the annotsv_install_annotations rule in the
-# Snakefile, which downloads them once via INSTALL_annotations.sh into
-# a directory passed to every AnnotSV call via -annotationsDir.
+# AnnotSV binary plus the VCF utilities used by downstream Snakemake rules.
 name: annotsv
 channels:
   - conda-forge
@@ -9,3 +6,4 @@ channels:
 dependencies:
   - bioconda::annotsv=3.5.10
   - bioconda::bcftools=1.20
+  - bioconda::htslib=1.20
