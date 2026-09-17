@@ -3,5 +3,6 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  - conda-forge::bash>=5.0
   - bioconda::needlr=4.1
-    - bioconda::tabix
+  - bioconda::htslib
