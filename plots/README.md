@@ -1,47 +1,77 @@
 # Thesis plotting layer
 
-This directory contains downstream visualization scripts for the SV-PIPELINE outputs.
-The plotting code is intentionally separated from variant calling and annotation so that
-figures can be regenerated without rerunning the biological pipeline.
+This directory contains downstream visualization and conservative intersection scripts for the SV-PIPELINE outputs. The plotting code is intentionally separated from variant calling and annotation so that figures can be regenerated without rerunning the biological pipeline.
 
 ## Design principles
 
-- `SV_ID` is the unit for variant-burden plots. The integrated LRS table contains one
-  row per `(SV_ID, overlapping gene)`, so these plots always deduplicate master SVs.
+- `SV_ID` is the unit for variant-burden plots. The integrated LRS table contains one row per `(SV_ID, overlapping gene)`, so burden plots deduplicate master SVs.
 - `(SV_ID, gene)` is retained for candidate-prioritization and evidence-integration plots.
-- needLR remains a supplementary population-frequency branch rather than the master
-  SV universe.
-- Straglr, TLDR, methylation and phasing are treated as complementary biological layers
-  and are not forced into the Jasmine caller-concordance calculation.
+- needLR remains a supplementary population-frequency branch rather than the master SV universe.
+- Straglr, TLDR, methylation and phasing are complementary biological layers and are not forced into the Jasmine caller-concordance calculation.
+- Straglr/TLDR can be attached to the master table only through explicit coordinate-aware matching with `intersect_orthogonal_sv_evidence.py`.
 - Every figure is exported as PDF, SVG and 600-dpi PNG.
-- Every script also writes the summarized TSV used to make the figure when appropriate.
+- Plot scripts also write the summarized TSV used to make the figure when appropriate.
 
 ## Scripts
 
+- `plot_lrs_qc.py`: mosdepth coverage QC.
 - `plot_caller_concordance.py`: three-caller Jasmine UpSet-style plot and caller-support summary.
 - `plot_sv_landscape.py`: SV type, size, chromosome distribution and caller-support landscape.
 - `plot_needlr_population.py`: overall and ancestry-specific needLR population-frequency plots.
 - `plot_candidate_genes.py`: gene-prioritization plot from `*_ranked_candidates.tsv`.
+- `plot_gene_hpo_heatmap.py`: human gene-HPO association heatmap from the offline Monarch branch.
 - `plot_candidate_evidence_matrix.py`: integrated SV/gene evidence matrix from the master TSV.
 - `plot_straglr.py`: tandem-repeat locus size/copy-number/support overview.
 - `plot_mei.py`: TLDR mobile-element insertion summary.
-- `plot_methylation.py`: modkit candidate-region methylation plot.
-- `plot_lrs_vs_srs.py`: plots an SV-aware LRS-vs-SRS comparison table, ideally produced by Truvari.
-- `plot_utils.py`: shared styling and parsing helpers.
+- `plot_methylation.py`: candidate-region modkit methylation track; bedMethyl from `modkit pileup` is preferred for final thesis figures.
+- `plot_phasing_qc.py`: WhatsHap/LongPhase phased-genotype QC.
+- `plot_lrs_vs_srs.py`: Truvari-based LRS-vs-SRS concordance visualization.
+- `intersect_orthogonal_sv_evidence.py`: conservative Straglr/TLDR coordinate matching to the master integrated table.
+- `run_thesis_plots.py`: launch all applicable LRS plots for one sample using the current pipeline directory structure.
+- `plot_utils.py`: shared styling, parsing and figure-export helpers.
 
 ## Current status
 
-These scripts are written against the output contracts currently defined in the repository.
-Because real output files are not yet available, column aliases are handled conservatively and
-clear errors are raised when a required field cannot be inferred. Once real pipeline outputs are
-available, update the aliases only where needed rather than changing the biological logic.
+These scripts are written against the output contracts currently defined in the repository. Real output files are not yet available, so column aliases are handled conservatively and clear errors are raised when a required field cannot be inferred. Once real pipeline outputs are available, adjust column mappings where required rather than changing the biological logic.
 
-## Example
+The plotting layer is intentionally not added to `rule all` yet. It should remain downstream until the first real outputs have been inspected and the final column contracts confirmed.
+
+## Environment
 
 ```bash
 conda env create -f envs/plots.yaml
 conda activate svplots
+```
 
+## Run all available plots for one LRS sample
+
+```bash
+python plots/run_thesis_plots.py \
+  --root /path/to/outs \
+  --sample patient01
+```
+
+Optional candidate-region methylation:
+
+```bash
+python plots/run_thesis_plots.py \
+  --root /path/to/outs \
+  --sample patient01 \
+  --methylation-region chr3:193600000-193670000
+```
+
+Dry-run discovery without generating figures:
+
+```bash
+python plots/run_thesis_plots.py \
+  --root /path/to/outs \
+  --sample patient01 \
+  --dry-run
+```
+
+## Individual examples
+
+```bash
 python plots/plot_caller_concordance.py \
   --input outs/patient01/sv/merged/patient01_caller_support_summary.tsv \
   --out-prefix outs/patient01/plots/patient01_caller_concordance
@@ -51,4 +81,14 @@ python plots/plot_sv_landscape.py \
   --out-prefix outs/patient01/plots/patient01_sv_landscape
 ```
 
-For thesis figures, use the PDF or SVG output as the primary figure and the PNG only for applications that require raster images.
+## Orthogonal evidence intersection
+
+```bash
+python plots/intersect_orthogonal_sv_evidence.py \
+  --integrated outs/patient01/gene_discovery/patient01_integrated_SV_gene_analysis.tsv \
+  --straglr outs/patient01/sv/straglr/patient01_straglr.annotated.tsv \
+  --tldr outs/patient01/mei/tldr/patient01.tldr.table.txt \
+  --output outs/patient01/gene_discovery/patient01_integrated_with_orthogonal_evidence.tsv
+```
+
+For thesis figures, use PDF or SVG as the primary figure and PNG only when raster output is required.
