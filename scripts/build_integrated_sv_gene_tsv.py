@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""
-build_integrated_sv_gene_tsv.py
+"""Build the integrated SV-gene analysis table.
 
-Build a single integrated SV-gene analysis table by joining together:
-  - the merged/filtered SV VCF (source of truth for SV_ID, coordinates, SVTYPE)
-  - the genome-wide AnnotSV TSV (gene overlap, OMIM, GenCC, AnnotSV ranking)
-  - the needLR TSV (ONT-native population allele frequency, HPO annotation)
-  - the genome-wide candidate ranking TSV (phenotype score, candidate class)
-  - the per-caller evidence TSVs (which callers/how much support backs each SV)
-  - the candidate gene panel list (to flag PANEL_GENE vs NONPANEL_GENE)
+Biological/data-lineage rules implemented here:
+  * the Jasmine merged VCF is the master SV callset;
+  * AnnotSV and caller-concordance annotations are joined to that master callset;
+  * needLR contributes population-frequency evidence only;
+  * needLR is NEVER joined by gene, because different SVs in the same gene can
+    have different population frequencies;
+  * BNDs and SVs >=10 Mb remain in the master analysis even though needLR does
+    not evaluate those classes;
+  * candidate-gene / phenotype ranking remains independent of needLR.
 
-One output row is written per (SV, gene) pair, so an SV overlapping several
-genes appears on multiple rows. All joins are done by SV_ID (VCF <-> AnnotSV
-<-> per-caller evidence) or by gene symbol (AnnotSV gene <-> needLR <-> ranking
-<-> panel), using a small set of known column-name aliases per source, since
-different tool versions name the same column slightly differently.
+One output row is written per (master SV, overlapping gene) pair.
 """
 
 from __future__ import annotations
@@ -22,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import math
 import re
 import sys
 from collections import OrderedDict, defaultdict
@@ -32,26 +30,20 @@ try:
 except OverflowError:
     csv.field_size_limit(2**31 - 1)
 
-# Placeholder used everywhere a value is absent, to keep the output table
-# free of blank cells.
 MISSING = "."
+NEEDLR_MAX_SUPPORTED_SVLEN = 10_000_000
+
 
 def open_text(path: str):
-    """Open a plain-text or gzip-compressed file for reading, as text."""
     if path.endswith(".gz"):
         return gzip.open(path, "rt", encoding="utf-8", errors="replace")
     return open(path, "r", encoding="utf-8", errors="replace")
 
 
-def parse_info(raw: str) -> dict:
-    """
-    Parse a VCF INFO field string (e.g. "SVTYPE=DEL;SVLEN=-500;IMPRECISE")
-    into a dict. Flag-style fields with no "=" are recorded as 'True'.
-    """
-    info = {}
+def parse_info(raw: str) -> dict[str, str]:
+    info: dict[str, str] = {}
     if not raw or raw == MISSING:
         return info
-
     for item in raw.split(";"):
         if not item:
             continue
@@ -60,153 +52,122 @@ def parse_info(raw: str) -> dict:
             info[key] = value
         else:
             info[item] = "True"
-
     return info
 
-# """
-#    Return the value of the first column name (in order) present in `row`
-#    with a non-empty value. Tries an exact match first, then falls back to
-#    a case-insensitive match — different tool versions capitalize column
-#    names inconsistently (e.g. "Gene_name" vs "gene_name").
-#	"""
 
 def first(row: dict, names: list[str]) -> str:
     for name in names:
         value = row.get(name, MISSING)
         if value not in ("", MISSING, None):
             return str(value)
-
-    lowercase_row = {key.lower(): value for key, value in row.items() if isinstance(key, str)}
+    lowered = {str(k).lower(): v for k, v in row.items()}
     for name in names:
-        value = lowercase_row.get(name.lower(), MISSING)
+        value = lowered.get(name.lower(), MISSING)
         if value not in ("", MISSING, None):
             return str(value)
-
     return MISSING
 
 
+def to_float(value) -> float | None:
+    if value in (None, "", MISSING):
+        return None
+    try:
+        return float(str(value).split(",")[0])
+    except (TypeError, ValueError):
+        return None
+
+
+def to_int(value) -> int | None:
+    x = to_float(value)
+    return int(round(x)) if x is not None and math.isfinite(x) else None
+
+
+def norm_chrom(value: str) -> str:
+    value = str(value).strip()
+    return value[3:] if value.lower().startswith("chr") else value
+
+
+def norm_svtype(value: str) -> str:
+    value = str(value).upper().strip()
+    aliases = {"TRA": "BND", "BREAKEND": "BND", "DELETION": "DEL", "DUPLICATION": "DUP", "INSERTION": "INS", "INVERSION": "INV"}
+    return aliases.get(value, value)
+
+
 def split_genes(value) -> list[str]:
-    """Split a delimiter-separated gene list (",", ";", or "|") into a
-    sorted, deduplicated, uppercased list of gene symbols."""
     if value in ("", MISSING, None):
         return []
-    genes = {gene.strip().upper() for gene in re.split(r"[,;|]", str(value)) if gene.strip()}
-    return sorted(genes)
+    return sorted({g.strip().upper() for g in re.split(r"[,;|/]", str(value)) if g.strip() and g.strip() != MISSING})
 
 
-def read_tsv(path: str) -> list[dict]:
-    """Read a TSV into a list of row dicts. Returns [] if path is false"""
+def read_tsv(path: str | None) -> list[dict]:
     if not path:
         return []
     with open_text(path) as fh:
         return list(csv.DictReader(fh, delimiter="\t", quoting=csv.QUOTE_NONE))
 
 
-def read_panel(path: str) -> set[str]:
-    """Read a one-gene-per-line panel list into an uppercased set."""
+def read_panel(path: str | None) -> set[str]:
     if not path:
         return set()
     with open_text(path) as fh:
         return {line.strip().upper() for line in fh if line.strip() and not line.startswith("#")}
 
 
-def read_vcf(path: str):
-    """
-    Read a VCF into a list of row dicts (one per record) plus an ordered
-    set of INFO keys seen across the file. Each row carries the core VCF
-    fields plus one INFO_<key> column per INFO field found in that record,
-    so no INFO annotation is lost even if it isn't one of the "known"
-    fields referenced elsewhere in this script.
-
-    # for input isn't it okay to use that of already parsed and add missing info?
-    """
-    rows = []
-    info_keys = OrderedDict()
-
+def read_vcf(path: str) -> list[dict]:
+    rows: list[dict] = []
     with open_text(path) as fh:
         for line in fh:
-            if line.startswith("##INFO=<"):
-                match = re.search(r"ID=([^,>]+)", line)
-                if match:
-                    info_keys.setdefault(match.group(1), None)
-                continue
-
             if line.startswith("#"):
                 continue
-
             fields = line.rstrip("\n").split("\t")
             if len(fields) < 8:
                 raise ValueError(f"Malformed VCF record: {line.rstrip()}")
-
             chrom, pos, sv_id, ref, alt, qual, filt, info_raw = fields[:8]
             info = parse_info(info_raw)
-
-            for key in info:
-                info_keys.setdefault(key, None)
-
             svtype = first(info, ["SVTYPE"])
             if svtype == MISSING:
                 if "[" in alt or "]" in alt:
                     svtype = "BND"
                 elif alt.startswith("<") and alt.endswith(">"):
                     svtype = alt[1:-1]
-                else:
-                    svtype = MISSING
-
-            row = OrderedDict([
-                ("SV_ID", sv_id),
-                ("CHROM", chrom),
-                ("START", pos),
-                ("END", first(info, ["END"])),
-                ("SVTYPE", svtype),
-                ("SVLEN", first(info, ["SVLEN"])),
-                ("QUAL", qual),
-                ("FILTER", filt),
-                ("REF", ref),
-                ("ALT", alt),
-                ("INFO_RAW", info_raw),
-            ])
-
+            row = OrderedDict(
+                SV_ID=sv_id,
+                CHROM=chrom,
+                START=pos,
+                END=first(info, ["END"]),
+                SVTYPE=norm_svtype(svtype),
+                SVLEN=first(info, ["SVLEN"]),
+                QUAL=qual,
+                FILTER=filt,
+                REF=ref,
+                ALT=alt,
+                INFO_RAW=info_raw,
+            )
             for key, value in info.items():
-                clean_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", key)
-                row[f"INFO_{clean_key}"] = value
-
-            row["CALLERS"] = first(info, ["CALLERS", "CALLER", "SOURCE", "SOURCES"])
-            row["SUPPORT"] = first(info, ["SUPPORT", "SUPP", "RE", "SU"])
-
+                clean = re.sub(r"[^A-Za-z0-9_.-]+", "_", key)
+                row[f"INFO_{clean}"] = value
             rows.append(row)
+    return rows
 
-    return rows, info_keys
 
-
-def index_by_id(rows: list[dict]) -> dict:
-    """Index a list of row dicts by SV_ID (trying SV_ID/ID/AnnotSV_ID),
-    returning {sv_id: [matching rows]}. Strips a leading 'needLR.' prefix
-    if present, since AnnotSV here was run on a needLR-relabeled VCF
-    while SV_ID in this pipeline comes from the original merged VCF."""
-    index = defaultdict(list)
+def index_by_id(rows: list[dict]) -> dict[str, list[dict]]:
+    index: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
-        sv_id = first(row, ["SV_ID", "ID", "AnnotSV_ID"])
+        sv_id = first(row, ["SV_ID", "ID", "AnnotSV_ID", "SV_ID_AnnotSV"])
         if sv_id != MISSING:
-            if sv_id.startswith("needLR."):
-                sv_id = sv_id[len("needLR."):]
             index[sv_id].append(row)
     return index
 
 
 def genes_from_annot(row: dict) -> list[str]:
-    """Collect every gene symbol out of an AnnotSV row, trying each of the
-    known gene-column aliases used across AnnotSV versions."""
-    gene_columns = ["Gene_name", "Gene", "GENE", "Genes", "gene", "SYMBOL", "GeneID", "AnnotSV_Gene"]
-    genes = []
-    for column in gene_columns:
+    genes: list[str] = []
+    for column in ["Gene_name", "Gene", "GENE", "Genes", "gene", "SYMBOL", "AnnotSV_Gene"]:
         genes.extend(split_genes(first(row, [column])))
     return sorted(set(genes))
 
 
-def load_ranking(rows: list[dict]) -> dict:
-    """Index the candidate-ranking TSV by uppercased gene symbol."""
-    index = {}
+def load_ranking(rows: list[dict]) -> dict[str, dict]:
+    index: dict[str, dict] = {}
     for row in rows:
         gene = first(row, ["gene", "Gene", "GENE", "SYMBOL"])
         if gene != MISSING:
@@ -214,93 +175,210 @@ def load_ranking(rows: list[dict]) -> dict:
     return index
 
 
-def load_needlr(rows: list[dict]) -> dict:
-    """Index the needLR TSV by uppercased gene symbol. A needLR row can
-    list multiple genes, so it may be indexed under more than one key."""
-    index = defaultdict(list)
+def annotsv_coord(row: dict) -> tuple[str, int | None, int | None, str]:
+    return (
+        norm_chrom(first(row, ["SV_chrom", "CHROM", "Chr", "chrom"])),
+        to_int(first(row, ["SV_start", "START", "Start", "POS"])),
+        to_int(first(row, ["SV_end", "END", "End"])),
+        norm_svtype(first(row, ["SV_type", "SVTYPE", "Type"])),
+    )
+
+
+def master_coord(sv: dict) -> tuple[str, int | None, int | None, str, int | None]:
+    start = to_int(sv.get("START"))
+    end = to_int(sv.get("END"))
+    svlen = to_int(sv.get("SVLEN"))
+    if end is None and start is not None and svlen is not None and norm_svtype(sv.get("SVTYPE", MISSING)) not in {"INS", "BND"}:
+        end = start + abs(svlen)
+    return norm_chrom(sv.get("CHROM", MISSING)), start, end, norm_svtype(sv.get("SVTYPE", MISSING)), svlen
+
+
+def annotsv_matches_for_sv(sv: dict, by_id: dict[str, list[dict]], all_rows: list[dict], tolerance: int = 10) -> list[dict]:
+    direct = by_id.get(sv["SV_ID"], [])
+    if direct:
+        return direct
+    chrom, start, end, svtype, _ = master_coord(sv)
+    if start is None:
+        return []
+    matches = []
+    for row in all_rows:
+        rchrom, rstart, rend, rtype = annotsv_coord(row)
+        if rchrom != chrom or (rtype not in {MISSING, svtype} and svtype != MISSING):
+            continue
+        if rstart is None or abs(rstart - start) > tolerance:
+            continue
+        if end is not None and rend is not None and abs(rend - end) > tolerance:
+            continue
+        matches.append(row)
+    return matches
+
+
+def parse_needlr_row(row: dict) -> dict | None:
+    chrom = first(row, ["Chr", "CHROM", "Chrom", "chromosome"])
+    start = to_int(first(row, ["Start_Pos", "START", "Start", "POS"])); end = to_int(first(row, ["End_Pos", "END", "End"])); svtype = norm_svtype(first(row, ["SV_Type", "SVTYPE", "Type"])); svlen = to_int(first(row, ["SV_Length", "SVLEN", "Length"])); query_id = first(row, ["Query ID", "Query_ID", "QueryID", "ID", "SV_ID"])
+    if chrom == MISSING or start is None or svtype == MISSING:
+        return None
+    return {
+        "row": row,
+        "chrom": norm_chrom(chrom),
+        "start": start,
+        "end": end,
+        "svtype": svtype,
+        "svlen": svlen,
+        "query_id": query_id,
+        "af": first(row, ["Allele_Freq_ALL", "AF", "MAX_AF", "AF_MAX", "SV_AF", "AF_1KGP", "1KGP_AF"]),
+    }
+
+
+def load_needlr(rows: list[dict]) -> list[dict]:
+    parsed = []
     for row in rows:
-        gene_field = first(row, ["Gene", "gene", "Gene_name", "GENE", "SYMBOL"])
-        for gene in split_genes(gene_field):
-            index[gene].append(row)
-    return index
+        item = parse_needlr_row(row)
+        if item is not None:
+            parsed.append(item)
+    return parsed
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Create integrated SV-gene analysis TSV")
-    parser.add_argument("--vcf", required=True, help="Merged/filtered SV VCF")
-    parser.add_argument("--annotsv", required=True, help="Genome-wide AnnotSV TSV")
-    parser.add_argument("--needlr", help="needLR RESULTS TSV")
-    parser.add_argument("--ranking", help="Genome-wide candidate ranking TSV")
-    parser.add_argument("--panel", help="Candidate gene panel list")
-    parser.add_argument("--caller-tsv", action="append", default=[],
-                         help="Per-caller evidence TSV; repeat once per caller")
-    parser.add_argument("--output", required=True)
-    args = parser.parse_args()
+def relative_size_difference(a: int | None, b: int | None) -> float | None:
+    if a is None or b is None or a == 0 or b == 0:
+        return None
+    aa, bb = abs(a), abs(b)
+    return abs(aa - bb) / max(aa, bb)
 
-    sv_rows, _ = read_vcf(args.vcf)
-    annotsv_rows = read_tsv(args.annotsv)
-    needlr_rows = read_tsv(args.needlr)
-    ranking = load_ranking(read_tsv(args.ranking))
-    panel = read_panel(args.panel)
-    annotsv_by_id = index_by_id(annotsv_rows)
-    needlr_by_gene = load_needlr(needlr_rows)
 
-    # Log the AnnotSV join quality up front. A silently-broken SV_ID join
-    # (e.g. because AnnotSV's ID column format doesn't match the VCF's)
-    # would otherwise just leave OMIM/GENCC/ranking columns looking
-    # "genuinely empty" rather than "failed to match" — this makes that
-    # failure mode visible instead of silent.
-    n_sv = len(sv_rows)
-    n_matched = sum(1 for sv in sv_rows if annotsv_by_id.get(sv["SV_ID"]))
-    match_rate = (n_matched / n_sv * 100) if n_sv else 0.0
-    print(f"[INFO] AnnotSV ID join: {n_matched}/{n_sv} SVs matched ({match_rate:.1f}%)", file=sys.stderr)
-    if annotsv_rows and n_sv and match_rate < 50:
-        print(
-            "[WARN] Less than half of the SVs matched an AnnotSV row by ID. "
-            "This usually means the AnnotSV ID column format does not match "
-            "SV_ID from the VCF (check the AnnotSV/AnnotSV_ID column in "
-            "--annotsv) — downstream OMIM/GENCC/ranking fields may be "
-            "wrongly empty rather than genuinely absent.",
-            file=sys.stderr,
-        )
+def match_needlr(sv: dict, needlr: list[dict], bp_tolerance: int, rel_size_tolerance: float) -> dict:
+    chrom, start, end, svtype, svlen = master_coord(sv)
+    abs_len = abs(svlen) if svlen is not None else None
 
-    # Index each caller's evidence TSV by SV_ID so we can report, per SV,
-    # which caller(s) called it and with how much support.
-    caller_by_id = defaultdict(list)
-    for path in args.caller_tsv:
+    if svtype == "BND":
+        return {"status": "NOT_EVALUABLE_BND"}
+    if abs_len is not None and abs_len >= NEEDLR_MAX_SUPPORTED_SVLEN:
+        return {"status": "NOT_EVALUABLE_GE_10MB"}
+    if start is None:
+        return {"status": "NO_MASTER_START"}
+
+    candidates = []
+    for item in needlr:
+        if item["chrom"] != chrom or item["svtype"] != svtype:
+            continue
+        start_delta = abs(item["start"] - start)
+        if start_delta > bp_tolerance:
+            continue
+
+        end_delta = None
+        if svtype != "INS" and end is not None and item["end"] is not None:
+            end_delta = abs(item["end"] - end)
+            if end_delta > bp_tolerance:
+                continue
+
+        rel_size = relative_size_difference(svlen, item["svlen"])
+        if rel_size is not None and rel_size > rel_size_tolerance:
+            continue
+
+        score = start_delta + (end_delta or 0)
+        if rel_size is not None:
+            score += rel_size * bp_tolerance
+        candidates.append((score, start_delta, end_delta, rel_size, item))
+
+    if not candidates:
+        return {"status": "NO_MATCH"}
+
+    candidates.sort(key=lambda x: x[0])
+    best = candidates[0]
+    if len(candidates) > 1 and math.isclose(candidates[1][0], best[0], rel_tol=0.0, abs_tol=1e-9):
+        return {"status": "AMBIGUOUS_MATCH"}
+
+    item = best[4]
+    caution = "SEX_CHROMOSOME_AF_DENOMINATOR" if chrom in {"X", "Y"} and item["af"] not in (MISSING, "0", "0.0") else MISSING
+    return {
+        "status": "MATCHED",
+        "row": item["row"],
+        "query_id": item["query_id"],
+        "af": item["af"],
+        "bp_distance": int(best[1] + (best[2] or 0)),
+        "relative_size_difference": best[3] if best[3] is not None else MISSING,
+        "match_method": "CHR_TYPE_BREAKPOINT_SIZE",
+        "caution": caution,
+    }
+
+
+def load_caller_summary(rows: list[dict]) -> dict[str, dict]:
+    out = {}
+    for row in rows:
+        sv_id = first(row, ["SV_ID", "ID"])
+        if sv_id != MISSING:
+            out[sv_id] = row
+    return out
+
+
+def caller_evidence_index(paths: list[str]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = defaultdict(list)
+    for path in paths:
         for row in read_tsv(path):
             sv_id = first(row, ["SV_ID", "ID"])
             if sv_id != MISSING:
-                caller_by_id[sv_id].append(row)
+                out[sv_id].append(row)
+    return out
 
-    output_rows = []
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Create an integrated SV-gene analysis TSV")
+    ap.add_argument("--vcf", required=True, help="Master Jasmine merged VCF")
+    ap.add_argument("--annotsv", required=True, help="Genome-wide AnnotSV TSV from the same master VCF")
+    ap.add_argument("--needlr", help="needLR RESULTS TSV; population AF only")
+    ap.add_argument("--ranking", help="Genome-wide candidate ranking TSV")
+    ap.add_argument("--panel", help="Candidate gene panel list")
+    ap.add_argument("--caller-summary", help="Jasmine caller-support summary TSV")
+    ap.add_argument("--caller-tsv", action="append", default=[], help="Filtered per-caller evidence TSV; repeat once per caller")
+    ap.add_argument("--needlr-bp-tolerance", type=int, default=1000)
+    ap.add_argument("--needlr-rel-size-tolerance", type=float, default=0.5)
+    ap.add_argument("--output", required=True)
+    args = ap.parse_args()
+
+    sv_rows = read_vcf(args.vcf)
+    annotsv_rows = read_tsv(args.annotsv)
+    annotsv_by_id = index_by_id(annotsv_rows)
+    needlr = load_needlr(read_tsv(args.needlr))
+    ranking = load_ranking(read_tsv(args.ranking))
+    panel = read_panel(args.panel)
+    caller_summary = load_caller_summary(read_tsv(args.caller_summary))
+    caller_by_id = caller_evidence_index(args.caller_tsv)
+
+    n_direct_annot = sum(1 for sv in sv_rows if annotsv_by_id.get(sv["SV_ID"]))
+    print(f"[INFO] AnnotSV direct ID join: {n_direct_annot}/{len(sv_rows)}", file=sys.stderr)
+
+    output_rows: list[OrderedDict] = []
+    needlr_status_counts: dict[str, int] = defaultdict(int)
 
     for sv in sv_rows:
         sv_id = sv["SV_ID"]
+        annotsv_matches = annotsv_matches_for_sv(sv, annotsv_by_id, annotsv_rows)
+        genes = sorted({gene for match in annotsv_matches for gene in genes_from_annot(match)}) or [MISSING]
+        annotsv_row = annotsv_matches[0] if annotsv_matches else {}
 
-        annotsv_matches = annotsv_by_id.get(sv_id, [])
-        genes = sorted({gene for match in annotsv_matches for gene in genes_from_annot(match)})
-        if not genes:
-            genes = [MISSING]
+        cs = caller_summary.get(sv_id, {})
+        callers = first(cs, ["CALLERS"])
+        caller_count = first(cs, ["CALLER_COUNT", "SUPP"])
+        supp_vec = first(cs, ["SUPP_VEC"])
+        support_class = first(cs, ["CALLER_SUPPORT_CLASS"])
 
-        caller_matches = caller_by_id.get(sv_id, [])
-        caller_names = sorted({match.get("CALLER", "") for match in caller_matches if match.get("CALLER", "")})
-        callers = ";".join(caller_names) if caller_names else sv["CALLERS"]
+        exact_evidence = caller_by_id.get(sv_id, [])
+        read_support = []
+        for match in exact_evidence:
+            caller = first(match, ["CALLER"])
+            value = first(match, ["CALLER_SUPPORT"])
+            if caller != MISSING and value != MISSING:
+                read_support.append(f"{caller}:{value}")
 
-        support_parts = []
-        for match in caller_matches:
-            support_value = match.get("CALLER_SUPPORT", MISSING)
-            if support_value not in ("", MISSING):
-                support_parts.append(f"{match.get('CALLER', 'UNKNOWN')}:{support_value}")
-        support = ";".join(support_parts) if support_parts else sv["SUPPORT"]
+        nl = match_needlr(
+            sv, needlr,
+            bp_tolerance=args.needlr_bp_tolerance,
+            rel_size_tolerance=args.needlr_rel_size_tolerance,
+        )
+        needlr_status_counts[nl["status"]] += 1
 
-        # One output row per gene the SV overlaps (or a single row with
-        # GENES=MISSING if it overlaps none).
         for gene in genes:
-            annotsv_row = annotsv_matches[0] if annotsv_matches else {}
-            needlr_row = needlr_by_gene.get(gene, [{}])[0] if gene != MISSING else {}
             ranking_row = ranking.get(gene, {}) if gene != MISSING else {}
-
             row = OrderedDict([
                 ("SV_ID", sv["SV_ID"]),
                 ("CHROM", sv["CHROM"]),
@@ -311,57 +389,53 @@ def main() -> int:
                 ("QUAL", sv["QUAL"]),
                 ("FILTER", sv["FILTER"]),
                 ("CALLERS", callers),
-                ("SUPPORT", support),
+                ("CALLER_COUNT", caller_count),
+                ("CALLER_SUPPORT_CLASS", support_class),
+                ("SUPP_VEC", supp_vec),
+                ("EXACT_ID_READ_SUPPORT", ";".join(sorted(read_support)) if read_support else MISSING),
                 ("GENES", gene),
-                ("NEEDLR_AF", first(needlr_row, ["AF", "MAX_AF", "AF_MAX", "SV_AF", "AF_1KGP", "1KGP_AF"])),
-                ("NEEDLR_HPO", first(needlr_row, ["HPO", "HPO_terms", "HPO_Terms", "HPO phenotypes"])),
+                ("NEEDLR_STATUS", nl["status"]),
+                ("NEEDLR_AF", nl.get("af", MISSING)),
+                ("NEEDLR_QUERY_ID", nl.get("query_id", MISSING)),
+                ("NEEDLR_MATCH_METHOD", nl.get("match_method", MISSING)),
+                ("NEEDLR_BP_DISTANCE", nl.get("bp_distance", MISSING)),
+                ("NEEDLR_REL_SIZE_DIFFERENCE", nl.get("relative_size_difference", MISSING)),
+                ("NEEDLR_AF_CAUTION", nl.get("caution", MISSING)),
                 ("OMIM", first(annotsv_row, ["OMIM", "AnnotSV_OMIM", "AnnotSV_OMIM_evidence"])),
                 ("GENCC", first(annotsv_row, ["GENCC", "GenCC", "AnnotSV_GENCC", "AnnotSV_GENCC_evidence"])),
                 ("ANNotsv_Gene", first(annotsv_row, ["Gene_name", "Gene", "GENE", "Genes", "gene", "SYMBOL", "AnnotSV_Gene"])),
-                ("ANNotsv_Classification", first(annotsv_row, ["AnnotSV ranking", "AnnotSV_rank", "AnnotSV_Classification"])),
+                ("ANNotsv_Classification", first(annotsv_row, ["AnnotSV_ranking", "AnnotSV ranking", "AnnotSV_rank", "AnnotSV_Classification"])),
                 ("PANEL_STATUS", "PANEL_GENE" if gene in panel else ("UNRESOLVED" if gene == MISSING else "NONPANEL_GENE")),
                 ("PHENOTYPE_SCORE", first(ranking_row, ["phenotype_score", "PHENOTYPE_SCORE"])),
                 ("CANDIDATE_CLASS", first(ranking_row, ["classification", "CANDIDATE_CLASS"])),
-                ("NEEDLR_STATUS", "ANNOTATED" if needlr_row else "NO_MATCH"),
             ])
-
-            # If AnnotSV didn't carry OMIM/GENCC for this gene, needLR
-            # sometimes does — fall back to it before giving up.
-            if row["OMIM"] == MISSING:
-                row["OMIM"] = first(needlr_row, ["OMIM", "OMIM_phenotypes", "OMIM phenotypes"])
-            if row["GENCC"] == MISSING:
-                row["GENCC"] = first(needlr_row, ["GENCC", "GenCC", "GenCC_phenotypes", "GenCC phenotypes"])
-
-            # Carry through every raw INFO_* column collected from the VCF.
             for key, value in sv.items():
                 if key.startswith("INFO_"):
                     row[key] = value
-
             output_rows.append(row)
 
     fixed_columns = [
         "SV_ID", "CHROM", "START", "END", "SVTYPE", "SVLEN", "QUAL", "FILTER",
-        "CALLERS", "SUPPORT", "GENES", "NEEDLR_AF", "NEEDLR_HPO", "OMIM", "GENCC",
-        "ANNotsv_Gene", "ANNotsv_Classification", "PANEL_STATUS", "PHENOTYPE_SCORE",
-        "CANDIDATE_CLASS", "NEEDLR_STATUS",
+        "CALLERS", "CALLER_COUNT", "CALLER_SUPPORT_CLASS", "SUPP_VEC", "EXACT_ID_READ_SUPPORT",
+        "GENES", "NEEDLR_STATUS", "NEEDLR_AF", "NEEDLR_QUERY_ID", "NEEDLR_MATCH_METHOD",
+        "NEEDLR_BP_DISTANCE", "NEEDLR_REL_SIZE_DIFFERENCE", "NEEDLR_AF_CAUTION",
+        "OMIM", "GENCC", "ANNotsv_Gene", "ANNotsv_Classification", "PANEL_STATUS",
+        "PHENOTYPE_SCORE", "CANDIDATE_CLASS",
     ]
-    info_columns = sorted({key for row in output_rows for key in row if key.startswith("INFO_")})
+    info_columns = sorted({k for row in output_rows for k in row if k.startswith("INFO_")})
     columns = fixed_columns + info_columns
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with output_path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(
-            fh, fieldnames=columns, delimiter="\t",
-            extrasaction="ignore", lineterminator="\n",
-        )
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=columns, delimiter="\t", extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         for row in output_rows:
             writer.writerow({column: row.get(column, MISSING) for column in columns})
 
-    print(f"[OK] integrated_rows={len(output_rows)} info_columns={len(info_columns)}")
-    print(f"[OK] output={output_path}")
+    status_text = ", ".join(f"{k}={v}" for k, v in sorted(needlr_status_counts.items()))
+    print(f"[INFO] needLR matching: {status_text}", file=sys.stderr)
+    print(f"[OK] integrated_rows={len(output_rows)} info_columns={len(info_columns)} output={out}")
     return 0
 
 
