@@ -1,173 +1,207 @@
 #!/usr/bin/env python3
-"""
-Rank non-panel genes affected by genome-wide SVs.
+"""Prioritize genes intersected by the genome-wide SV callset.
 
-The ranking is deliberately evidence-based and non-diagnostic:
-- panel membership is retained as a flag but input genes are non-panel;
-- exact matches to optic-neuropathy anchor HPO terms receive the strongest
-  phenotype evidence;
-- human HPO breadth provides additional support;
-- AnnotSV's existing annotation/ranking columns are retained in the output
-  where available;
-- no score is converted into a pathogenic/disease-causing classification.
-
-Classification is:
-  Established panel gene
-  Established/known human disease gene (if AnnotSV provides disease evidence)
-  Phenotypically relevant non-panel candidate
-  Other non-panel candidate
+This is a discovery-prioritization layer, not a pathogenicity classifier.
+Panel membership, human phenotype associations and AnnotSV disease evidence are
+kept as separate interpretable dimensions.  The numerical score is used only
+to order candidates for review.
 """
+
+from __future__ import annotations
 
 import argparse
 import csv
 import re
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 try:
     csv.field_size_limit(sys.maxsize)
 except OverflowError:
     csv.field_size_limit(2**31 - 1)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--annotsv", required=True)
-parser.add_argument("--genes", required=True)
-parser.add_argument("--phenotypes", required=True)
-parser.add_argument("--panel", required=True)
-parser.add_argument("--output", required=True)
-args = parser.parse_args()
 
-def read_list(path):
-    out = set()
+def read_list(path: str) -> set[str]:
+    out: set[str] = set()
     with open(path, encoding="utf-8") as fh:
         for line in fh:
-            x = line.strip()
-            if x and not x.startswith("#"):
-                out.add(x.upper())
+            value = line.strip()
+            if value and not value.startswith("#"):
+                out.add(value.upper())
     return out
 
-genes = read_list(args.genes)
-panel = read_list(args.panel)
 
-pheno = defaultdict(lambda: {
-    "hpo_count": 0,
-    "anchor_count": 0,
-    "hpos": set(),
-    "sources": set(),
-})
+def first(row: dict, names: list[str]) -> str:
+    for name in names:
+        value = row.get(name, "")
+        if value not in ("", ".", None):
+            return str(value)
+    lower = {str(k).lower(): v for k, v in row.items()}
+    for name in names:
+        value = lower.get(name.lower(), "")
+        if value not in ("", ".", None):
+            return str(value)
+    return ""
 
-with open(args.phenotypes, newline="", encoding="utf-8") as fh:
-    for row in csv.DictReader(fh, delimiter="\t"):
-        gene = row["gene_symbol"].upper()
-        if gene not in genes:
-            continue
-        if row["hpo_id"].startswith("HP:"):
-            pheno[gene]["hpo_count"] += 1
-            pheno[gene]["hpos"].add(row["hpo_id"])
-        if row["optic_neuropathy_anchor"] == "1":
-            pheno[gene]["anchor_count"] += 1
-        if row["source"]:
-            pheno[gene]["sources"].add(row["source"])
 
-# Collect useful AnnotSV evidence per gene.
-annotsv = defaultdict(lambda: {
-    "sv_count": 0,
-    "gene_count": 0,
-    "rank": [],
-    "omim": [],
-    "gencc": [],
-    "clinvar": [],
-    "lof": [],
-})
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--annotsv", required=True)
+    parser.add_argument("--genes", required=True, help="All genes intersected by master SVs")
+    parser.add_argument("--phenotypes", required=True)
+    parser.add_argument("--panel", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
 
-with open(args.annotsv, newline="", encoding="utf-8") as fh:
-    reader = csv.DictReader(fh, delimiter="\t")
-    fields = reader.fieldnames or []
+    genes = read_list(args.genes)
+    panel = read_list(args.panel)
 
-    def col(row, names):
-        for n in names:
-            if n in row and row[n] not in ("", "."):
-                return row[n]
-        return ""
+    pheno = defaultdict(
+        lambda: {
+            "hpo_count": 0,
+            "anchor_count": 0,
+            "hpos": set(),
+            "sources": set(),
+        }
+    )
 
-    for row in reader:
-        value = row.get("Gene_name", "")
-        if not value or value == ".":
-            continue
-        row_genes = [x.strip().upper() for x in re.split(r"[;,|]", value) if x.strip()]
-        for gene in row_genes:
+    with open(args.phenotypes, newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh, delimiter="\t"):
+            gene = row.get("gene_symbol", "").upper()
             if gene not in genes:
                 continue
-            a = annotsv[gene]
-            a["sv_count"] += 1
+            hpo_id = row.get("hpo_id", "")
+            if hpo_id.startswith("HP:"):
+                pheno[gene]["hpo_count"] += 1
+                pheno[gene]["hpos"].add(hpo_id)
+            if row.get("optic_neuropathy_anchor", "0") == "1":
+                pheno[gene]["anchor_count"] += 1
+            source = row.get("source", "")
+            if source:
+                pheno[gene]["sources"].add(source)
 
-            rank = col(row, ["AnnotSV ranking", "Ranking", "ACMG_class"])
-            if rank:
-                a["rank"].append(rank)
-
-            for key, names in {
-                "omim": ["OMIM", "OMIM_inheritance"],
-                "gencc": ["GENCC", "GENCC_ID"],
-                "clinvar": ["ClinVar", "ClinVar_SV"],
-                "lof": ["HI", "TS", "pLI", "LOEUF"],
-            }.items():
-                v = col(row, names)
-                if v:
-                    a[key].append(v)
-
-rows = []
-
-for gene in sorted(genes):
-    p = pheno[gene]
-    a = annotsv[gene]
-
-    # Transparent discovery score, not a pathogenicity score.
-    phenotype_score = min(10, p["anchor_count"] * 5) + min(3, p["hpo_count"] / 20.0)
-    sv_score = min(5, a["sv_count"])
-    evidence_score = phenotype_score + sv_score
-
-    has_disease_evidence = bool(a["omim"] or a["gencc"] or a["clinvar"])
-
-    if gene in panel:
-        classification = "Established panel gene"
-    elif p["anchor_count"] > 0 and has_disease_evidence:
-        classification = "Known human disease gene with optic-neuropathy phenotype evidence"
-    elif p["anchor_count"] > 0:
-        classification = "Phenotypically relevant non-panel candidate"
-    elif has_disease_evidence:
-        classification = "Known human disease gene; optic-neuropathy link not established here"
-    else:
-        classification = "Other non-panel candidate"
-
-    rows.append({
-        "gene": gene,
-        "panel_gene": "YES" if gene in panel else "NO",
-        "SV_annotation_count": a["sv_count"],
-        "human_HPO_count": p["hpo_count"],
-        "optic_neuropathy_anchor_HPO_count": p["anchor_count"],
-        "phenotype_score": round(phenotype_score, 3),
-        "SV_evidence_score": sv_score,
-        "integrated_discovery_score": round(evidence_score, 3),
-        "AnnotSV_OMIM_evidence": ";".join(sorted(set(a["omim"]))),
-        "AnnotSV_GENCC_evidence": ";".join(sorted(set(a["gencc"]))),
-        "AnnotSV_ClinVar_evidence": ";".join(sorted(set(a["clinvar"]))),
-        "AnnotSV_constraint_evidence": ";".join(sorted(set(a["lof"]))),
-        "classification": classification,
-        "interpretation": "Candidate only; not automatically classified as disease-causing.",
-    })
-
-rows.sort(
-    key=lambda r: (
-        -float(r["integrated_discovery_score"]),
-        -int(r["optic_neuropathy_anchor_HPO_count"]),
-        -int(r["SV_annotation_count"]),
-        r["gene"],
+    annotsv = defaultdict(
+        lambda: {
+            "sv_ids": set(),
+            "rank": [],
+            "omim": [],
+            "gencc": [],
+            "clinvar": [],
+            "constraint": [],
+        }
     )
-)
 
-with open(args.output, "w", newline="", encoding="utf-8") as fh:
-    writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()) if rows else [
-        "gene", "classification"
-    ], delimiter="\t")
-    writer.writeheader()
-    writer.writerows(rows)
+    with open(args.annotsv, newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        for row in reader:
+            gene_field = first(
+                row,
+                ["Gene_name", "Gene", "GENE", "Genes", "gene", "SYMBOL"],
+            )
+            if not gene_field:
+                continue
+            row_genes = {
+                x.strip().upper()
+                for x in re.split(r"[;,|]", gene_field)
+                if x.strip()
+            }
+            sv_id = first(row, ["SV_ID", "AnnotSV_ID", "ID"])
+            for gene in row_genes:
+                if gene not in genes:
+                    continue
+                data = annotsv[gene]
+                if sv_id:
+                    data["sv_ids"].add(sv_id)
+
+                value = first(row, ["AnnotSV ranking", "AnnotSV_rank", "ACMG_class"])
+                if value:
+                    data["rank"].append(value)
+
+                for key, aliases in {
+                    "omim": ["OMIM", "OMIM_inheritance"],
+                    "gencc": ["GENCC", "GenCC", "GENCC_ID"],
+                    "clinvar": ["ClinVar", "ClinVar_SV"],
+                    "constraint": ["HI", "TS", "pLI", "LOEUF"],
+                }.items():
+                    value = first(row, aliases)
+                    if value:
+                        data[key].append(value)
+
+    rows = []
+    for gene in sorted(genes):
+        p = pheno[gene]
+        a = annotsv[gene]
+        sv_count = len(a["sv_ids"])
+
+        # Discovery-priority score only.  It does not encode pathogenicity.
+        phenotype_component = min(10.0, p["anchor_count"] * 5.0) + min(
+            3.0, p["hpo_count"] / 20.0
+        )
+        sv_component = min(5.0, float(sv_count))
+        discovery_score = phenotype_component + sv_component
+
+        has_disease_evidence = bool(a["omim"] or a["gencc"] or a["clinvar"])
+        if gene in panel:
+            candidate_group = "PANEL_GENE"
+        elif p["anchor_count"] > 0 and has_disease_evidence:
+            candidate_group = "NONPANEL_HPO_AND_DISEASE_EVIDENCE"
+        elif p["anchor_count"] > 0:
+            candidate_group = "NONPANEL_HPO_OVERLAP"
+        elif has_disease_evidence:
+            candidate_group = "NONPANEL_HUMAN_DISEASE_GENE"
+        else:
+            candidate_group = "OTHER_NONPANEL_CANDIDATE"
+
+        rows.append(
+            {
+                "gene": gene,
+                "panel_gene": "YES" if gene in panel else "NO",
+                "SV_count": sv_count,
+                "human_HPO_count": p["hpo_count"],
+                "optic_neuropathy_anchor_HPO_count": p["anchor_count"],
+                "phenotype_score": round(phenotype_component, 3),
+                "SV_evidence_score": round(sv_component, 3),
+                "integrated_discovery_score": round(discovery_score, 3),
+                "AnnotSV_OMIM_evidence": ";".join(sorted(set(a["omim"]))),
+                "AnnotSV_GENCC_evidence": ";".join(sorted(set(a["gencc"]))),
+                "AnnotSV_ClinVar_evidence": ";".join(sorted(set(a["clinvar"]))),
+                "AnnotSV_constraint_evidence": ";".join(sorted(set(a["constraint"]))),
+                "candidate_group": candidate_group,
+                "classification": candidate_group,
+                "interpretation": (
+                    "Discovery-priority category only; review the underlying SV, "
+                    "inheritance, population frequency, phenotype fit and clinical "
+                    "evidence before any pathogenicity assessment."
+                ),
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            -float(row["integrated_discovery_score"]),
+            -int(row["optic_neuropathy_anchor_HPO_count"]),
+            -int(row["SV_count"]),
+            row["gene"],
+        )
+    )
+
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fields = list(rows[0].keys()) if rows else [
+        "gene",
+        "panel_gene",
+        "candidate_group",
+        "interpretation",
+    ]
+    with output.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"[OK] ranked_genes={len(rows)} output={output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
