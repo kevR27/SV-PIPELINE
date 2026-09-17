@@ -50,10 +50,16 @@ def main():
     work["_label"] = work[locus].astype(str)
     if gene:
         g = work[gene].fillna("").astype(str).str.strip()
-        work.loc[g.ne(""), "_label"] = work.loc[g.ne(""), locus].astype(str) + " | " + g[g.ne("")]
+        mask = g.ne("")
+        work.loc[mask, "_label"] = work.loc[mask, locus].astype(str) + " | " + g.loc[mask]
 
-    work["_priority"] = work["_support"] + work["_cn"].fillna(0) / max(work["_cn"].max(skipna=True) or 1, 1)
-    work = work.sort_values(["_priority", "_cn", "_size"], ascending=False).head(args.top_n).iloc[::-1].copy()
+    cn_max = work["_cn"].max(skipna=True)
+    if pd.isna(cn_max) or cn_max <= 0:
+        cn_component = pd.Series(0.0, index=work.index)
+    else:
+        cn_component = work["_cn"].fillna(0) / cn_max
+    work["_priority"] = work["_support"] + cn_component
+    work = work.sort_values(["_priority", "_cn", "_size"], ascending=False, na_position="last").head(args.top_n).iloc[::-1].copy()
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -70,11 +76,17 @@ def main():
     ax1.set_ylabel("Repeat locus")
     style_axis(ax1, "x")
 
-    x = work["_cn"] if work["_cn"].notna().any() else work["_size"]
-    xlabel = "Maximum copy number" if work["_cn"].notna().any() else "Maximum repeat size"
-    ax2.scatter(x, work["_support"], s=45 + work["_coverage"].fillna(0).clip(lower=0) * 2, color="#E69F00", edgecolor="white", linewidth=0.5)
-    for _, row in work.iterrows():
-        ax2.annotate(str(row["_label"]).split(" | ")[0], (row["_cn"] if pd.notna(row["_cn"]) else row["_size"], row["_support"]), xytext=(3, 3), textcoords="offset points", fontsize=6.5)
+    use_cn = work["_cn"].notna().any()
+    x = work["_cn"] if use_cn else work["_size"]
+    xlabel = "Maximum copy number" if use_cn else "Maximum repeat size"
+    if x.notna().any():
+        ax2.scatter(x, work["_support"], s=45 + work["_coverage"].fillna(0).clip(lower=0) * 2, color="#E69F00", edgecolor="white", linewidth=0.5)
+        for _, row in work.iterrows():
+            xpos = row["_cn"] if use_cn else row["_size"]
+            if pd.notna(xpos):
+                ax2.annotate(str(row["_label"]).split(" | ")[0], (xpos, row["_support"]), xytext=(3, 3), textcoords="offset points", fontsize=6.5)
+    else:
+        ax2.text(0.5, 0.5, "No numeric copy-number/size values detected", transform=ax2.transAxes, ha="center", va="center")
     ax2.set_xlabel(xlabel)
     ax2.set_ylabel("Supporting reads")
     style_axis(ax2, "both")
