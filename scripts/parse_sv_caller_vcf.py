@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
-"""
-parse_sv_caller_vcf.py
+"""Create a caller-aware SV evidence table from VCF/VCF.GZ.
 
-Create a compact, caller-aware SV evidence table from a caller's VCF
-(or bgzipped VCF.GZ) file.
-
-Different SV callers use different INFO/FORMAT field names for the same
-underlying evidence (e.g. supporting read count is SUPPORT in Sniffles2,
-RE in cuteSV, SU in Delly). This script normalizes those into a single
-set of CALLER_* columns so downstream steps (filtering, merging, review)
-can work with one consistent schema regardless of which caller produced
-the record.
-
-Output: one row per VCF record, written as a tab-separated file.
+The output normalizes evidence used by the pre-Jasmine QC filter while retaining
+caller-specific fields needed for later review.  SV IDs are required to be
+present and unique because the filtered PASS-ID list is used to select records
+from the original caller VCF and Jasmine later records those IDs in IDLIST.
 """
 
 from __future__ import annotations
@@ -22,27 +14,19 @@ import csv
 import gzip
 from pathlib import Path
 
-# Placeholder used everywhere a value is absent, to keep the output
-# table free of blank cells.
 MISSING = "."
 
 
 def open_text(path: str):
-    """Open a plain-text or gzip-compressed VCF for reading, as text."""
     if path.endswith(".gz"):
         return gzip.open(path, "rt", encoding="utf-8", errors="replace")
     return open(path, "r", encoding="utf-8", errors="replace")
 
 
-def parse_info(raw: str) -> dict:
-    """
-    Parse a VCF INFO field string (e.g. "SVTYPE=DEL;SVLEN=-500;IMPRECISE")
-    into a dict. Flag-style fields with no "=" are recorded as 'True'.
-    """
-    info = {} # empty dict
+def parse_info(raw: str) -> dict[str, str]:
+    info: dict[str, str] = {}
     if not raw or raw == MISSING:
         return info
-
     for item in raw.split(";"):
         if not item:
             continue
@@ -51,50 +35,45 @@ def parse_info(raw: str) -> dict:
             info[key] = value
         else:
             info[item] = "True"
+    return info
 
-    return info #paste the found character to dict
 
-
-def first(info: dict, *keys: str) -> str:
-    """
-    Return the value of the first key (in order) that exists in `info`
-    and is non-empty; otherwise MISSING. Lets us handle the fact that
-    different callers name the same evidence field differently.
-    """
+def first(info: dict[str, str], *keys: str) -> str:
     for key in keys:
         value = info.get(key, MISSING)
         if value not in ("", MISSING):
             return value
-
     return MISSING
 
 
-def infer_svtype(info: dict, alt: str) -> str:
-    """
-    Determine the SV type. Prefer the INFO/SVTYPE field; fall back to
-    parsing it out of the ALT allele for breakends (BND) or symbolic alleles
-    that lack an explicit SVTYPE
-    """
+def infer_svtype(info: dict[str, str], alt: str) -> str:
     svtype = first(info, "SVTYPE")
     if svtype != MISSING:
         return svtype
-
     if "[" in alt or "]" in alt:
         return "BND"
-
     if alt.startswith("<") and alt.endswith(">"):
         return alt[1:-1]
-
     return MISSING
 
 
-def evidence(caller: str, info: dict) -> dict:
-    """
-    Extract caller-specific supporting evidence from the INFO dict and
-    normalize it into CALLER_* keys. Each caller reports read support
-    (and other evidence) under different field names, so this is a
-    per-caller lookup table.
-    """
+def number(value: str) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def summed_support(*values: str) -> str:
+    parsed = [number(v) for v in values if v not in ("", MISSING, None)]
+    parsed = [v for v in parsed if v is not None]
+    if not parsed:
+        return MISSING
+    total = sum(parsed)
+    return str(int(total)) if total.is_integer() else str(total)
+
+
+def evidence(caller: str, info: dict[str, str]) -> dict[str, str]:
     caller_lc = caller.lower()
 
     if caller_lc == "sniffles2":
@@ -114,10 +93,19 @@ def evidence(caller: str, info: dict) -> dict:
         }
 
     if caller_lc == "delly":
+        pe = first(info, "PE")
+        sr = first(info, "SR")
+        support = first(info, "SU", "SUPPORT")
+        if support == MISSING:
+            # DELLY long-read VCFs commonly expose PE/SR rather than SU.
+            # Treat their sum as the record-level supporting evidence used by
+            # the caller-agnostic pre-merge filter.  PE and SR are retained as
+            # separate columns so the derivation stays transparent.
+            support = summed_support(pe, sr)
         return {
-            "CALLER_SUPPORT": first(info, "SU", "SUPPORT"),
-            "CALLER_PE": first(info, "PE"),
-            "CALLER_SR": first(info, "SR"),
+            "CALLER_SUPPORT": support,
+            "CALLER_PE": pe,
+            "CALLER_SR": sr,
             "CALLER_PRECISE": first(info, "PRECISE"),
         }
 
@@ -134,64 +122,80 @@ def evidence(caller: str, info: dict) -> dict:
             "CALLER_SUPPORT_VECTOR": first(info, "SUPP_VEC"),
         }
 
-    # Unknown caller: try the common field names as a best-effort fallback.
     return {"CALLER_SUPPORT": first(info, "SUPPORT", "SUPP", "RE", "SU")}
 
 
-def parse_format(fmt_raw: str, sample_raw: str) -> dict:
-    """
-    Pull GT/GQ/DP out of the first sample column, given the FORMAT and
-    sample value strings (e.g. FORMAT="GT:GQ:DP", sample="0/1:40:20").
-    Returns MISSING for any field not present in this record's FORMAT.
-    """
-    out = {"CALLER_GT": MISSING, "CALLER_GQ": MISSING, "CALLER_DP": MISSING}
+def parse_format(fmt_raw: str, sample_raw: str) -> dict[str, str]:
+    out = {
+        "CALLER_GT": MISSING,
+        "CALLER_GQ": MISSING,
+        "CALLER_DP": MISSING,
+        "CALLER_DV": MISSING,
+        "CALLER_RV": MISSING,
+    }
 
-    if not fmt_raw or not sample_raw:
+    if not fmt_raw or fmt_raw == MISSING or not sample_raw or sample_raw == MISSING:
         return out
 
     keys = fmt_raw.split(":")
     values = sample_raw.split(":")
     fields = dict(zip(keys, values))
 
-    if "GT" in fields:
-        out["CALLER_GT"] = fields["GT"]
+    for key, out_key in (
+        ("GT", "CALLER_GT"),
+        ("GQ", "CALLER_GQ"),
+        ("DV", "CALLER_DV"),
+        ("RV", "CALLER_RV"),
+    ):
+        value = fields.get(key, MISSING)
+        if value not in ("", MISSING):
+            out[out_key] = value
 
-    if "GQ" in fields and fields["GQ"] not in ("", MISSING):
-        out["CALLER_GQ"] = fields["GQ"]
-
-    # Depth is called DP by most callers, DR (reference-supporting depth)
-    # by some; take whichever is present, preferring DP.
     for depth_key in ("DP", "DR"):
-        if depth_key in fields and fields[depth_key] not in ("", MISSING):
-            out["CALLER_DP"] = fields[depth_key]
+        value = fields.get(depth_key, MISSING)
+        if value not in ("", MISSING):
+            out["CALLER_DP"] = value
             break
 
     return out
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
+    ap = argparse.ArgumentParser(
         description="Parse caller-specific SV evidence into a uniform TSV."
     )
-    parser.add_argument("--vcf", required=True, help="Input VCF or VCF.GZ file")
-    parser.add_argument("--caller", required=True, help="Caller name (e.g. Sniffles2, cuteSV, delly)")
-    parser.add_argument("--output", required=True, help="Output TSV path")
-    args = parser.parse_args()
+    ap.add_argument("--vcf", required=True, help="Input VCF or VCF.GZ")
+    ap.add_argument("--caller", required=True, help="Caller name")
+    ap.add_argument("--output", required=True, help="Output TSV")
+    args = ap.parse_args()
 
-    rows = []
+    rows: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
 
     with open_text(args.vcf) as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, start=1):
             if line.startswith("#"):
                 continue
 
             fields = line.rstrip("\n").split("\t")
             if len(fields) < 8:
-                raise ValueError(f"Malformed VCF record: {line.rstrip()}")
+                raise ValueError(f"Malformed VCF record at line {lineno}: {line.rstrip()}")
 
             chrom, pos, sv_id, ref, alt, qual, filt, info_raw = fields[:8]
-            info = parse_info(info_raw)
 
+            if sv_id in {"", MISSING}:
+                raise ValueError(
+                    f"{args.caller} VCF contains a record without an ID at {chrom}:{pos}. "
+                    "Stable unique IDs are required for PASS-ID filtering and Jasmine provenance."
+                )
+            if sv_id in seen_ids:
+                raise ValueError(
+                    f"{args.caller} VCF contains duplicate ID {sv_id!r} at {chrom}:{pos}. "
+                    "Normalize caller IDs before running the evidence filter/Jasmine."
+                )
+            seen_ids.add(sv_id)
+
+            info = parse_info(info_raw)
             fmt_raw = fields[8] if len(fields) > 8 else MISSING
             sample_raw = fields[9] if len(fields) > 9 else MISSING
 
@@ -211,7 +215,6 @@ def main() -> int:
             }
             row.update(evidence(args.caller, info))
             row.update(parse_format(fmt_raw, sample_raw))
-
             rows.append(row)
 
     columns = [
@@ -220,21 +223,23 @@ def main() -> int:
         "CALLER_SUPPORT", "CALLER_RNAMES", "CALLER_STRANDS",
         "CALLER_IMPRECISE", "CALLER_MOSAIC", "CALLER_PE", "CALLER_SR",
         "CALLER_PR", "CALLER_PRECISE", "CALLER_SUPPORT_VECTOR",
-        "CALLER_GT", "CALLER_GQ", "CALLER_DP",
+        "CALLER_GT", "CALLER_GQ", "CALLER_DP", "CALLER_DV", "CALLER_RV",
     ]
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with output_path.open("w", encoding="utf-8", newline="") as fh:
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(
-            fh, fieldnames=columns, delimiter="\t",
-            extrasaction="ignore", lineterminator="\n",
+            fh,
+            fieldnames=columns,
+            delimiter="\t",
+            extrasaction="ignore",
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"[OK] caller={args.caller} records={len(rows)} output={output_path}")
+    print(f"[OK] caller={args.caller} records={len(rows)} unique_ids={len(seen_ids)} output={output}")
     return 0
 
 
