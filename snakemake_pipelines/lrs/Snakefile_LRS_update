@@ -649,13 +649,15 @@ rule needlr_annotation:
         tsv=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
         vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
     params:
-        outdir=PATH + "{sample}/sv/needlr",
+        outdir=PATH + "{sample}/sv/needlr/annotate_out",
         backend_flag=lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
     conda:
         CONDAENV + "needlr.yaml"
     shell:
         """
         set -euo pipefail
+
+        mkdir -p {params.outdir}
 
         needLR annotate \
             -O {params.outdir} \
@@ -664,18 +666,17 @@ rule needlr_annotation:
             --all \
             {input.vcf}
 
-        results_tsv=$(find {params.outdir} -type f -name '*_RESULTS.tsv' -print -quit)
-        results_vcf=$(find {params.outdir} -type f -name '*_RESULTS.vcf.gz' -print -quit)
+        results_tsv=$(find {params.outdir} -maxdepth 1 -type f -name '*_RESULTS.tsv' -print -quit)
+        results_vcf=$(find {params.outdir} -maxdepth 1 -type f -name '*.vcf.gz' -print -quit)
 
-        test -n "$results_tsv"
-        test -n "$results_vcf"
+        test -n "$results_tsv" || {{ echo "ERROR: no needLR *_RESULTS.tsv found in {params.outdir}" >&2; exit 1; }}
+        test -n "$results_vcf" || {{ echo "ERROR: no needLR *.vcf.gz found in {params.outdir}" >&2; exit 1; }}
 
         cp "$results_tsv" {output.tsv}
         cp "$results_vcf" {output.vcf}
 
         tabix -f -p vcf {output.vcf}
         """
-
 ##########################################################################
 # Validate/repair NeedLR VCF before AnnotSV                              #
 ##########################################################################
