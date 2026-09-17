@@ -3,17 +3,20 @@
 # ============================================================
 
 samples:
-  patient01: "/DATA/casadei7/nanopore/DM1/14655native/bam/sup_met_hg38/14655native.bam" #/data/lrs_bams/patient01.sort.bam
-  patient02: "/DATA/casadei7/nanopore/DM1/22_9814native/bam/sup_met_hg38/22_9814native.bam" #/data/lrs_bams/patient02.sort.bam
+#always put "" if name is integer
+  "14996" : "/DATA/casadei7/nanopore/WGS/14996_HMW_bam/14996_HMW_merged.bam" #/data/lrs_bams/patient01.sort.bam
+  "21930" : "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam" #/data/lrs_bams/patient02.sort.bam
+  "12066" : "/DATA/casadei7/nanopore/WGS/CONTROL/12066/12066.merge.sort.bam"
+  "25428" : "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
 
-path: "/DATA/casadei7/tools/SV-PIPELINE-main/outs_test"
+path: "/DATA/casadei7/tools/SV-PIPELINE-main/outs_test_CNTRL"
 ref: "/DATA/Reference/hg38.fa"
 threads: 32
 
 # ============================================================
 # TARGET PANEL AND ANNOTATION FILES
 # ============================================================
-# Used by Clair3, cuteSV and targeted Straglr analysis.
+# Used by Clair3, cuteSV and targeted Straglr analysis
 
 bed: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel.bed"
 bedcutesv: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel_cutesv.bed"
@@ -36,12 +39,12 @@ cpg_region: null
 # ============================================================
 # ENVIRONMENTS
 # ============================================================
-condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/"
+condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/" #"/home/casadei7/snakemake_envs/envs/"
+
 # Modkit executable
 modkitenv: "/home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
 
 # Clair3 ONT model directory.
-# Confirm that this model matches the Dorado basecaller model.
 clair3env: "/DATA/casadei7/BrainAging/Clair3_Models/r1041_e82_400bps_sup_v520/"
 
 # ============================================================
@@ -83,10 +86,10 @@ tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/teref.ont.human.
 # ANNOTATION
 # ============================================================
 
-# Offline Monarch Knowledge Graph.
-# The offline script expects the KGX TSV node and edge files.
+# Offline Monarch Knowledge Graph
 monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_nodes.tsv"
 monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_edges.tsv"
+
 discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
 
 # Benign population AF threshold
