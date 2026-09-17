@@ -1,0 +1,11 @@
+name: svplots
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.11
+  - pandas>=2.1
+  - numpy>=1.26
+  - matplotlib>=3.8
+  - scipy>=1.11
+  - pyyaml>=6.0
