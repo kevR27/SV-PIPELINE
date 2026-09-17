@@ -3,11 +3,11 @@
 # ============================================================
 
 samples:
-#always put "" if name is integer
-  "14996" : "/DATA/casadei7/nanopore/WGS/14996_HMW_bam/14996_HMW_merged.bam" #/data/lrs_bams/patient01.sort.bam
-  "21930" : "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam" #/data/lrs_bams/patient02.sort.bam
-  "12066" : "/DATA/casadei7/nanopore/WGS/CONTROL/12066/12066.merge.sort.bam"
-  "25428" : "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
+  # Always quote numeric sample names.
+  "14996": "/DATA/casadei7/nanopore/WGS/14996_HMW_bam/14996_HMW_merged.bam"
+  "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
+  "12066": "/DATA/casadei7/nanopore/WGS/CONTROL/12066/12066.merge.sort.bam"
+  "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
 
 path: "/DATA/casadei7/tools/SV-PIPELINE-main/outs_test_CNTRL"
 ref: "/DATA/Reference/hg38.fa"
@@ -16,117 +16,110 @@ threads: 32
 # ============================================================
 # TARGET PANEL AND ANNOTATION FILES
 # ============================================================
-# Used by Clair3, cuteSV and targeted Straglr analysis
+# SV calling is genome-wide. The optic-neuropathy panel is used for the
+# complementary Clair3 analysis and for post-hoc panel views/annotation.
 
 bed: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel.bed"
+
+# Retained for backward compatibility with older Snakefiles. The current
+# cuteSV rule is genome-wide and does not use this BED.
 bedcutesv: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel_cutesv.bed"
 
-# Gencode gene BED file for gene annotation
 gene_bed: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/gencode.genes.hg38.sorted.bed"
-
-# Plain-text candidate gene list, one gene symbol per line
 candidate_genes_list: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_genes.txt"
 
 delly_genome: "ont"
 
-straglr_bed: null # genome-wide tandem-repeat expansion discovery
+straglr_bed: null
 straglr_script: "/home/casadei7/straglr/straglr.py"
+straglr_annotation_min_overlap: 1
 
-# null = extract CpG methylation genome-wide
-# Set a region such as "chr3:193600000-193700000" if needed
+# null = extract CpG methylation genome-wide.
+# Set e.g. "chr3:193600000-193700000" for a targeted run.
 cpg_region: null
 
 # ============================================================
-# ENVIRONMENTS
+# ENVIRONMENTS / MODELS
 # ============================================================
-condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/" #"/home/casadei7/snakemake_envs/envs/"
-
-# Modkit executable
+condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/"
 modkitenv: "/home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
-
-# Clair3 ONT model directory.
 clair3env: "/DATA/casadei7/BrainAging/Clair3_Models/r1041_e82_400bps_sup_v520/"
 
 # ============================================================
-# SNIFFLES2
+# SNIFFLES2 / JASMINE
 # ============================================================
 
-# Reference-wide VNTR BED file required by Sniffles2
 vntr_bed: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
+sniffles_mosaic: false
+
+# Must match the order written into Jasmine's per-patient VCF file list.
+# SUPP_VEC is decoded using this order.
+jasmine_caller_order:
+  - Sniffles2
+  - cuteSV
+  - delly
 
 # ============================================================
 # VEP
 # ============================================================
 
-# Local offline VEP cache
-# do this: vep_install -a cf -s homo_sapiens -y GRCh38 -c /refs/vep_cache --CONVERT
-
-reference_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference" # "/home/casadei7/SV-PIPELINE-main/reference"
-
-vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/vep" # "/home/casadei7/SV-PIPELINE-main/reference/vep" 
-
+reference_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference"
+vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/vep"
 vep_assembly: "GRCh38"
 
 # ============================================================
-# needLR population-AF backend
+# needLR population-frequency branch
 # ============================================================
-# Must contain the required 1KGP-LRSC ONT backend files.
+# needLR is a side annotation branch and is NOT the source VCF for AnnotSV.
+# A dedicated needLR-compatible Sniffles2 query call is generated from the BAM.
 
 needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/needlr/release/backend_files/"
 
+# Conservative matching of needLR Sniffles2 query variants back to the
+# Jasmine master callset. Ambiguous matches are not assigned an AF.
+needlr_match_bp_tolerance: 1000
+needlr_match_rel_size_tolerance: 0.50
 
 # ============================================================
 # TLDR
 # ============================================================
-# Must contain the ALU/LINE1/SVA reference sequences required by TLDR
 
 tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/teref.ont.human.fa"
 
 # ============================================================
-# ANNOTATION
+# ANNOTATION / GENE-PHENOTYPE DISCOVERY
 # ============================================================
 
-# Offline Monarch Knowledge Graph
 monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_nodes.tsv"
 monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_edges.tsv"
-
 discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
 
-# Benign population AF threshold
-
 annotsv_benign_af: 0.01
-
-# ============================================================
-# ANNOTSV
-#=============================================================
-
 annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/AnnotSV_annotations"
 
-# ============================================================
-# SNIFFLES2 OPTIONS
-# ============================================================
-
-# false = standard SV calling
-# true  = mosaic SV calling
-sniffles_mosaic: false
+# Optional direct AnnotSV HPO input. null keeps HPO/phenotype discovery in the
+# separate offline Monarch branch.
+hpo_terms: null
 
 # ============================================================
-# PRE-MERGE SV EVIDENCE FILTERING 
+# PRE-MERGE SV EVIDENCE FILTERING
 # ============================================================
-# Applied per-caller, before Jasmine merge. Does NOT change the
-# sniffles2/cuteSV/delly command-line parameters themselves.
+# Applied per caller before Jasmine. These thresholds determine which caller
+# records enter the consensus merge; the original caller outputs are retained.
 
-# Script used after caller-specific evidence parsing and before Jasmine.
 filter_sv_evidence_script: "/DATA/casadei7/tools/SV-PIPELINE-main/scripts/filter_sv_evidence.py"
 
-# Hard filters (drop from merge input):
-evidence_min_support: 2          # min supporting reads (CALLER_SUPPORT)
-evidence_min_svlen: 50           # bp
-evidence_max_svlen: 5000000      # bp; raise if your panel expects larger CNVs
+evidence_min_support: 2
+evidence_min_svlen: 50
 
-# Soft filters (flagged in evidence TSV, not dropped):
-# evidence_min_gq: 10             # uncomment to flag low genotype-quality calls
-# evidence_blacklist_bed: "/path/to/low_mappability_segdup.bed"  # optional
+# Keep very large SVs in the master SV path. needLR itself does not evaluate
+# BNDs or SVs >=10 Mb, but those records must remain available to AnnotSV and
+# clinical/manual interpretation.
+evidence_max_svlen: 50000000
 
-# High-confidence multi-caller companion set (Jasmine SUPP field)
-high_confidence_min_supp: 2       # e.g. 2 of {sniffles2, cuteSV, delly} agree
+# Optional soft flags only; they do not drop a record.
+# evidence_min_gq: 10
+# evidence_blacklist_bed: "/path/to/low_mappability_segdup.bed"
+
+# Companion view only; the full Jasmine VCF remains the master callset.
+high_confidence_min_supp: 2
