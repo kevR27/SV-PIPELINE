@@ -1,23 +1,12 @@
 #!/usr/bin/env python3
-"""Summarize caller provenance for merged SVs.
+"""Summarize caller provenance for Jasmine-merged SVs.
 
-The script does not recluster or redefine SVs. It reads the merged VCF produced
-by Jasmine/SURVIVOR and extracts caller provenance/support already represented
-in the merged record (e.g. CALLERS/SOURCES/SUPP_VEC/SUPP). If those fields are
-not present, optional individual caller VCFs can be supplied and records are
-matched approximately by chromosome, SV type and breakpoint tolerance.
+For this LRS workflow the Jasmine input list is ordered as
+Sniffles2,cuteSV,delly. Jasmine writes SUPP_VEC and IDLIST in that same input
+order, so caller names can be recovered without inventing them.
 
-Optionally (--min-callers), it also derives a high-confidence companion VCF
-containing only the SVs supported by at least that many distinct callers
-(CALLER_COUNT). This is deliberately named --min-callers rather than
---min-support: it counts distinct callers post-merge, not supporting reads
-within a single caller (that's filter_sv_evidence.py's --min-support, a
-different axis applied before merging) - keeping the names distinct avoids
-the two being confused for the same threshold.
-
-The companion VCF is written as plain text; bgzip/tabix it in the calling
-Snakemake rule, same as this script's other outputs are handled elsewhere
-in the pipeline.
+The optional high-confidence VCF remains a companion view only; the complete
+Jasmine VCF stays the master callset for downstream annotation.
 """
 
 from __future__ import annotations
@@ -38,18 +27,18 @@ def open_text(path: str):
 
 
 def parse_info(raw: str) -> dict[str, str]:
-    result = {}
+    out: dict[str, str] = {}
     if not raw or raw == MISSING:
-        return result
+        return out
     for item in raw.split(";"):
         if not item:
             continue
         if "=" in item:
             key, value = item.split("=", 1)
-            result[key] = value
+            out[key] = value
         else:
-            result[item] = "True"
-    return result
+            out[item] = "True"
+    return out
 
 
 def first(info: dict[str, str], *keys: str) -> str:
@@ -71,12 +60,6 @@ def infer_svtype(info: dict[str, str], alt: str) -> str:
     return MISSING
 
 
-def parse_callers(value: str) -> list[str]:
-    if value in ("", MISSING):
-        return []
-    return sorted({x for x in re.split(r"[,;|]", value) if x})
-
-
 def classify(count: int) -> str:
     if count >= 3:
         return "MULTICALLER"
@@ -87,29 +70,58 @@ def classify(count: int) -> str:
     return "UNKNOWN"
 
 
+def decode_provenance(info: dict[str, str], caller_order: list[str]):
+    supp_vec = first(info, "SUPP_VEC")
+    id_list = first(info, "IDLIST")
+    if supp_vec in ("", MISSING):
+        return [], {}, "NO_SUPP_VEC"
+
+    callers = [
+        caller_order[i]
+        for i, bit in enumerate(supp_vec)
+        if bit == "1" and i < len(caller_order)
+    ]
+
+    ids = [] if id_list in ("", MISSING) else [x for x in id_list.split(",") if x]
+    supporting_idx = [i for i, bit in enumerate(supp_vec) if bit == "1"]
+    provenance: dict[str, str] = {}
+    status = "DECODED"
+
+    if ids and len(ids) == len(supporting_idx):
+        for idx, sv_id in zip(supporting_idx, ids):
+            if idx < len(caller_order):
+                provenance[caller_order[idx]] = sv_id
+    elif ids:
+        status = "IDLIST_LENGTH_MISMATCH"
+
+    return callers, provenance, status
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Summarize caller support in a merged SV VCF.")
-    ap.add_argument("--vcf", required=True, help="Jasmine/SURVIVOR merged VCF or VCF.GZ")
-    ap.add_argument("--output", required=True, help="Output summary TSV")
-    ap.add_argument("--min-callers", type=int, default=None,
-                     help="If set, also write a high-confidence companion VCF containing only "
-                          "SVs supported by at least this many distinct callers (CALLER_COUNT). "
-                          "This counts callers post-merge, NOT supporting reads within a single "
-                          "caller - that threshold is filter_sv_evidence.py's --min-support, "
-                          "applied earlier, before merging. Omit to only write the summary TSV.")
-    ap.add_argument("--high-confidence-vcf", default=None,
-                     help="Output path for the high-confidence companion VCF (plain text). "
-                          "Required if --min-callers is set.")
+    ap = argparse.ArgumentParser(description="Summarize caller support in a Jasmine merged VCF.")
+    ap.add_argument("--vcf", required=True)
+    ap.add_argument("--output", required=True)
+    ap.add_argument(
+        "--caller-order",
+        default="Sniffles2,cuteSV,delly",
+        help="Comma-separated Jasmine file-list order used to decode SUPP_VEC/IDLIST",
+    )
+    ap.add_argument(
+        "--min-callers",
+        type=int,
+        default=None,
+        help="Write a companion VCF containing records supported by at least this many caller inputs",
+    )
+    ap.add_argument("--high-confidence-vcf", default=None)
     args = ap.parse_args()
 
     if args.min_callers is not None and not args.high_confidence_vcf:
         ap.error("--high-confidence-vcf is required when --min-callers is set")
 
+    caller_order = [x.strip() for x in args.caller_order.split(",") if x.strip()]
     rows = []
     header_lines: list[str] = []
-    # SV_ID -> (raw VCF line, caller_count), kept only when --min-callers is requested,
-    # to avoid holding onto every line's text for large genome-wide callsets otherwise.
-    lines_by_id: dict[str, tuple[str, int]] = {}
+    kept_lines: list[tuple[str, int]] = []
 
     with open_text(args.vcf) as fh:
         for line in fh:
@@ -121,48 +133,50 @@ def main() -> int:
             fields = line.rstrip("\n").split("\t")
             if len(fields) < 8:
                 continue
+
             chrom, pos, sv_id, ref, alt, qual, filt, info_raw = fields[:8]
             info = parse_info(info_raw)
-            svtype = infer_svtype(info, alt)
+            callers, provenance, decode_status = decode_provenance(info, caller_order)
 
-            callers = first(info, "CALLERS", "CALLER", "SOURCES", "SOURCE")
-            caller_list = parse_callers(callers)
-
-            supp_vec = first(info, "SUPP_VEC")
             supp = first(info, "SUPP", "SUPPORT")
-            caller_count = len(caller_list)
-
-            # If Jasmine/SURVIVOR supplies a support count but caller names are
-            # unavailable, retain the count without inventing caller identities.
+            caller_count = len(callers)
             if caller_count == 0 and supp not in ("", MISSING):
                 try:
                     caller_count = int(float(supp))
                 except ValueError:
                     caller_count = 0
 
-            rows.append({
+            row = {
                 "SV_ID": sv_id,
                 "CHROM": chrom,
                 "START": pos,
                 "END": first(info, "END"),
-                "SVTYPE": svtype,
+                "SVTYPE": infer_svtype(info, alt),
                 "SVLEN": first(info, "SVLEN"),
-                "CALLERS": ";".join(caller_list) if caller_list else MISSING,
+                "CALLERS": ";".join(callers) if callers else MISSING,
                 "CALLER_COUNT": str(caller_count) if caller_count else MISSING,
                 "CALLER_SUPPORT_CLASS": classify(caller_count),
                 "SUPP": supp,
-                "SUPP_VEC": supp_vec,
-            })
+                "SUPP_VEC": first(info, "SUPP_VEC"),
+                "IDLIST": first(info, "IDLIST"),
+                "PROVENANCE_STATUS": decode_status,
+            }
+            for caller in caller_order:
+                row[f"{caller.upper()}_ID"] = provenance.get(caller, MISSING)
+            rows.append(row)
 
             if args.min_callers is not None:
-                lines_by_id[sv_id] = (line, caller_count)
+                kept_lines.append((line, caller_count))
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
+
     columns = [
         "SV_ID", "CHROM", "START", "END", "SVTYPE", "SVLEN",
-        "CALLERS", "CALLER_COUNT", "CALLER_SUPPORT_CLASS", "SUPP", "SUPP_VEC"
-    ]
+        "CALLERS", "CALLER_COUNT", "CALLER_SUPPORT_CLASS", "SUPP", "SUPP_VEC",
+        "IDLIST", "PROVENANCE_STATUS",
+    ] + [f"{caller.upper()}_ID" for caller in caller_order]
+
     with out.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=columns, delimiter="\t", lineterminator="\n")
         writer.writeheader()
@@ -171,17 +185,19 @@ def main() -> int:
     print(f"[OK] records={len(rows)} output={out}")
 
     if args.min_callers is not None:
-        hc_out = Path(args.high_confidence_vcf)
-        hc_out.parent.mkdir(parents=True, exist_ok=True)
+        hc = Path(args.high_confidence_vcf)
+        hc.parent.mkdir(parents=True, exist_ok=True)
         n_kept = 0
-        with hc_out.open("w", encoding="utf-8", newline="") as fh:
+        with hc.open("w", encoding="utf-8", newline="") as fh:
             fh.writelines(header_lines)
-            for sv_id, (line, caller_count) in lines_by_id.items():
+            for line, caller_count in kept_lines:
                 if caller_count >= args.min_callers:
                     fh.write(line)
                     n_kept += 1
-        print(f"[OK] high_confidence min_callers={args.min_callers} "
-              f"kept={n_kept}/{len(rows)} output={hc_out}")
+        print(
+            f"[OK] high_confidence min_callers={args.min_callers} "
+            f"kept={n_kept}/{len(rows)} output={hc}"
+        )
 
     return 0
 
