@@ -165,6 +165,8 @@ def main() -> int:
             "AnnotSV_ClinVar_evidence": ";".join(sorted(set(a["clinvar"]))),
             "AnnotSV_constraint_evidence": ";".join(sorted(set(a["constraint"]))),
             "candidate_category": category,
+            # Backward-compatible alias consumed by the integrated table.
+            "classification": category,
             "interpretation": "Discovery candidate only; not an ACMG/AMP or pathogenicity classification.",
         })
 
@@ -179,7 +181,7 @@ def main() -> int:
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-    fields = list(rows[0].keys()) if rows else ["gene", "candidate_category"]
+    fields = list(rows[0].keys()) if rows else ["gene", "candidate_category", "classification"]
     with out.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields, delimiter="\t", lineterminator="\n")
         writer.writeheader()
