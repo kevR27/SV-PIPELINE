@@ -120,7 +120,6 @@ rule all:
         expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz.tbi", sample=SAMPLES),
 
         # Tandem-repeat expansion branch
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf", sample=SAMPLES),
@@ -612,8 +611,9 @@ rule needlr_annotation:
         vcf=rules.sniffles2_needlr_query.output.vcf
     output:
         tsv=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
-        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz",
-        tbi=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz.tbi"
+        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
+    log:
+        PATH + "{sample}/logs/needlr/{sample}.needlr.log"
     params:
         outdir=PATH + "{sample}/sv/needlr/annotate_out",
         backend_flag=lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
@@ -627,14 +627,15 @@ rule needlr_annotation:
         # Always start from an empty needLR run directory so stale outputs can
         # never be mistaken for the current sample's result.
         rm -rf {params.outdir}
-        mkdir -p {params.outdir}
+        mkdir -p {params.outdir} $(dirname {log})
 
         needLR annotate \
             -O {params.outdir} \
             -T {threads} \
             {params.backend_flag} \
             --all \
-            {input.vcf}
+            {input.vcf} \
+            2>&1 | tee {log}
 
         n_tsv=$(find {params.outdir} -type f -name '*_RESULTS.tsv' | wc -l | tr -d ' ')
         n_vcf=$(find {params.outdir} -type f -name '*_RESULTS.vcf.gz' | wc -l | tr -d ' ')
@@ -655,11 +656,13 @@ rule needlr_annotation:
 
         cp "$results_tsv" {output.tsv}
         cp "$results_vcf" {output.vcf}
-        tabix -f -p vcf {output.vcf}
 
+        # needLR 4.1 does not require its output VCF to be tabix-indexed, and
+        # downstream integration uses RESULTS.tsv. Validate gzip integrity
+        # without introducing an unnecessary indexing failure point.
+        gzip -t {output.vcf}
         test -s {output.tsv}
         test -s {output.vcf}
-        test -s {output.tbi}
         """
 
 
