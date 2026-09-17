@@ -4,4 +4,6 @@ channels:
   - bioconda
 dependencies:
   - bioconda::needlr=4.1
-    - bioconda::tabix
+  # needLR 4.1 itself requires bcftools >=1.23.1; do not pin this to 1.20.
+  - bioconda::bcftools>=1.23.1
+  - bioconda::tabix

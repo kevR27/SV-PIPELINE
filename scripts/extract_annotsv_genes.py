@@ -1,38 +1,61 @@
 #!/usr/bin/env python3
-"""Extract unique gene symbols from the Gene_name column of an AnnotSV TSV."""
+"""Extract unique gene symbols from an AnnotSV TSV.
+
+AnnotSV column names can vary slightly by version/output mode, so the script
+selects the first supported gene column present rather than silently returning
+an empty list when `Gene_name` is not available.
+"""
 
 import argparse
 import csv
 import re
 import sys
+from pathlib import Path
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--annotsv", required=True)
-parser.add_argument("--output", required=True)
-args = parser.parse_args()
+MISSING = {"", ".", "NA", "N/A", "None"}
+GENE_COLUMNS = ["Gene_name", "Gene", "GENE", "Genes", "gene", "SYMBOL", "AnnotSV_Gene"]
 
-try:
-    csv.field_size_limit(sys.maxsize)
-except OverflowError:
-    csv.field_size_limit(2**31 - 1)
 
-genes = set()
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--annotsv", required=True)
+    ap.add_argument("--output", required=True)
+    args = ap.parse_args()
 
-with open(args.annotsv, newline="", encoding="utf-8") as fh:
-    reader = csv.DictReader(fh, delimiter="\t")
-    ...
+    try:
+        csv.field_size_limit(sys.maxsize)
+    except OverflowError:
+        csv.field_size_limit(2**31 - 1)
 
-    for row in reader:
-        value = row.get("Gene_name", "").strip()
-        if not value or value == ".":
-            continue
+    genes = set()
+    with open(args.annotsv, newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh, delimiter="\t")
+        fields = reader.fieldnames or []
+        gene_col = next((c for c in GENE_COLUMNS if c in fields), None)
+        if gene_col is None:
+            raise ValueError(
+                "No supported AnnotSV gene column found. Available columns: "
+                + ", ".join(fields)
+            )
 
-        # AnnotSV may represent multiple genes in one field.
-        for gene in re.split(r"[;,|]", value):
-            gene = gene.strip()
-            if gene and gene not in {".", "NA", "N/A"}:
-                genes.add(gene)
+        for row in reader:
+            value = str(row.get(gene_col, "")).strip()
+            if value in MISSING:
+                continue
+            for gene in re.split(r"[;,|/]", value):
+                gene = gene.strip()
+                if gene not in MISSING:
+                    genes.add(gene.upper())
 
-with open(args.output, "w", encoding="utf-8") as out:
-    for gene in sorted(genes):
-        out.write(gene + "\n")
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", encoding="utf-8") as fh:
+        for gene in sorted(genes):
+            fh.write(gene + "\n")
+
+    print(f"[OK] genes={len(genes)} output={out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
