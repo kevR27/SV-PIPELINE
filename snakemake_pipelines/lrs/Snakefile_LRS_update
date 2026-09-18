@@ -24,7 +24,7 @@ STRAGLR_SCRIPT = config.get("straglr_script", "straglr.py")
 STRAGLR_MIN_OVERLAP = config.get("straglr_annotation_min_overlap", 1)
 
 # needLR is a supplementary population-AF branch, not the master SV callset.
-NEEDLR_BACKEND = config.get("needlr_backend_files")
+NEEDLR_BACKEND = config["needlr_backend_files"]
 
 # Offline Monarch Knowledge Graph / phenotype discovery.
 MONARCH_NODES = config["monarch_nodes"]
@@ -120,7 +120,6 @@ rule all:
         expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz.tbi", sample=SAMPLES),
 
         # Tandem-repeat expansion branch
         expand(PATH + "{sample}/sv/straglr/{sample}_straglr.vcf", sample=SAMPLES),
@@ -144,7 +143,10 @@ rule all:
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # Methylation, SV-aware phasing, MEI confirmation
-        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
+        # CpG bedMethyl is the main methylation output for regional/thesis plots.
+        # Read-level extract calls remain available as an optional rule below.
+        expand(PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES)
 
@@ -612,56 +614,49 @@ rule needlr_annotation:
         vcf=rules.sniffles2_needlr_query.output.vcf
     output:
         tsv=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
-        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz",
-        tbi=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz.tbi"
+        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
+    log:
+        PATH + "{sample}/logs/needlr/{sample}.needlr.log"
     params:
-        outdir=PATH + "{sample}/sv/needlr/annotate_out",
-        backend_flag=lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
+        outdir=PATH + "{sample}/sv/needlr/annotate_out"
     threads: THREADS
     conda:
         CONDAENV + "needlr.yaml"
     shell:
         """
-        set -euo pipefail
+        set -eu
 
-        # Always start from an empty needLR run directory so stale outputs can
-        # never be mistaken for the current sample's result.
         rm -rf {params.outdir}
         mkdir -p {params.outdir}
+        mkdir -p $(dirname {log})
 
         needLR annotate \
             -O {params.outdir} \
             -T {threads} \
-            {params.backend_flag} \
+            -B {NEEDLR_BACKEND} \
             --all \
-            {input.vcf}
+            {input.vcf} \
+            > {log} 2>&1
 
-        n_tsv=$(find {params.outdir} -type f -name '*_RESULTS.tsv' | wc -l | tr -d ' ')
-        n_vcf=$(find {params.outdir} -type f -name '*_RESULTS.vcf.gz' | wc -l | tr -d ' ')
+        results_tsv=$(find {params.outdir} \
+            -type f \
+            -name '*_RESULTS.tsv' \
+            -print -quit)
 
-        if [ "$n_tsv" -ne 1 ]; then
-            echo "ERROR: expected exactly one needLR *_RESULTS.tsv, found $n_tsv" >&2
-            find {params.outdir} -type f >&2
-            exit 1
-        fi
-        if [ "$n_vcf" -ne 1 ]; then
-            echo "ERROR: expected exactly one needLR *_RESULTS.vcf.gz, found $n_vcf" >&2
-            find {params.outdir} -type f >&2
-            exit 1
-        fi
+        results_vcf=$(find {params.outdir} \
+            -type f \
+            -name '*_RESULTS.vcf.gz' \
+            -print -quit)
 
-        results_tsv=$(find {params.outdir} -type f -name '*_RESULTS.tsv' -print -quit)
-        results_vcf=$(find {params.outdir} -type f -name '*_RESULTS.vcf.gz' -print -quit)
+        test -n "$results_tsv"
+        test -n "$results_vcf"
 
         cp "$results_tsv" {output.tsv}
         cp "$results_vcf" {output.vcf}
-        tabix -f -p vcf {output.vcf}
 
         test -s {output.tsv}
         test -s {output.vcf}
-        test -s {output.tbi}
         """
-
 
 ##################################################
 # Tandem-repeat expansion discovery / annotation #
@@ -698,7 +693,6 @@ rule straglr:
             --max_num_clusters 2 \
             --min_cluster_d 1
         """
-
 
 rule straglr_annotation:
     input:
@@ -965,12 +959,50 @@ rule vep_sv_annotation_panel_only:
 # Methylation  #
 ################
 
+rule modkit_pileup:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        bed=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz",
+        tbi=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz.tbi"
+    threads: THREADS
+    conda:
+        CONDAENV + "modkit.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.bed})
+
+        # Main methylation product for downstream regional plots and cohort
+        # comparisons. Keep 5mC and 5hmC as separate modification classes.
+        modkit pileup \
+            {input.bam} \
+            {output.bed} \
+            --ref {input.ref} \
+            {CPG_REGION_FLAG} \
+            --cpg \
+            --combine-strands \
+            --modified-bases 5mC 5hmC \
+            --bgzf \
+            --threads {threads}
+
+        tabix -f -p bed {output.bed}
+
+        test -s {output.bed}
+        test -s {output.tbi}
+        """
+
+
+# Optional read-level methylation output.
+# Run this rule only when individual-read information is needed, for example
+# for haplotype-specific or read-level follow-up of an interesting locus.
 rule modkit_extract:
     input:
         bam=lambda wc: BAMS[wc.sample],
         ref=REF
     output:
-        tsv=PATH + "{sample}/methylation/{sample}.modkit.tsv"
+        tsv=PATH + "{sample}/methylation/{sample}.modkit.calls.tsv"
     threads: THREADS
     conda:
         CONDAENV + "modkit.yaml"
@@ -985,6 +1017,8 @@ rule modkit_extract:
             {CPG_REGION_FLAG} \
             {input.bam} \
             {output.tsv}
+
+        test -s {output.tsv}
         """
 
 
