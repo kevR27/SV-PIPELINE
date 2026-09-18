@@ -143,7 +143,10 @@ rule all:
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # Methylation, SV-aware phasing, MEI confirmation
-        expand(PATH + "{sample}/methylation/{sample}.modkit.tsv", sample=SAMPLES),
+        # CpG bedMethyl is the main methylation output for regional/thesis plots.
+        # Read-level extract calls remain available as an optional rule below.
+        expand(PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES)
 
@@ -956,12 +959,50 @@ rule vep_sv_annotation_panel_only:
 # Methylation  #
 ################
 
+rule modkit_pileup:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        ref=REF
+    output:
+        bed=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz",
+        tbi=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz.tbi"
+    threads: THREADS
+    conda:
+        CONDAENV + "modkit.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.bed})
+
+        # Main methylation product for downstream regional plots and cohort
+        # comparisons. Keep 5mC and 5hmC as separate modification classes.
+        modkit pileup \
+            {input.bam} \
+            {output.bed} \
+            --ref {input.ref} \
+            {CPG_REGION_FLAG} \
+            --cpg \
+            --combine-strands \
+            --modified-bases 5mC 5hmC \
+            --bgzf \
+            --threads {threads}
+
+        tabix -f -p bed {output.bed}
+
+        test -s {output.bed}
+        test -s {output.tbi}
+        """
+
+
+# Optional read-level methylation output.
+# Run this rule only when individual-read information is needed, for example
+# for haplotype-specific or read-level follow-up of an interesting locus.
 rule modkit_extract:
     input:
         bam=lambda wc: BAMS[wc.sample],
         ref=REF
     output:
-        tsv=PATH + "{sample}/methylation/{sample}.modkit.tsv"
+        tsv=PATH + "{sample}/methylation/{sample}.modkit.calls.tsv"
     threads: THREADS
     conda:
         CONDAENV + "modkit.yaml"
@@ -976,6 +1017,8 @@ rule modkit_extract:
             {CPG_REGION_FLAG} \
             {input.bam} \
             {output.tsv}
+
+        test -s {output.tsv}
         """
 
 
