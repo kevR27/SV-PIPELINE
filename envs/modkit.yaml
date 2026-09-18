@@ -5,3 +5,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::ont-modkit=0.6.4
+  - bioconda::htslib=1.23
