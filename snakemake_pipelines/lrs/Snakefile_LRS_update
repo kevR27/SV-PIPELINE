@@ -966,6 +966,10 @@ rule modkit_pileup:
     output:
         bed=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz",
         tbi=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz.tbi"
+    log:
+        PATH + "{sample}/logs/modkit/{sample}.modkit.log"
+    params:
+        raw=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl"
     threads: THREADS
     conda:
         CONDAENV + "modkit.yaml"
@@ -973,20 +977,22 @@ rule modkit_pileup:
         """
         set -euo pipefail
         mkdir -p $(dirname {output.bed})
+        mkdir -p $(dirname {log})
 
-        # Main methylation product for downstream regional plots and cohort
-        # comparisons. Keep 5mC and 5hmC as separate modification classes.
-        modkit pileup \
+        # modkit 0.4.4-compatible CpG pileup. 5mC (m) and 5hmC (h)
+        # present in the modBAM are retained; --modified-bases and --bgzf
+        # are newer options and are intentionally not used here.
+        "$CONDA_PREFIX/bin/modkit" pileup \
             {input.bam} \
-            {output.bed} \
+            {params.raw} \
             --ref {input.ref} \
             {CPG_REGION_FLAG} \
             --cpg \
             --combine-strands \
-            --modified-bases 5mC 5hmC \
-            --bgzf \
-            --threads {threads}
+            --threads {threads} \
+            --log-filepath {log}
 
+        bgzip -f {params.raw}
         tabix -f -p bed {output.bed}
 
         test -s {output.bed}
