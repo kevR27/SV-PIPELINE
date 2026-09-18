@@ -29,35 +29,62 @@ def parse_args():
 
 
 def read_tsv(path):
-    loci = defaultdict(list)
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        if not reader.fieldnames:
-            sys.exit("ERROR: Straglr TSV has no header.")
+    """Read a Straglr TSV while tolerating provenance comment lines.
 
-        required = {
-            "chrom",
-            "start",
-            "end",
-            "target_repeat",
-            "locus",
-            "coverage",
-            "genotype",
-            "actual_repeat",
-            "read_name",
-            "copy_number",
-            "size",
-            "read_status",
-        }
-        missing = required - set(reader.fieldnames)
-        if missing:
+    Straglr writes a command/provenance line beginning with "#" before the
+    actual header, and the header itself may begin with "#chrom".  Locate the
+    real tab-delimited header explicitly instead of assuming line 1 is the
+    header.
+    """
+    loci = defaultdict(list)
+    required = {
+        "chrom",
+        "start",
+        "end",
+        "target_repeat",
+        "locus",
+        "coverage",
+        "genotype",
+        "actual_repeat",
+        "read_name",
+        "copy_number",
+        "size",
+        "read_status",
+    }
+
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        fieldnames = None
+
+        for line in fh:
+            if not line.strip():
+                continue
+
+            candidate = line.rstrip("\n\r")
+            if candidate.startswith("#"):
+                candidate = candidate[1:]
+
+            fields = candidate.split("\t")
+            if required.issubset(set(fields)):
+                fieldnames = fields
+                break
+
+        if fieldnames is None:
             sys.exit(
-                "ERROR: Missing Straglr TSV columns: " + ", ".join(sorted(missing))
+                "ERROR: Could not find the Straglr TSV header. "
+                "Expected columns include: " + ", ".join(sorted(required))
             )
 
+        reader = csv.DictReader(fh, fieldnames=fieldnames, delimiter="\t")
+
         for row in reader:
+            if not row:
+                continue
+            if row.get("chrom", "").startswith("#"):
+                continue
+
             key = row["locus"] or f'{row["chrom"]}:{row["start"]}-{row["end"]}'
             loci[key].append(row)
+
     return loci
 
 
