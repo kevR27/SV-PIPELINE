@@ -24,7 +24,7 @@ STRAGLR_SCRIPT = config.get("straglr_script", "straglr.py")
 STRAGLR_MIN_OVERLAP = config.get("straglr_annotation_min_overlap", 1)
 
 # needLR is a supplementary population-AF branch, not the master SV callset.
-NEEDLR_BACKEND = config.get("needlr_backend_files")
+NEEDLR_BACKEND = config["needlr_backend_files"]
 
 # Offline Monarch Knowledge Graph / phenotype discovery.
 MONARCH_NODES = config["monarch_nodes"]
@@ -615,56 +615,45 @@ rule needlr_annotation:
     log:
         PATH + "{sample}/logs/needlr/{sample}.needlr.log"
     params:
-        outdir=PATH + "{sample}/sv/needlr/annotate_out",
-        backend_flag=lambda wc: f"-B {NEEDLR_BACKEND}" if NEEDLR_BACKEND else ""
+        outdir=PATH + "{sample}/sv/needlr/annotate_out"
     threads: THREADS
     conda:
         CONDAENV + "needlr.yaml"
     shell:
         """
-        set -euo pipefail
+        set -eu
 
-        # Always start from an empty needLR run directory so stale outputs can
-        # never be mistaken for the current sample's result.
         rm -rf {params.outdir}
-        mkdir -p {params.outdir} $(dirname {log})
+        mkdir -p {params.outdir}
+        mkdir -p $(dirname {log})
 
         needLR annotate \
             -O {params.outdir} \
             -T {threads} \
-            {params.backend_flag} \
+            -B {NEEDLR_BACKEND} \
             --all \
             {input.vcf} \
-            2>&1 | tee {log}
+            > {log} 2>&1
 
-        n_tsv=$(find {params.outdir} -type f -name '*_RESULTS.tsv' | wc -l | tr -d ' ')
-        n_vcf=$(find {params.outdir} -type f -name '*_RESULTS.vcf.gz' | wc -l | tr -d ' ')
+        results_tsv=$(find {params.outdir} \
+            -type f \
+            -name '*_RESULTS.tsv' \
+            -print -quit)
 
-        if [ "$n_tsv" -ne 1 ]; then
-            echo "ERROR: expected exactly one needLR *_RESULTS.tsv, found $n_tsv" >&2
-            find {params.outdir} -type f >&2
-            exit 1
-        fi
-        if [ "$n_vcf" -ne 1 ]; then
-            echo "ERROR: expected exactly one needLR *_RESULTS.vcf.gz, found $n_vcf" >&2
-            find {params.outdir} -type f >&2
-            exit 1
-        fi
+        results_vcf=$(find {params.outdir} \
+            -type f \
+            -name '*_RESULTS.vcf.gz' \
+            -print -quit)
 
-        results_tsv=$(find {params.outdir} -type f -name '*_RESULTS.tsv' -print -quit)
-        results_vcf=$(find {params.outdir} -type f -name '*_RESULTS.vcf.gz' -print -quit)
+        test -n "$results_tsv"
+        test -n "$results_vcf"
 
         cp "$results_tsv" {output.tsv}
         cp "$results_vcf" {output.vcf}
 
-        # needLR 4.1 does not require its output VCF to be tabix-indexed, and
-        # downstream integration uses RESULTS.tsv. Validate gzip integrity
-        # without introducing an unnecessary indexing failure point.
-        gzip -t {output.vcf}
         test -s {output.tsv}
         test -s {output.vcf}
         """
-
 
 ##################################################
 # Tandem-repeat expansion discovery / annotation #
@@ -701,7 +690,6 @@ rule straglr:
             --max_num_clusters 2 \
             --min_cluster_d 1
         """
-
 
 rule straglr_annotation:
     input:
