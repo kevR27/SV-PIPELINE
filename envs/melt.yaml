@@ -15,5 +15,11 @@ channels:
   - bioconda
 
 dependencies:
-  - conda-forge::openjdk=17
+  # MELTv2.2.2 is a legacy Java application; Java 8 is the conservative
+  # compatibility target used by established MELT deployments.
+  - conda-forge::openjdk=8
+  - conda-forge::python=3.11
+  - bioconda::bowtie2
+  - bioconda::samtools=1.20
   - bioconda::bcftools=1.20
+  - bioconda::htslib=1.20

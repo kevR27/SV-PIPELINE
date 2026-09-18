@@ -3,16 +3,19 @@
 
 Source-of-truth hierarchy
 -------------------------
-1. Jasmine master VCF: one row-defining SV universe; no SV is removed because
+1. Merged master VCF (Jasmine or SURVIVOR): one row-defining SV universe; no SV is removed because
    another annotation tool cannot evaluate it.
 2. AnnotSV: functional/gene annotation of that same master VCF.
-3. Jasmine caller-support summary: exact join by the merged SV_ID.
-4. Filtered per-caller evidence: linked through Jasmine IDLIST when available,
+3. Merge caller-support summary: exact join by the merged SV_ID.
+4. Filtered per-caller evidence: linked through merged IDLIST when available,
    with conservative coordinate/type fallback only for evidence display.
-5. needLR: supplementary ONT population-frequency evidence. needLR is run on a
+5. needLR: optional supplementary ONT population-frequency evidence. needLR is run on a
    Sniffles2-v2.6.2-compatible query, so its rows are matched back to the master
    SV by SV type and coordinates; they are never joined merely because the same
    gene is present.
+   Long-read workflows may provide it; short-read workflows intentionally do
+   not.  When no needLR table is supplied, the common output schema is retained
+   and NEEDLR_STATUS is set to NOT_APPLICABLE_SRS.
 6. Monarch/ranking: gene-level phenotype evidence.
 
 One output row is written per (master SV, overlapping gene).  BNDs and SVs
@@ -416,12 +419,12 @@ def annotsv_row_for_gene(matches: list[dict], gene: str):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Create integrated SV/gene evidence TSV")
-    parser.add_argument("--vcf", required=True, help="Jasmine master SV VCF")
+    parser.add_argument("--vcf", required=True, help="Merged master SV VCF")
     parser.add_argument("--annotsv", required=True, help="Genome-wide AnnotSV TSV")
     parser.add_argument("--needlr", help="needLR RESULTS TSV")
     parser.add_argument("--ranking", help="Genome-wide candidate ranking TSV")
     parser.add_argument("--panel", help="Candidate gene panel list")
-    parser.add_argument("--caller-summary", help="Summary produced from the same Jasmine VCF")
+    parser.add_argument("--caller-summary", help="Summary produced from the same merged VCF")
     parser.add_argument(
         "--caller-tsv",
         action="append",
@@ -433,6 +436,7 @@ def main() -> int:
 
     sv_rows, _ = read_vcf(args.vcf)
     annotsv_rows = read_tsv(args.annotsv)
+    needlr_enabled = bool(args.needlr)
     needlr_rows = read_tsv(args.needlr)
     ranking = load_ranking(read_tsv(args.ranking))
     panel = read_panel(args.panel)
@@ -471,11 +475,18 @@ def main() -> int:
             sv, caller_by_id, caller_by_type_chrom
         )
 
-        needlr_row, needlr_status, needlr_distance = match_needlr(sv, needlr_index)
-        if needlr_row:
-            needlr_match_count += 1
+        if needlr_enabled:
+            needlr_row, needlr_status, needlr_distance = match_needlr(
+                sv, needlr_index
+            )
+            if needlr_row:
+                needlr_match_count += 1
+            else:
+                needlr_row = {}
         else:
             needlr_row = {}
+            needlr_status = "NOT_APPLICABLE_SRS"
+            needlr_distance = MISSING
 
         for gene in genes:
             ann_row = annotsv_row_for_gene(ann_matches, gene)
@@ -573,22 +584,28 @@ def main() -> int:
     if annotsv_rows and n_sv and ann_rate < 80.0:
         print(
             "[WARN] AnnotSV matching is below 80%. AnnotSV is run directly on "
-            "the master Jasmine VCF, so inspect AnnotSV_ID/SV_chrom/SV_start/SV_end "
+            "the merged master VCF, so inspect AnnotSV_ID/SV_chrom/SV_start/SV_end "
             "columns before interpreting apparently unannotated calls.",
             file=sys.stderr,
         )
 
-    eligible_needlr = sum(
-        1
-        for sv in sv_rows
-        if normalize_svtype(sv["SVTYPE"]) != "BND"
-        and abs(as_int(sv["SVLEN"]) or 0) < NEEDLR_MAX_SIZE
-    )
-    print(
-        f"[INFO] needLR matches: {needlr_match_count}/{eligible_needlr} "
-        "needLR-eligible master SVs",
-        file=sys.stderr,
-    )
+    if needlr_enabled:
+        eligible_needlr = sum(
+            1
+            for sv in sv_rows
+            if normalize_svtype(sv["SVTYPE"]) != "BND"
+            and abs(as_int(sv["SVLEN"]) or 0) < NEEDLR_MAX_SIZE
+        )
+        print(
+            f"[INFO] needLR matches: {needlr_match_count}/{eligible_needlr} "
+            "needLR-eligible master SVs",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "[INFO] needLR not supplied; marked NOT_APPLICABLE_SRS.",
+            file=sys.stderr,
+        )
 
     fixed_columns = [
         "SV_ID",

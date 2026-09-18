@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Summarize caller provenance from a per-patient Jasmine merge.
+"""Summarize caller provenance from a per-patient Jasmine/SURVIVOR merge.
 
-For the LRS workflow the Jasmine input order is fixed and biologically
-meaningful: Sniffles2, cuteSV, Delly. Jasmine's SUPP_VEC therefore provides a
-stable caller-presence vector even when the merged record does not carry caller
-names explicitly.
+The merge input order is fixed and biologically meaningful. SUPP_VEC therefore
+provides a stable caller-presence vector even when the merged record does not
+carry caller names explicitly (LRS: Sniffles2,cuteSV,Delly; SRS: Manta,Delly).
 
 This script derives CALLERS and CALLER_COUNT from SUPP_VEC first, falling back
 to CALLERS/SOURCES or SUPP only when necessary.  The optional high-confidence
@@ -88,13 +87,13 @@ def classify(count: int) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Summarize caller support in a Jasmine VCF.")
+    ap = argparse.ArgumentParser(description="Summarize caller support in a merged SV VCF.")
     ap.add_argument("--vcf", required=True)
     ap.add_argument("--output", required=True)
     ap.add_argument(
         "--caller-order",
         default="Sniffles2,cuteSV,Delly",
-        help="Comma-separated caller order used to create Jasmine file_list.",
+        help="Comma-separated caller order used to create the merge file list.",
     )
     ap.add_argument(
         "--min-callers",
