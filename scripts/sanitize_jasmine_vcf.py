@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Repair Jasmine VCF metadata without changing variant records.
+"""Repair merged VCF metadata without changing variant records.
 
-Jasmine can propagate INFO/FORMAT/FILTER tags from caller records without
-always carrying every corresponding header declaration.  Downstream tools such
-as bcftools, VEP and AnnotSV are stricter.  This script scans the complete VCF,
+Jasmine and SURVIVOR can propagate INFO/FORMAT/FILTER tags from caller records
+without always carrying every corresponding header declaration. Downstream
+tools such as bcftools, VEP and AnnotSV are stricter. This script scans the complete VCF,
 adds only missing metadata definitions, adds missing contig declarations from
 the reference FAI, and writes a plain-text VCF for subsequent bcftools sorting.
 
@@ -66,7 +66,7 @@ def info_definition(key: str, values: list[str], is_flag: bool) -> str:
         "CHR2": ('Number=1,Type=String', "Chromosome of second breakpoint"),
         "POS2": ('Number=1,Type=Integer', "Position of second breakpoint"),
         "SUPP": ('Number=1,Type=Integer', "Number of input callsets supporting the merged SV"),
-        "SUPP_VEC": ('Number=1,Type=String', "Input-callset support vector in Jasmine file-list order"),
+        "SUPP_VEC": ('Number=1,Type=String', "Input-callset support vector in merge file-list order"),
         "IDLIST": ('Number=.,Type=String', "IDs of input records represented by the merged SV"),
         "CIPOS": ('Number=2,Type=Integer', "Confidence interval around POS"),
         "CIEND": ('Number=2,Type=Integer', "Confidence interval around END"),
@@ -81,7 +81,7 @@ def info_definition(key: str, values: list[str], is_flag: bool) -> str:
     if is_flag:
         return (
             f'##INFO=<ID={key},Number=0,Type=Flag,'
-            'Description="Automatically restored metadata for a flag present in a Jasmine record">'
+            'Description="Automatically restored metadata for a flag present in a merged record">'
         )
 
     sample_value = next((v for v in values if v not in {"", "."}), "")
@@ -93,7 +93,7 @@ def info_definition(key: str, values: list[str], is_flag: bool) -> str:
         value_type = infer_scalar_type(sample_value)
     return (
         f'##INFO=<ID={key},Number={number},Type={value_type},'
-        'Description="Automatically restored metadata for a field present in a Jasmine record">'
+        'Description="Automatically restored metadata for a field present in a merged record">'
     )
 
 
@@ -121,7 +121,7 @@ def format_definition(key: str, values: list[str]) -> str:
         value_type = infer_scalar_type(sample_value)
     return (
         f'##FORMAT=<ID={key},Number={number},Type={value_type},'
-        'Description="Automatically restored metadata for a FORMAT field present in a Jasmine record">'
+        'Description="Automatically restored metadata for a FORMAT field present in a merged record">'
     )
 
 
@@ -156,7 +156,7 @@ def main() -> int:
 
             fields = line.split("\t")
             if len(fields) < 8:
-                raise ValueError(f"Malformed Jasmine VCF record: {line}")
+                raise ValueError(f"Malformed merged VCF record: {line}")
             records.append(line)
             used_contigs.add(fields[0])
 
@@ -188,7 +188,7 @@ def main() -> int:
                             used_format[key].append(values[idx])
 
     if chrom_header is None:
-        raise ValueError("Input VCF has no #CHROM header line")
+        raise ValueError("Input merged VCF has no #CHROM header line")
 
     declared_info = header_ids(metadata, "INFO")
     declared_format = header_ids(metadata, "FORMAT")
@@ -214,7 +214,7 @@ def main() -> int:
             continue
         if contig not in ref_lengths:
             raise ValueError(
-                f"Contig {contig!r} occurs in Jasmine VCF but is absent from {args.reference_fai}"
+                f"Contig {contig!r} occurs in merged VCF but is absent from {args.reference_fai}"
             )
         additions.append(f"##contig=<ID={contig},length={ref_lengths[contig]}>")
 

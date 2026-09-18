@@ -8,3 +8,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::manta=1.6.0
+  - bioconda::htslib=1.20

@@ -4,7 +4,7 @@ This directory contains downstream visualization and conservative intersection s
 
 ## Design principles
 
-- `SV_ID` is the unit for variant-burden plots. The integrated LRS table contains one row per `(SV_ID, overlapping gene)`, so burden plots deduplicate master SVs.
+- `SV_ID` is the unit for variant-burden plots. The integrated LRS/SRS table contains one row per `(SV_ID, overlapping gene)`, so burden plots deduplicate master SVs.
 - `(SV_ID, gene)` is retained for candidate-prioritization and evidence-integration plots.
 - needLR remains a supplementary population-frequency branch rather than the master SV universe.
 - Straglr, TLDR, methylation and phasing are complementary biological layers and are not forced into the Jasmine caller-concordance calculation.
@@ -15,7 +15,7 @@ This directory contains downstream visualization and conservative intersection s
 ## Scripts
 
 - `plot_lrs_qc.py`: mosdepth coverage QC.
-- `plot_caller_concordance.py`: three-caller Jasmine UpSet-style plot and caller-support summary.
+- `plot_caller_concordance.py`: caller-aware UpSet-style plot for Jasmine or SURVIVOR summaries.
 - `plot_sv_landscape.py`: SV type, size, chromosome distribution and caller-support landscape.
 - `plot_needlr_population.py`: overall and ancestry-specific needLR population-frequency plots.
 - `plot_candidate_genes.py`: gene-prioritization plot from `*_ranked_candidates.tsv`.
@@ -27,7 +27,7 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_phasing_qc.py`: WhatsHap/LongPhase phased-genotype QC.
 - `plot_lrs_vs_srs.py`: Truvari-based LRS-vs-SRS concordance visualization.
 - `intersect_orthogonal_sv_evidence.py`: conservative Straglr/TLDR coordinate matching to the master integrated table.
-- `run_thesis_plots.py`: launch all applicable LRS plots for one sample using the current pipeline directory structure.
+- `run_thesis_plots.py`: launch all applicable LRS or SRS plots for one sample using the current pipeline directory structure.
 - `plot_utils.py`: shared styling, parsing and figure-export helpers.
 
 ## Current status
@@ -49,6 +49,16 @@ conda activate svplots
 python plots/run_thesis_plots.py \
   --root /path/to/outs \
   --sample patient01
+```
+
+For an SRS sample, pass the platform so `SUPP_VEC` is decoded as Manta,DELLY
+and LRS-only plots are skipped:
+
+```bash
+python plots/run_thesis_plots.py \
+  --root /path/to/srs_results \
+  --sample patient01 \
+  --platform srs
 ```
 
 Optional candidate-region methylation:

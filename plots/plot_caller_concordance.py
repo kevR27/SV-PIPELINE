@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot three-caller Jasmine concordance for one LRS sample."""
+"""Plot caller concordance for a merged LRS or SRS sample."""
 
 from __future__ import annotations
 
@@ -183,7 +183,7 @@ def plot_upset(intersections: pd.DataFrame, set_sizes: pd.DataFrame, callers: li
     fig.text(
         0.5,
         0.01,
-        "Bars show exact caller intersections; the complete Jasmine callset remains the master SV universe.",
+        "Bars show exact caller intersections; the complete merged callset remains the master SV universe.",
         ha="center",
         fontsize=8.5,
     )

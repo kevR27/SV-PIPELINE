@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot the genome-wide LRS structural-variant landscape from the integrated table."""
+"""Plot the genome-wide structural-variant landscape from the integrated table."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from plot_utils import (
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Plot the master LRS SV landscape.")
+    p = argparse.ArgumentParser(description="Plot the master SV landscape.")
     p.add_argument("--input", required=True, help="*_integrated_SV_gene_analysis.tsv")
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--title", default="Genome-wide structural-variant landscape")

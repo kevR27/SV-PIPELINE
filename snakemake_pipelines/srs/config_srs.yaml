@@ -1,49 +1,109 @@
-#change PATH
+# ============================================================
+# SRS PIPELINE CONFIGURATION — ILLUMINA WGS
+# ============================================================
 
 samples:
-  patient01: /data/srs_bams/patient01.sorted.bam
-  patient02: /data/srs_bams/patient02.sorted.bam
+  # Always quote sample IDs that are numeric.
+  patient01: "/data/srs_bams/patient01.sorted.bam"
+  patient02: "/data/srs_bams/patient02.sorted.bam"
 
-path: "/DATA/srs_results/"
+# By default the workflow expects <bam>.bai. Uncomment this mapping when an
+# index instead uses the alternative <sample>.bai naming convention.
+# bam_indexes:
+#   patient01: "/data/srs_bams/patient01.sorted.bai"
+#   patient02: "/data/srs_bams/patient02.sorted.bai"
+
+path: "/DATA/srs_results"
 ref: "/DATA/Reference/hg38.fa"
 threads: 16
 
+# ============================================================
+# TARGET PANEL AND REFERENCES
+# ============================================================
+# Manta and DELLY are genome-wide. This BED is used only for the complementary
+# DeepVariant SNV/indel arm. Panel-only SV tables are derived downstream.
 bed: "../../PANEL_OA/optic_neuropathy_panel.bed"
 candidate_genes_list: "../../PANEL_OA/optic_neuropathy_genes.txt"
 
+# DELLY short-read exclusion regions for GRCh38.
 exclude_bed: "../../reference/delly_hg38_exclude.bed"
 
+# ExpansionHunter is catalog-driven targeted genotyping, not de novo
+# genome-wide STR discovery.
 expansionhunter_catalog: "../../reference/variant_catalog_hg38_repeats.json"
 
-# --- MELT: Mobile Element Insertions ---
-melt_dir: "path/reference/MELT/MELTv2.2.2"
-
-melt_transposons: "path/reference/MELT/MELTv2.2.2/me_refs/Hg38/mei_list.txt"
-
-melt_genes_bed: "path/reference/MELT/MELTv2.2.2/add_bed_files/Hg38/Hg38.genes.bed"
-
-vep_cache_dir: "path/reference/vep_cache"
-vep_assembly: "GRCh38"
-
-# Optional
-# annotsv_annotations_dir: "/data/srs_results/reference/AnnotSV_annotations"
-# hpo_terms: "HP:0000505,HP:0007675"
-
-
+# ============================================================
+# ENVIRONMENTS / LOCAL DATABASES
+# ============================================================
 condaenv: "../../envs/"
 
-# --- Genome-wide human phenotype discovery ---
-# Monarch KG API. Used only for human gene -> phenotype associations.
-monarch_base_url: "https://api-v3.monarchinitiative.org/v3/api"
+vep_cache_dir: "/DATA/Reference/vep"
+vep_assembly: "GRCh38"
 
-# Transparent optic-neuropathy phenotype anchors used for candidate ranking.
-# These are disease/phenotype reference terms, NOT patient HPO terms.
-discovery_hpo_file: "../../reference/optic_neuropathy_hpo_terms.tsv"
-
-# Optional: leave unset unless you have actual patient HPO terms.
-# hpo_terms: "HP:0000505,HP:0007675"
-
-# AnnotSV benign population-frequency threshold used by its benign-SV/ranking logic.
-# 0.01 = 1%; this does not silently discard variants from the genome-wide TSV.
+annotsv_annotations_dir: "/DATA/Reference/AnnotSV_annotations"
 annotsv_benign_af: 0.01
 
+# Leave null unless actual patient HPO terms should be passed to AnnotSV.
+hpo_terms: null
+
+# Offline Monarch KGX TSV resources. The workflow intentionally does not use
+# a live API, so a full run is reproducible and not network-dependent.
+monarch_nodes: "/DATA/Reference/monarch/monarch-kg_nodes.tsv"
+monarch_edges: "/DATA/Reference/monarch/monarch-kg_edges.tsv"
+discovery_hpo_file: "../../reference/optic_neuropathy_hpo_terms.tsv"
+
+# ============================================================
+# PRE-SURVIVOR CALLER EVIDENCE FILTERING
+# ============================================================
+# Manta support = FORMAT PR_alt + SR_alt.
+# DELLY support = INFO PE + SR, with FORMAT DV + RV fallback.
+evidence_min_support: 2
+evidence_min_svlen: 50
+
+# Preserve very large and complex clinically relevant events. BND/TRA records
+# without SVLEN are retained and flagged NO_SVLEN rather than removed.
+evidence_max_svlen: 250000000
+
+# Optional soft flags; these do not discard calls.
+# evidence_min_gq: 10
+# evidence_blacklist_bed: "/path/to/low_mappability_segdup.bed"
+
+# ============================================================
+# SURVIVOR MERGE
+# ============================================================
+# Complete union: minimum one caller. SUPP>=2 is emitted separately as a
+# companion high-confidence set and does not replace the master callset.
+survivor_max_distance: 1000
+survivor_min_support: 1
+survivor_require_same_type: 1
+survivor_require_same_strand: 1
+survivor_use_size_ratio: 0
+survivor_min_size: 50
+
+# This order must match the VCF-list order written by the Snakefile.
+survivor_caller_order: "Manta,Delly"
+high_confidence_min_supp: 2
+
+# Breakpoint distance used only to attach orthogonal MELT/EH locus evidence
+# to the integrated table. It does not change the master SV universe.
+orthogonal_breakpoint_tolerance: 500
+
+# ============================================================
+# MELTv2 MOBILE-ELEMENT INSERTIONS
+# ============================================================
+# MELTv2 is a manual/registration-gated installation, not the unrelated
+# bioconda package named "melt". Keep disabled until every resource below is
+# replaced with a valid server path.
+# BAMs with MC/MQ mate tags (for example after samtools fixmate) run much more
+# efficiently in MELTv2.2.2; the workflow does not rewrite the input BAM.
+melt_enabled: false
+melt_jar: "/DATA/Reference/MELTv2.2.2/MELT.jar"
+melt_genes_bed: "/DATA/Reference/MELTv2.2.2/add_bed_files/Hg38/Hg38.genes.bed"
+melt_java_memory_gb: 8
+
+# Each MELT Single invocation accepts one transposon ZIP, not a text list.
+melt_transposons:
+  ALU: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/ALU_MELT.zip"
+  LINE1: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/LINE1_MELT.zip"
+  SVA: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/SVA_MELT.zip"
+  HERVK: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/HERVK_MELT.zip"

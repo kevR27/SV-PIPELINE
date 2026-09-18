@@ -61,6 +61,21 @@ def numeric(value: str):
         return None
 
 
+def alt_count(value: str) -> float | None:
+    """Return alternate-read support from a scalar or ref,alt count pair.
+
+    Manta stores paired-read and split-read counts in sample FORMAT/PR and
+    FORMAT/SR as ``ref,alt``.  Other callers may expose a scalar.  For a pair,
+    only the alternate count is variant support; summing both values would
+    incorrectly reward reference evidence.
+    """
+    if value in (None, "", MISSING):
+        return None
+    parts = str(value).split(",")
+    target = parts[-1]
+    return numeric(target)
+
+
 def sum_fields(mapping: dict[str, str], *keys: str) -> str:
     values = [numeric(mapping.get(key, MISSING)) for key in keys]
     values = [v for v in values if v is not None]
@@ -90,6 +105,8 @@ def parse_format(fmt_raw: str, sample_raw: str) -> dict[str, str]:
         "CALLER_DV": MISSING,
         "CALLER_RR": MISSING,
         "CALLER_RV": MISSING,
+        "CALLER_PR": MISSING,
+        "CALLER_SR": MISSING,
     }
     if not fmt_raw or fmt_raw == MISSING or not sample_raw or sample_raw == MISSING:
         return out
@@ -106,6 +123,8 @@ def parse_format(fmt_raw: str, sample_raw: str) -> dict[str, str]:
         ("DV", "CALLER_DV"),
         ("RR", "CALLER_RR"),
         ("RV", "CALLER_RV"),
+        ("PR", "CALLER_PR"),
+        ("SR", "CALLER_SR"),
     ):
         value = fields.get(source, MISSING)
         if value not in ("", MISSING):
@@ -173,10 +192,23 @@ def caller_evidence(caller: str, info: dict[str, str], fmt: dict[str, str]) -> d
         }
 
     if caller_lc == "manta":
+        pr_alt = alt_count(fmt.get("CALLER_PR", MISSING))
+        sr_alt = alt_count(fmt.get("CALLER_SR", MISSING))
+        components = [value for value in (pr_alt, sr_alt) if value is not None]
+        if components:
+            support_value = sum(components)
+            support = (
+                str(int(support_value))
+                if float(support_value).is_integer()
+                else str(support_value)
+            )
+        else:
+            # Retain INFO fallbacks for converted or non-standard Manta VCFs.
+            support = first(info, "SU", "SUPPORT")
         return {
-            "CALLER_SUPPORT": first(info, "SU", "PR", "SR", "SUPPORT"),
-            "CALLER_PR": first(info, "PR"),
-            "CALLER_SR": first(info, "SR"),
+            "CALLER_SUPPORT": support,
+            "CALLER_PR": first(fmt, "CALLER_PR"),
+            "CALLER_SR": first(fmt, "CALLER_SR"),
         }
 
     if caller_lc in {"jasmine", "survivor"}:
