@@ -629,9 +629,8 @@ rule needlr_annotation:
         mkdir -p {params.outdir}
         mkdir -p $(dirname {log})
 
-        # Reuse a completed needLR run when its native output files are already
-        # present. This avoids deleting and recomputing long whole-genome runs
-        # after a downstream wrapper/output-discovery failure.
+        # If a complete native needLR result already exists, reuse it.
+        # Otherwise run the full annotation. Never delete annotate_out here.
         results_tsv=$(find {params.outdir} \
             -type f \
             -name '*_RESULTS.tsv' \
@@ -644,11 +643,8 @@ rule needlr_annotation:
         fi
 
         if [ -s "$results_tsv" ] && [ -s "$results_vcf" ]; then
-            echo "[needLR] Reusing completed annotation from {params.outdir}" > {log}
+            echo "[needLR] Completed native results already exist; reusing them." > {log}
         else
-            rm -rf {params.outdir}
-            mkdir -p {params.outdir}
-
             needLR annotate \
                 -O {params.outdir} \
                 -T {threads} \
@@ -664,8 +660,6 @@ rule needlr_annotation:
 
             test -n "$results_tsv"
 
-            # needLR names the TSV with _RESULTS.tsv, but the companion VCF is
-            # named from the same prefix without the _RESULTS suffix.
             results_vcf="${{results_tsv%_RESULTS.tsv}}.vcf.gz"
 
             test -s "$results_tsv"
