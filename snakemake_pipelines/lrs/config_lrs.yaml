@@ -51,10 +51,10 @@ condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/"
 modkitenv: "/home/casadei7/.cargo/bin/modkit"
 
 # Main modkit processing uses the full Snakemake thread allocation (32).
-# Auxiliary I/O, sampling and BGZF thread pools are configured separately.
-modkit_io_threads: 4
-modkit_sampling_threads: 4
-modkit_bgzf_threads: 4
+# Main processing, I/O, sampling and BGZF compression are all set to 32 threads.
+modkit_io_threads: 32
+modkit_sampling_threads: 32
+modkit_bgzf_threads: 32
 
 # Clair3 ONT model directory.
 clair3env: "/DATA/casadei7/BrainAging/Clair3_Models/r1041_e82_400bps_sup_v520/"
