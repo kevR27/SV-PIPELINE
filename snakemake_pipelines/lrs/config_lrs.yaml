@@ -50,8 +50,8 @@ condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/"
 # modkit 0.6.4 executable installed on the analysis server.
 modkitenv: "/home/casadei7/.cargo/bin/modkit"
 
-# Keep total modkit CPU allocation within the Snakemake thread budget.
-# Worker threads = threads - io - sampling - bgzf = 20 when threads=32.
+# Main modkit processing uses the full Snakemake thread allocation (32).
+# Auxiliary I/O, sampling and BGZF thread pools are configured separately.
 modkit_io_threads: 4
 modkit_sampling_threads: 4
 modkit_bgzf_threads: 4
