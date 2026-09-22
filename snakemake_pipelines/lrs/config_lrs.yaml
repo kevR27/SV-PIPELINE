@@ -48,6 +48,9 @@ cpg_region: null
 condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/"
 
 # modkit 0.6.4 executable installed on the analysis server.
+# Retained for reference; the active rule uses the modkit executable supplied
+# by envs/modkit.yaml.
+#modkitenv: "/home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
 modkitenv: "/home/casadei7/.cargo/bin/modkit"
 
 # Main modkit processing uses the full Snakemake thread allocation (32).
