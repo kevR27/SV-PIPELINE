@@ -47,9 +47,14 @@ cpg_region: null
 
 condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/"
 
-# Retained for reference; the active rule uses the modkit executable supplied
-# by envs/modkit.yaml.
-modkitenv: "/home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
+# modkit 0.6.4 executable installed on the analysis server.
+modkitenv: "/home/casadei7/.cargo/bin/modkit"
+
+# Keep total modkit CPU allocation within the Snakemake thread budget.
+# Worker threads = threads - io - sampling - bgzf = 20 when threads=32.
+modkit_io_threads: 4
+modkit_sampling_threads: 4
+modkit_bgzf_threads: 4
 
 # Clair3 ONT model directory.
 clair3env: "/DATA/casadei7/BrainAging/Clair3_Models/r1041_e82_400bps_sup_v520/"
