@@ -1,9 +1,8 @@
-# CLI command is `modkit`; Bioconda package is `ont-modkit`.
-# Pinned to the version currently used on the analysis server.
+# modkit itself is configured as an external executable in config_lrs.yaml.
+# This environment only supplies htslib/tabix for indexing modkit BGZF output.
 name: modkit
 channels:
   - conda-forge
   - bioconda
 dependencies:
-  - bioconda::ont-modkit=0.4.4
   - bioconda::htslib=1.24
