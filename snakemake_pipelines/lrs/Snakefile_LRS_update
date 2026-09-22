@@ -14,6 +14,11 @@ BEDCUTESV = config.get("bedcutesv")  # legacy/reference only; cuteSV is genome-w
 GENE_LIST = config["candidate_genes_list"]
 
 CONDAENV = config["condaenv"]
+MODKIT = config.get("modkitenv", "modkit")
+MODKIT_IO_THREADS = config.get("modkit_io_threads", 4)
+MODKIT_SAMPLING_THREADS = config.get("modkit_sampling_threads", 4)
+MODKIT_BGZF_THREADS = config.get("modkit_bgzf_threads", 4)
+MODKIT_WORKER_THREADS = max(1, THREADS - MODKIT_IO_THREADS - MODKIT_SAMPLING_THREADS - MODKIT_BGZF_THREADS)
 CLAIRENV = config["clair3env"]
 TLDR_ELTS = config["tldr_elements"]
 VNTR_BED = config["vntr_bed"]
@@ -983,8 +988,6 @@ rule modkit_pileup:
         tbi=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz.tbi"
     log:
         PATH + "{sample}/logs/modkit/{sample}.modkit.log"
-    params:
-        raw=PATH + "{sample}/methylation/{sample}.cpg.bedmethyl"
     threads: THREADS
     conda:
         CONDAENV + "modkit.yaml"
@@ -994,26 +997,29 @@ rule modkit_pileup:
         mkdir -p $(dirname {output.bed})
         mkdir -p $(dirname {log})
 
-        # modkit 0.4.4-compatible CpG pileup. 5mC (m) and 5hmC (h)
-        # present in the modBAM are retained; --modified-bases and --bgzf
-        # are newer options and are intentionally not used here.
-        "$CONDA_PREFIX/bin/modkit" pileup \
+        # modkit 0.6.4: explicitly retain 5mC and 5hmC as separate
+        # modification classes, restrict to CpG sites, combine CpG strands,
+        # and write BGZF-compressed bedMethyl directly for tabix indexing.
+        {MODKIT} pileup \
             {input.bam} \
-            {params.raw} \
-            --ref {input.ref} \
+            {output.bed} \
+            --reference {input.ref} \
             {CPG_REGION_FLAG} \
             --cpg \
+            --modified-bases 5mC 5hmC \
             --combine-strands \
-            --threads {threads} \
+            --bgzf \
+            --threads {MODKIT_WORKER_THREADS} \
+            --io-threads {MODKIT_IO_THREADS} \
+            --sampling-threads {MODKIT_SAMPLING_THREADS} \
+            --bgzf-threads {MODKIT_BGZF_THREADS} \
             --log-filepath {log}
 
-        bgzip -f {params.raw}
         tabix -f -p bed {output.bed}
 
         test -s {output.bed}
         test -s {output.tbi}
         """
-
 
 # Optional read-level methylation output.
 # Run this rule only when individual-read information is needed, for example
