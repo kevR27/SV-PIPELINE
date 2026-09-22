@@ -18,7 +18,6 @@ MODKIT = config.get("modkitenv", "modkit")
 MODKIT_IO_THREADS = config.get("modkit_io_threads", 4)
 MODKIT_SAMPLING_THREADS = config.get("modkit_sampling_threads", 4)
 MODKIT_BGZF_THREADS = config.get("modkit_bgzf_threads", 4)
-MODKIT_WORKER_THREADS = max(1, THREADS - MODKIT_IO_THREADS - MODKIT_SAMPLING_THREADS - MODKIT_BGZF_THREADS)
 CLAIRENV = config["clair3env"]
 TLDR_ELTS = config["tldr_elements"]
 VNTR_BED = config["vntr_bed"]
@@ -1009,7 +1008,7 @@ rule modkit_pileup:
             --modified-bases 5mC 5hmC \
             --combine-strands \
             --bgzf \
-            --threads {MODKIT_WORKER_THREADS} \
+            --threads {threads} \
             --io-threads {MODKIT_IO_THREADS} \
             --sampling-threads {MODKIT_SAMPLING_THREADS} \
             --bgzf-threads {MODKIT_BGZF_THREADS} \
