@@ -14,6 +14,11 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    csv.field_size_limit(2**31 - 1)
+
 GENE_COL_CANDIDATES = [
     "Gene_name",
     "Gene_name(s)",
@@ -79,11 +84,17 @@ def main() -> int:
 
         matched: list[dict] = []
         for row in reader:
+            value = row.get(gene_col) or ""
+
+            if value in {"", ".", "NA", "N/A", "NONE"}:
+                continue
+
             genes_in_row = {
                 gene.strip().upper()
-                for gene in re.split(r"[,;/|]", row.get(gene_col, ""))
+                for gene in re.split(r"[,;/|]", value)
                 if gene.strip()
             }
+
             if genes_in_row & panel_genes:
                 matched.append(row)
 
