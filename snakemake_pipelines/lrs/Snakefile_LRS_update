@@ -1038,7 +1038,7 @@ rule modkit_extract:
         set -euo pipefail
         mkdir -p $(dirname {output.tsv})
 
-        modkit extract calls \
+        {MODKIT} extract calls \
             -t {threads} \
             --reference {input.ref} \
             {CPG_REGION_FLAG} \
