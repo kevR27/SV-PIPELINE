@@ -15,9 +15,9 @@ GENE_LIST = config["candidate_genes_list"]
 
 CONDAENV = config["condaenv"]
 MODKIT = config.get("modkitenv", "modkit")
-MODKIT_IO_THREADS = config.get("modkit_io_threads", 4)
-MODKIT_SAMPLING_THREADS = config.get("modkit_sampling_threads", 4)
-MODKIT_BGZF_THREADS = config.get("modkit_bgzf_threads", 4)
+MODKIT_IO_THREADS = config.get("modkit_io_threads", 32)
+MODKIT_SAMPLING_THREADS = config.get("modkit_sampling_threads", 32)
+MODKIT_BGZF_THREADS = config.get("modkit_bgzf_threads", 32)
 CLAIRENV = config["clair3env"]
 TLDR_ELTS = config["tldr_elements"]
 VNTR_BED = config["vntr_bed"]
