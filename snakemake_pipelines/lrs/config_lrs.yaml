@@ -72,10 +72,20 @@ vntr_bed: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/human_GRCh38_no_alt_a
 # Sniffles mosaic mode.
 sniffles_mosaic: false
 
-# Keep Sniffles' standard QC by default.  Set true only for an explicitly
-# sensitivity-first exploratory run; the downstream evidence filter is not a
-# complete replacement for the caller's own QC model.
+# Keep Sniffles' standard QC logic.  Leave this false in production.
 sniffles_no_qc: false
+
+# Controlled rescue of large Sniffles2 calls rejected only as COV_VAR.
+# When enabled, the Sniffles discovery rule adds --qc-output-all so rejected
+# candidates are available to the downstream evidence filter.  The filter
+# rescues ONLY COV_VAR records satisfying all criteria below; other Sniffles
+# QC failures remain excluded.
+sniffles_rescue_cov_var: true
+sniffles_cov_var_min_support: 2
+sniffles_cov_var_min_svlen: 50000
+sniffles_cov_var_svtypes:
+  - DEL
+  - DUP
 
 # This order MUST match the order written to Jasmine's file_list because
 # SUPP_VEC is decoded using this order.
