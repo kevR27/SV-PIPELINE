@@ -90,17 +90,6 @@ HIGH_CONFIDENCE_MIN_SUPP = config.get("high_confidence_min_supp", 2)
 # Anchor scripts to the repository rather than to the current shell directory.
 SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
 
-# Downstream evidence-integration and thesis plotting scripts.
-PLOTS = os.path.abspath(os.path.join(workflow.basedir, "../../plots"))
-
-# Orthogonal-evidence matching tolerances. These do not change the Jasmine
-# master callset; they only attach compatible Straglr/TLDR evidence.
-ORTHOGONAL_STRAGLR_BP_TOL = config.get("orthogonal_straglr_breakpoint_tolerance", 500)
-ORTHOGONAL_TLDR_BP_TOL = config.get("orthogonal_tldr_breakpoint_tolerance", 500)
-
-# Optional region used only when manually generating methylation figures.
-THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
-
 
 rule all:
     input:
@@ -160,9 +149,6 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
-        # Final interpretation table: same Jasmine-defined SV universe with
-        # orthogonal Straglr/TLDR evidence attached where coordinate-compatible.
-        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv", sample=SAMPLES),
 
         # Supplementary VEP
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
@@ -1150,83 +1136,3 @@ rule tldr_mei_confirmation:
         cp {params.outbase}.table.txt {output.table}
         test -s {output.table}
         """
-
-
-############################################################
-# Final orthogonal evidence integration                    #
-############################################################
-
-rule integrate_orthogonal_sv_evidence:
-    input:
-        integrated=rules.integrated_sv_gene_table.output.tsv,
-        straglr=rules.straglr_annotation.output.tsv,
-        tldr=rules.tldr_mei_confirmation.output.table
-    output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv"
-    params:
-        straglr_tol=ORTHOGONAL_STRAGLR_BP_TOL,
-        tldr_tol=ORTHOGONAL_TLDR_BP_TOL
-    conda:
-        CONDAENV + "plots.yaml"
-    shell:
-        """
-        set -euo pipefail
-        mkdir -p $(dirname {output.tsv})
-
-        python {PLOTS}/intersect_orthogonal_sv_evidence.py \
-            --integrated {input.integrated} \
-            --straglr {input.straglr} \
-            --tldr {input.tldr} \
-            --straglr-breakpoint-tol {params.straglr_tol} \
-            --tldr-breakpoint-tol {params.tldr_tol} \
-            --output {output.tsv}
-
-        test -s {output.tsv}
-        """
-
-
-############################################################
-# Manual thesis plotting target — intentionally NOT rule all
-############################################################
-
-rule thesis_plots_sample:
-    input:
-        integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
-        caller_summary=rules.summarize_caller_support.output.summary,
-        needlr=rules.needlr_annotation.output.tsv,
-        ranked=rules.rank_genomewide_candidates.output.tsv,
-        phenotypes=rules.human_gene_phenotypes.output.tsv,
-        straglr=rules.straglr_annotation.output.tsv,
-        tldr=rules.tldr_mei_confirmation.output.table,
-        coverage_summary=rules.mosdepth_coverage.output.summary,
-        coverage_dist=rules.mosdepth_coverage.output.global_dist,
-        whatshap=rules.whatsHap_phasing.output.phased,
-        longphase=rules.longphase_phasing.output.vcf,
-        methylation=rules.modkit_pileup.output.bed
-    output:
-        marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
-    params:
-        methylation_arg=lambda wc: (
-            f"--methylation-region {THESIS_METHYLATION_REGION}"
-            if THESIS_METHYLATION_REGION
-            else ""
-        )
-    conda:
-        CONDAENV + "plots.yaml"
-    shell:
-        """
-        set -euo pipefail
-
-        python {PLOTS}/run_thesis_plots.py \
-            --root {PATH} \
-            --sample {wildcards.sample} \
-            --platform lrs \
-            {params.methylation_arg}
-
-        touch {output.marker}
-        """
-
-
-rule all_thesis_plots:
-    input:
-        expand(PATH + "{sample}/plots/.thesis_plots.done", sample=SAMPLES)
