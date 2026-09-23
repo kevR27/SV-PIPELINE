@@ -94,6 +94,18 @@ def main():
     pheno = numeric(work[pheno_col]).fillna(0) if pheno_col else pd.Series(0, index=work.index)
     work["Phenotype overlap"] = (pheno > 0).astype(int)
 
+    # Optional orthogonal evidence is present only in the downstream extended table.
+    straglr_col = first_existing(work, ["STRAGLR_MATCH"])
+    tldr_col = first_existing(work, ["TLDR_MATCH"])
+    if straglr_col:
+        work["Straglr match"] = (
+            work[straglr_col].fillna("").astype(str).str.upper().eq("YES")
+        ).astype(int)
+    if tldr_col:
+        work["TLDR match"] = (
+            work[tldr_col].fillna("").astype(str).str.upper().eq("YES")
+        ).astype(int)
+
     # Ranking is deliberately transparent and is not a pathogenicity score.
     work["_plot_priority"] = (
         work["Multi-caller"] * 2
@@ -123,6 +135,10 @@ def main():
         "GenCC evidence",
         "Phenotype overlap",
     ]
+    if straglr_col:
+        evidence_cols.append("Straglr match")
+    if tldr_col:
+        evidence_cols.append("TLDR match")
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
