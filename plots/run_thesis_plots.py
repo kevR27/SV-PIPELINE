@@ -75,7 +75,9 @@ def main():
     )
 
     caller_summary = sample_root / "sv" / "merged" / f"{s}_caller_support_summary.tsv"
-    integrated = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_analysis.tsv"
+    integrated_base = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_analysis.tsv"
+    integrated_extended = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_orthogonal_evidence.tsv"
+    integrated = integrated_extended if integrated_extended.exists() else integrated_base
     needlr = sample_root / "sv" / "needlr" / f"{s}_needLR_RESULTS.tsv"
     ranked = sample_root / "gene_discovery" / f"{s}_ranked_candidates.tsv"
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
