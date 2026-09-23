@@ -80,9 +80,9 @@ def main() -> int:
                      help="Minimum CALLER_SUPPORT to pass (default: 2)")
     ap.add_argument("--min-svlen", type=float, default=50,
                      help="Minimum absolute SV length in bp to pass (default: 50)")
-    ap.add_argument("--max-svlen", type=float, default=5_000_000,
-                     help="Maximum absolute SV length in bp to pass (default: 5,000,000); "
-                          "set higher/None-like huge value for panels expecting large CNVs")
+    ap.add_argument("--max-svlen", type=float, default=None,
+                     help="Optional maximum absolute SV length in bp. "
+                          "Omit this option to apply no upper SV-length filter.")
     ap.add_argument("--require-pass", action="store_true", default=True,
                      help="Require FILTER in {PASS,.} to pass (default: on)")
     ap.add_argument("--allow-any-filter", dest="require_pass", action="store_false",
@@ -123,8 +123,10 @@ def main() -> int:
             # BND / TRA and similar records often have no SVLEN; don't fail
             # them on size, just note it
             flags.append("NO_SVLEN")
-        elif svlen_abs < a.min_svlen or svlen_abs > a.max_svlen:
-            fail_reasons.append("SIZE_OUT_OF_RANGE")
+        elif svlen_abs < a.min_svlen:
+            fail_reasons.append("SIZE_BELOW_MIN")
+        elif a.max_svlen is not None and svlen_abs > a.max_svlen:
+            fail_reasons.append("SIZE_ABOVE_MAX")
 
         imprecise = row.get("CALLER_IMPRECISE", MISSING)
         precise = row.get("CALLER_PRECISE", MISSING)
