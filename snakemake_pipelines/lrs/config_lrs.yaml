@@ -135,9 +135,10 @@ filter_sv_evidence_script: "/DATA/casadei7/tools/SV-PIPELINE-main/scripts/filter
 evidence_min_support: 2
 evidence_min_svlen: 50
 
-# The master SV callset must retain very large events.  needLR applies its own
-# <10 Mb/BND eligibility rules in the independent population-AF branch.
-evidence_max_svlen: 250000000
+# No upper SV-length hard filter in the master callset. Large events remain
+# available to Jasmine/AnnotSV/integrated analysis. needLR independently
+# excludes BNDs and SVs >=10 Mb from population-frequency annotation.
+evidence_max_svlen: null
 
 # Optional soft flags:
 # evidence_min_gq: 10
