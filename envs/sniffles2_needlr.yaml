@@ -1,0 +1,8 @@
+# Dedicated needLR compatibility environment.
+# needLR v4.x ONT backend was generated with Sniffles2 v2.6.2.
+name: sniffles2_needlr
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::sniffles=2.6.2
