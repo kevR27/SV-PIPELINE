@@ -51,6 +51,14 @@ SNIFFLES_MOSAIC = config.get("sniffles_mosaic", False)
 SNIFFLES_MOSAIC_FLAG = "--mosaic" if SNIFFLES_MOSAIC else ""
 SNIFFLES_NO_QC = config.get("sniffles_no_qc", False)
 SNIFFLES_NO_QC_FLAG = "--no-qc" if SNIFFLES_NO_QC else ""
+SNIFFLES_RESCUE_COV_VAR = config.get("sniffles_rescue_cov_var", False)
+SNIFFLES_QC_OUTPUT_ALL_FLAG = "--qc-output-all" if SNIFFLES_RESCUE_COV_VAR else ""
+SNIFFLES_COV_VAR_MIN_SUPPORT = config.get("sniffles_cov_var_min_support", 2)
+SNIFFLES_COV_VAR_MIN_SVLEN = config.get("sniffles_cov_var_min_svlen", 50000)
+SNIFFLES_COV_VAR_SVTYPES = ",".join(
+    config.get("sniffles_cov_var_svtypes", ["DEL", "DUP"])
+)
+SNIFFLES_COV_VAR_RESCUE_FLAG = "--rescue-cov-var" if SNIFFLES_RESCUE_COV_VAR else ""
 DELLY_GENOME = config.get("delly_genome", "ont")
 
 # Jasmine SUPP_VEC must be interpreted in exactly the file-list order below.
@@ -273,6 +281,7 @@ rule sniffles2_sv:
             --threads {threads} \
             --minsupport 2 \
             {SNIFFLES_NO_QC_FLAG} \
+            {SNIFFLES_QC_OUTPUT_ALL_FLAG} \
             {SNIFFLES_MOSAIC_FLAG} \
             --allow-overwrite \
             --min-alignment-length 100 \
@@ -416,6 +425,10 @@ rule filter_sniffles_sv:
             --caller Sniffles2 \
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
+            {SNIFFLES_COV_VAR_RESCUE_FLAG} \
+            --rescue-cov-var-min-support {SNIFFLES_COV_VAR_MIN_SUPPORT} \
+            --rescue-cov-var-min-svlen {SNIFFLES_COV_VAR_MIN_SVLEN} \
+            --rescue-cov-var-svtypes {SNIFFLES_COV_VAR_SVTYPES} \
             {params.max_svlen} \
             {params.min_gq} \
             {params.blacklist} \
