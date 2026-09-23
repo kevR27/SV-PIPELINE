@@ -102,3 +102,43 @@ python plots/intersect_orthogonal_sv_evidence.py \
 ```
 
 For thesis figures, use PDF or SVG as the primary figure and PNG only when raster output is required.
+
+
+## Snakemake integration
+
+The core LRS workflow and downstream interpretation are intentionally separated.
+
+Run the biological pipeline with:
+
+```bash
+cd snakemake_pipelines/lrs
+snakemake -s Snakefile_LRS_update --use-conda --cores 32
+```
+
+Then build the orthogonal-evidence interpretation tables with:
+
+```bash
+snakemake -s Snakefile_LRS_postprocess --use-conda --cores 8
+```
+
+The post-processing `rule all` generates only:
+
+```text
+<sample>_integrated_SV_gene_with_orthogonal_evidence.tsv
+```
+
+Thesis plots are a separate explicit target and are never part of either core `rule all`:
+
+```bash
+snakemake -s Snakefile_LRS_postprocess --use-conda --cores 8 all_thesis_plots
+```
+
+For one sample only, target its marker directly:
+
+```bash
+snakemake -s Snakefile_LRS_postprocess --use-conda --cores 8 \
+  "<output_root>/<sample>/plots/.thesis_plots.done"
+```
+
+If a candidate methylation region has been selected, set `thesis_methylation_region`
+in `config_lrs.yaml`; otherwise methylation plotting is skipped while the other plots run.
