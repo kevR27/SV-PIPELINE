@@ -32,6 +32,64 @@ ORTHOGONAL_TLDR_BP_TOL = config.get(
 THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
 
 
+def integration_source_files(sample):
+    """Files required to build the extended orthogonal-evidence table."""
+    return [
+        PATH + f"{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
+        PATH + f"{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
+        PATH + f"{sample}/mei/tldr/{sample}.tldr.table.txt",
+    ]
+
+
+def extended_table(sample):
+    return (
+        PATH
+        + f"{sample}/gene_discovery/"
+        + f"{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv"
+    )
+
+
+def sample_ready_for_postprocess(sample):
+    """A sample is ready if the extended table already exists or all source files exist."""
+    if os.path.exists(extended_table(sample)):
+        return True
+    return all(os.path.exists(path) for path in integration_source_files(sample))
+
+
+# Optional explicit subset in config_lrs.yaml:
+#
+# postprocess_samples:
+#   - "21930"
+#
+# If omitted/null, automatically use only samples whose upstream LRS outputs
+# required by this independent downstream workflow are already complete.
+CONFIG_POSTPROCESS_SAMPLES = config.get("postprocess_samples")
+
+if CONFIG_POSTPROCESS_SAMPLES:
+    POSTPROCESS_SAMPLES = [str(sample) for sample in CONFIG_POSTPROCESS_SAMPLES]
+else:
+    POSTPROCESS_SAMPLES = [
+        sample for sample in SAMPLES
+        if sample_ready_for_postprocess(sample)
+    ]
+
+SKIPPED_POSTPROCESS_SAMPLES = [
+    sample for sample in SAMPLES
+    if sample not in POSTPROCESS_SAMPLES
+]
+
+print(
+    "[LRS postprocess] ready samples: "
+    + (", ".join(POSTPROCESS_SAMPLES) if POSTPROCESS_SAMPLES else "none")
+)
+
+if SKIPPED_POSTPROCESS_SAMPLES:
+    print(
+        "[LRS postprocess] skipped incomplete samples: "
+        + ", ".join(SKIPPED_POSTPROCESS_SAMPLES)
+    )
+
+
 # Default post-processing target:
 # build the extended interpretation table for every completed sample.
 # Thesis plots remain a separate explicit target.
@@ -39,7 +97,7 @@ rule all:
     input:
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv",
-            sample=SAMPLES,
+            sample=POSTPROCESS_SAMPLES,
         )
 
 
@@ -138,5 +196,5 @@ rule all_thesis_plots:
     input:
         expand(
             PATH + "{sample}/plots/.thesis_plots.done",
-            sample=SAMPLES,
+            sample=POSTPROCESS_SAMPLES,
         )
