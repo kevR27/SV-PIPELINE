@@ -1,0 +1,142 @@
+import os
+
+configfile: "config_lrs.yaml"
+
+# ============================================================
+# LRS DOWNSTREAM / THESIS POST-PROCESSING
+# ============================================================
+#
+# This workflow intentionally does NOT perform variant calling.
+# Run Snakefile_LRS_update first. This Snakefile only:
+#   1. attaches orthogonal Straglr/TLDR evidence to the completed
+#      integrated Jasmine SV-gene table; and
+#   2. generates thesis plots on request.
+#
+# Plotting is intentionally excluded from this Snakefile's rule all.
+
+SAMPLES = list(config["samples"].keys())
+PATH = config["path"].rstrip("/") + "/"
+CONDAENV = config["condaenv"]
+
+PLOTS = os.path.abspath(os.path.join(workflow.basedir, "../../plots"))
+
+ORTHOGONAL_STRAGLR_BP_TOL = config.get(
+    "orthogonal_straglr_breakpoint_tolerance",
+    500,
+)
+ORTHOGONAL_TLDR_BP_TOL = config.get(
+    "orthogonal_tldr_breakpoint_tolerance",
+    500,
+)
+
+THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
+
+
+# Default post-processing target:
+# build the extended interpretation table for every completed sample.
+# Thesis plots remain a separate explicit target.
+rule all:
+    input:
+        expand(
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv",
+            sample=SAMPLES,
+        )
+
+
+############################################################
+# Orthogonal evidence integration                          #
+############################################################
+
+rule integrate_orthogonal_sv_evidence:
+    input:
+        integrated=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
+        straglr=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
+        tldr=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv"
+    params:
+        straglr_tol=ORTHOGONAL_STRAGLR_BP_TOL,
+        tldr_tol=ORTHOGONAL_TLDR_BP_TOL
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.tsv})
+
+        python {PLOTS}/intersect_orthogonal_sv_evidence.py \
+            --integrated {input.integrated} \
+            --straglr {input.straglr} \
+            --tldr {input.tldr} \
+            --straglr-breakpoint-tol {params.straglr_tol} \
+            --tldr-breakpoint-tol {params.tldr_tol} \
+            --output {output.tsv}
+
+        test -s {output.tsv}
+        """
+
+
+############################################################
+# Plot dependency discovery                                #
+############################################################
+
+def existing_plot_inputs(wc):
+    """Track completed plot inputs without making optional branches mandatory."""
+    sample = wc.sample
+
+    candidates = [
+        PATH + f"{sample}/coverage/{sample}.mosdepth.global.dist.txt",
+        PATH + f"{sample}/coverage/{sample}.mosdepth.summary.txt",
+        PATH + f"{sample}/sv/merged/{sample}_caller_support_summary.tsv",
+        PATH + f"{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
+        PATH + f"{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
+        PATH + f"{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
+        PATH + f"{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
+        PATH + f"{sample}/mei/tldr/{sample}.tldr.table.txt",
+        PATH + f"{sample}/phasing/{sample}.phased.vcf.gz",
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        PATH + f"{sample}/methylation/{sample}.cpg.bedmethyl.gz",
+    ]
+
+    return [path for path in candidates if os.path.exists(path)]
+
+
+############################################################
+# Manual thesis plotting target                            #
+############################################################
+
+rule thesis_plots_sample:
+    input:
+        integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
+        available=existing_plot_inputs
+    output:
+        marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
+    params:
+        methylation_arg=lambda wc: (
+            f"--methylation-region {THESIS_METHYLATION_REGION}"
+            if THESIS_METHYLATION_REGION
+            else ""
+        )
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        python {PLOTS}/run_thesis_plots.py \
+            --root {PATH} \
+            --sample {wildcards.sample} \
+            --platform lrs \
+            {params.methylation_arg}
+
+        touch {output.marker}
+        """
+
+
+# Explicit target only. It is NOT part of rule all.
+rule all_thesis_plots:
+    input:
+        expand(
+            PATH + "{sample}/plots/.thesis_plots.done",
+            sample=SAMPLES,
+        )
