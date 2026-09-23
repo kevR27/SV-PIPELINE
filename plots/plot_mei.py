@@ -29,19 +29,26 @@ def main():
     if df.empty:
         raise ValueError("TLDR table is empty.")
 
-    family_col = first_existing(df, ["family", "FAMILY", "repeat_family", "REPEAT_FAMILY", "element", "ELEMENT"])
-    subfamily_col = first_existing(df, ["subfamily", "SUBFAMILY", "repeat_name", "REPEAT_NAME"])
-    chrom_col = first_existing(df, ["chrom", "CHROM", "chr", "Chr"])
-    pos_col = first_existing(df, ["start", "START", "pos", "POS", "position", "POSITION"])
-    support_col = first_existing(df, ["num_support", "support", "SUPPORT", "supporting_reads", "N_SUPPORT", "reads"])
-    spanning_col = first_existing(df, ["num_spanning", "spanning_reads", "SPANNING", "N_SPANNING"])
-    len_col = first_existing(df, ["insert_len", "insertion_length", "INS_LEN", "length", "LENGTH"])
-    filter_col = first_existing(df, ["filter", "FILTER", "status", "STATUS"])
+    # Exact TLDR output schema currently produced by the pipeline is supported first.
+    family_col = first_existing(df, ["Family", "family", "FAMILY", "repeat_family", "REPEAT_FAMILY", "element", "ELEMENT"])
+    subfamily_col = first_existing(df, ["Subfamily", "subfamily", "SUBFAMILY", "repeat_name", "REPEAT_NAME"])
+    chrom_col = first_existing(df, ["Chrom", "chrom", "CHROM", "chr", "Chr"])
+    pos_col = first_existing(df, ["Start", "start", "START", "pos", "POS", "position", "POSITION"])
+    support_col = first_existing(df, ["UsedReads", "used_reads", "num_support", "support", "SUPPORT", "supporting_reads", "N_SUPPORT", "reads"])
+    spanning_col = first_existing(df, ["SpanReads", "span_reads", "num_spanning", "spanning_reads", "SPANNING", "N_SPANNING"])
+    len_col = first_existing(df, ["LengthIns", "length_ins", "insert_len", "insertion_length", "INS_LEN", "length", "LENGTH"])
+    filter_col = first_existing(df, ["Filter", "filter", "FILTER", "status", "STATUS"])
 
     work = df.copy()
     if family_col is None:
         if subfamily_col:
-            work["_family"] = work[subfamily_col].fillna("Unknown").astype(str).str.extract(r"^([A-Za-z0-9]+)", expand=False).fillna("Unknown")
+            work["_family"] = (
+                work[subfamily_col]
+                .fillna("Unknown")
+                .astype(str)
+                .str.extract(r"^([A-Za-z0-9]+)", expand=False)
+                .fillna("Unknown")
+            )
         else:
             work["_family"] = "Unknown"
     else:
@@ -50,6 +57,7 @@ def main():
     work["_support"] = numeric(work[support_col]).fillna(0) if support_col else 0
     work["_spanning"] = numeric(work[spanning_col]).fillna(0) if spanning_col else 0
     work["_length"] = numeric(work[len_col]).abs() if len_col else np.nan
+
     work["_label"] = np.arange(len(work)).astype(str)
     if chrom_col and pos_col:
         work["_label"] = work[chrom_col].astype(str) + ":" + work[pos_col].astype(str)
@@ -61,7 +69,11 @@ def main():
 
     family_summary = (
         work.groupby("_family")
-        .agg(n_insertions=("_family", "size"), mean_support=("_support", "mean"), median_support=("_support", "median"))
+        .agg(
+            n_insertions=("_family", "size"),
+            mean_support=("_support", "mean"),
+            median_support=("_support", "median"),
+        )
         .reset_index()
         .sort_values("n_insertions", ascending=False)
     )
@@ -80,7 +92,7 @@ def main():
     style_axis(ax1, "x")
 
     y = np.arange(len(top))
-    ax2.barh(y, top["_support"], color="#0072B2", label="Supporting reads")
+    ax2.barh(y, top["_support"], color="#0072B2", label="Used reads")
     if top["_spanning"].gt(0).any():
         ax2.scatter(top["_spanning"], y, marker="D", s=28, color="#E69F00", label="Spanning reads", zorder=3)
     ax2.set_yticks(y)
@@ -91,9 +103,12 @@ def main():
     style_axis(ax2, "x")
 
     fig.suptitle(args.title, fontsize=14, fontweight="bold", y=0.995)
-    note = "TLDR calls are an orthogonal MEI layer. Candidate overlap with Jasmine insertions should be established by breakpoint-aware matching, not gene name alone."
+    note = (
+        "TLDR calls are an orthogonal MEI layer. Candidate overlap with Jasmine INS calls "
+        "is established by breakpoint-aware matching, not gene name alone."
+    )
     if filter_col:
-        note += f" TLDR filter/status column detected: {filter_col}."
+        note += f" TLDR filter/status column: {filter_col}."
     fig.text(0.5, 0.01, note, ha="center", fontsize=8.0)
     fig.tight_layout(rect=[0, 0.03, 1, 0.97])
     outputs = save_figure(fig, prefix)
