@@ -1,7 +1,8 @@
-# needLR v4.x backend was generated with Sniffles2 v2.6.2.
+# Main long-read SV discovery environment.
+# Keep this independent from the needLR compatibility query environment.
 name: sniffles2
 channels:
   - conda-forge
   - bioconda
 dependencies:
-  - bioconda::sniffles=2.6.2
+  - bioconda::sniffles=2.8.1
