@@ -114,6 +114,16 @@ needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/needlr/re
 
 tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/teref.ont.human.fa"
 
+# Coordinate tolerances used only when attaching orthogonal evidence to the
+# Jasmine-defined master SV table. They do not modify SV calling or merging.
+orthogonal_straglr_breakpoint_tolerance: 500
+orthogonal_tldr_breakpoint_tolerance: 500
+
+# Optional region for the manual thesis methylation plot target.
+# Keep null until a candidate locus is selected.
+# Example: "chr3:193600000-193700000"
+thesis_methylation_region: null
+
 # ============================================================
 # MONARCH / HPO DISCOVERY
 # ============================================================
