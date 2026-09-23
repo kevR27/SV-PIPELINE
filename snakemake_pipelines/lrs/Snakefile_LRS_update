@@ -596,7 +596,7 @@ rule sniffles2_needlr_query:
         vcf=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf"
     threads: THREADS
     conda:
-        CONDAENV + "sniffles2.yaml"
+        CONDAENV + "sniffles2_needlr.yaml"
     shell:
         """
         set -euo pipefail
