@@ -87,6 +87,19 @@ def main() -> int:
                      help="Require FILTER in {PASS,.} to pass (default: on)")
     ap.add_argument("--allow-any-filter", dest="require_pass", action="store_false",
                      help="Disable the FILTER=PASS/. requirement")
+    ap.add_argument("--rescue-cov-var", action="store_true",
+                     help="For Sniffles2 only, allow selected FILTER=COV_VAR calls "
+                          "to pass when they satisfy the dedicated support, size, "
+                          "and SVTYPE rescue criteria")
+    ap.add_argument("--rescue-cov-var-min-support", type=float, default=2,
+                     help="Minimum support for rescued Sniffles2 COV_VAR calls "
+                          "(default: 2)")
+    ap.add_argument("--rescue-cov-var-min-svlen", type=float, default=50000,
+                     help="Minimum absolute SV length for rescued Sniffles2 "
+                          "COV_VAR calls (default: 50000)")
+    ap.add_argument("--rescue-cov-var-svtypes", default="DEL,DUP",
+                     help="Comma-separated SVTYPEs eligible for COV_VAR rescue "
+                          "(default: DEL,DUP)")
     ap.add_argument("--min-gq", type=float, default=None,
                      help="Optional: flag (not drop) records below this genotype quality")
     ap.add_argument("--blacklist-bed", default=None,
@@ -110,15 +123,36 @@ def main() -> int:
         fail_reasons = []
 
         filt = row.get("FILTER", MISSING)
-        if a.require_pass and filt not in ("PASS", MISSING, "."):
-            fail_reasons.append("NON_PASS_FILTER")
-
         support = to_float(row.get("CALLER_SUPPORT"))
+        svtype = (row.get("SVTYPE", MISSING) or MISSING).upper()
+        svlen = to_float(row.get("SVLEN"))
+        svlen_abs = abs(svlen) if svlen is not None else None
+
+        rescue_svtypes = {
+            x.strip().upper()
+            for x in a.rescue_cov_var_svtypes.split(",")
+            if x.strip()
+        }
+        rescued_cov_var = (
+            a.rescue_cov_var
+            and a.caller.lower() == "sniffles2"
+            and filt == "COV_VAR"
+            and support is not None
+            and support >= a.rescue_cov_var_min_support
+            and svlen_abs is not None
+            and svlen_abs >= a.rescue_cov_var_min_svlen
+            and svtype in rescue_svtypes
+        )
+
+        if a.require_pass and filt not in ("PASS", MISSING, "."):
+            if rescued_cov_var:
+                flags.append("RESCUED_COV_VAR")
+            else:
+                fail_reasons.append("NON_PASS_FILTER")
+
         if support is None or support < a.min_support:
             fail_reasons.append("LOW_SUPPORT")
 
-        svlen = to_float(row.get("SVLEN"))
-        svlen_abs = abs(svlen) if svlen is not None else None
         if svlen_abs is None:
             # BND / TRA and similar records often have no SVLEN; don't fail
             # them on size, just note it
@@ -171,8 +205,14 @@ def main() -> int:
             if row["EVIDENCE_STATUS"] == "PASS":
                 fh.write(row["SV_ID"] + "\n")
 
+    n_rescued_cov_var = sum(
+        1
+        for row in rows
+        if "RESCUED_COV_VAR" in row.get("EVIDENCE_FLAGS", "").split(";")
+    )
     print(f"[OK] caller={a.caller} total={n_total} pass={n_pass} "
-          f"fail={n_total - n_pass} output_tsv={out_tsv} output_ids={out_ids}",
+          f"fail={n_total - n_pass} rescued_cov_var={n_rescued_cov_var} "
+          f"output_tsv={out_tsv} output_ids={out_ids}",
           file=sys.stderr)
     return 0
 
