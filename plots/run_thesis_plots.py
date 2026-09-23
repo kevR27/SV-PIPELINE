@@ -82,7 +82,7 @@ def main():
     straglr = sample_root / "sv" / "straglr" / f"{s}_straglr.annotated.tsv"
     tldr = sample_root / "mei" / "tldr" / f"{s}.tldr.table.txt"
 
-    clair3_phased = first_glob(
+    whatshap_phased = first_glob(
         sample_root,
         [
             "clair3/**/*phased*.vcf.gz",
@@ -212,9 +212,9 @@ def main():
         str(out / f"{s}_phasing_qc"),
     ]
     phase_required = []
-    if clair3_phased:
-        phase_cmd += ["--clair3-vcf", str(clair3_phased)]
-        phase_required.append(clair3_phased)
+    if whatshap_phased:
+        phase_cmd += ["--whatshap-vcf", str(whatshap_phased)]
+        phase_required.append(whatshap_phased)
     if args.platform == "lrs" and longphase:
         phase_cmd += ["--longphase-vcf", str(longphase)]
         phase_required.append(longphase)
@@ -222,7 +222,7 @@ def main():
     if phase_required:
         jobs.append((phase_cmd, phase_required))
     else:
-        print("[SKIP] no phased Clair3/LongPhase VCF found")
+        print("[SKIP] no WhatsHap/LongPhase phased VCF found")
 
     if args.platform == "lrs" and args.methylation_region and methylation:
         jobs.append(
