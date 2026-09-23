@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize phased genotypes from Clair3/WhatsHap and LongPhase VCFs."""
+"""Summarize phased genotypes from WhatsHap and LongPhase VCFs."""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ def main():
         inputs.append((args.longphase_vcf, "LongPhase"))
 
     if not inputs:
-        raise ValueError("Provide --clair3-vcf/--whatshap-vcf and/or --longphase-vcf.")
+        raise ValueError("Provide --whatshap-vcf and/or --longphase-vcf.")
 
     summaries = []
     phase_sets = []
