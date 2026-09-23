@@ -41,6 +41,7 @@ except OverflowError:
 
 MISSING = "."
 NEEDLR_MAX_SIZE = 10_000_000
+SPATIAL_BIN_SIZE = 1_000_000
 
 
 def open_text(path: str):
@@ -269,17 +270,14 @@ def load_caller_summary(rows: list[dict]) -> dict[str, dict]:
 
 def load_caller_evidence(paths: list[str]):
     by_id: dict[str, dict] = {}
-    by_type_chrom: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    rows: list[dict] = []
     for path in paths:
         for row in read_tsv(path):
+            rows.append(row)
             sv_id = first(row, ["SV_ID", "ID"])
             if sv_id != MISSING:
                 by_id[sv_id] = row
-            chrom = first(row, ["CHROM", "Chr", "chrom"])
-            svtype = normalize_svtype(first(row, ["SVTYPE", "SV_type", "Type"]))
-            if chrom != MISSING and svtype != MISSING:
-                by_type_chrom[(chrom, svtype)].append(row)
-    return by_id, by_type_chrom
+    return by_id, build_spatial_index(rows)
 
 
 def interval_overlap(a_start, a_end, b_start, b_end):
@@ -293,6 +291,95 @@ def interval_overlap(a_start, a_end, b_start, b_end):
     alen = max(1, ahi - alo + 1)
     blen = max(1, bhi - blo + 1)
     return min(overlap / alen, overlap / blen)
+
+
+def candidate_coordinates(row: dict):
+    start = as_int(first(row, ["START", "Start_Pos", "SV_start", "POS"]))
+    end = as_int(first(row, ["END", "End_Pos", "SV_end"]))
+    svlen_raw = as_int(first(row, ["SVLEN", "SV_Length", "SV_length"]))
+    if start is None:
+        return None, None, 0
+    span = abs((end - start) if end is not None else 0)
+    svlen = abs(svlen_raw) if svlen_raw is not None else span
+    return start, end, svlen
+
+
+def build_spatial_index(rows: list[dict]):
+    bins: dict[tuple[str, str], dict[int, list[dict]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    max_len: dict[tuple[str, str], int] = defaultdict(int)
+
+    for row in rows:
+        chrom = first(row, ["CHROM", "Chr", "chrom", "chromosome"])
+        svtype = normalize_svtype(
+            first(row, ["SVTYPE", "SV_Type", "SV_type", "Type"])
+        )
+        start, end, svlen = candidate_coordinates(row)
+        if chrom == MISSING or svtype == MISSING or start is None:
+            continue
+
+        key = (chrom, svtype)
+        max_len[key] = max(max_len[key], svlen)
+
+        if svtype in {"INS", "BND"} or end is None:
+            lo = hi = start
+        else:
+            lo, hi = sorted((start, end))
+
+        first_bin = max(0, lo // SPATIAL_BIN_SIZE)
+        last_bin = max(0, hi // SPATIAL_BIN_SIZE)
+        for bin_id in range(first_bin, last_bin + 1):
+            bins[key][bin_id].append(row)
+
+    return {"bins": bins, "max_len": max_len}
+
+
+def spatial_candidates_for_sv(sv: dict, spatial_index) -> list[dict]:
+    svtype = normalize_svtype(sv["SVTYPE"])
+    key = (sv["CHROM"], svtype)
+    key_bins = spatial_index["bins"].get(key)
+    if not key_bins:
+        return []
+
+    start = as_int(sv.get("START"))
+    end = as_int(sv.get("END"))
+    if start is None:
+        return []
+
+    svlen = abs(
+        as_int(sv.get("SVLEN"))
+        or ((end - start) if end is not None else 0)
+    )
+    max_candidate_len = spatial_index["max_len"].get(key, 0)
+
+    # evidence_match_score uses 20% of the larger SV length as breakpoint
+    # tolerance.  Use the largest candidate length in this chromosome/type
+    # bucket so the positional prefilter cannot exclude a valid match.
+    padding = max(500, int(0.20 * max(svlen, max_candidate_len, 1)))
+
+    if svtype in {"INS", "BND"} or end is None:
+        lo = max(0, start - padding)
+        hi = start + padding
+    else:
+        left, right = sorted((start, end))
+        lo = max(0, left - padding)
+        hi = right + padding
+
+    seen: set[int] = set()
+    candidates: list[dict] = []
+    first_bin = lo // SPATIAL_BIN_SIZE
+    last_bin = hi // SPATIAL_BIN_SIZE
+
+    for bin_id in range(first_bin, last_bin + 1):
+        for row in key_bins.get(bin_id, []):
+            row_id = id(row)
+            if row_id in seen:
+                continue
+            seen.add(row_id)
+            candidates.append(row)
+
+    return candidates
 
 
 def evidence_match_score(sv: dict, row: dict):
@@ -334,13 +421,13 @@ def evidence_match_score(sv: dict, row: dict):
     return None
 
 
-def caller_evidence_for_sv(sv: dict, by_id, by_type_chrom):
+def caller_evidence_for_sv(sv: dict, by_id, spatial_index):
     ids = split_values(sv.get("INFO_IDLIST", MISSING))
     matches = [by_id[x] for x in ids if x in by_id]
     method = "IDLIST" if matches else MISSING
 
     if not matches:
-        candidates = by_type_chrom.get((sv["CHROM"], normalize_svtype(sv["SVTYPE"])), [])
+        candidates = spatial_candidates_for_sv(sv, spatial_index)
         scored = []
         for row in candidates:
             score = evidence_match_score(sv, row)
@@ -363,7 +450,6 @@ def caller_evidence_for_sv(sv: dict, by_id, by_type_chrom):
     for row in sorted(matches, key=lambda r: first(r, ["CALLER"])):
         caller = first(row, ["CALLER"])
         support = first(row, ["CALLER_SUPPORT"])
-        status = first(row, ["EVIDENCE_STATUS"])
         details.append(f"{caller}:{support}")
         flag = first(row, ["EVIDENCE_FLAGS"])
         if flag != MISSING:
@@ -376,13 +462,7 @@ def caller_evidence_for_sv(sv: dict, by_id, by_type_chrom):
 
 
 def build_needlr_index(rows: list[dict]):
-    index: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    for row in rows:
-        chrom = first(row, ["Chr", "CHROM", "chrom", "chromosome"])
-        svtype = normalize_svtype(first(row, ["SV_Type", "SVTYPE", "SV_type", "Type"]))
-        if chrom != MISSING and svtype != MISSING:
-            index[(chrom, svtype)].append(row)
-    return index
+    return build_spatial_index(rows)
 
 
 def match_needlr(sv: dict, needlr_index):
@@ -393,7 +473,7 @@ def match_needlr(sv: dict, needlr_index):
     if svlen >= NEEDLR_MAX_SIZE:
         return None, "NOT_EVALUABLE_GE_10MB", MISSING
 
-    candidates = needlr_index.get((sv["CHROM"], svtype), [])
+    candidates = spatial_candidates_for_sv(sv, needlr_index)
     scored = []
     for row in candidates:
         score = evidence_match_score(sv, row)
@@ -441,7 +521,7 @@ def main() -> int:
     ranking = load_ranking(read_tsv(args.ranking))
     panel = read_panel(args.panel)
     caller_summary = load_caller_summary(read_tsv(args.caller_summary))
-    caller_by_id, caller_by_type_chrom = load_caller_evidence(args.caller_tsv)
+    caller_by_id, caller_spatial_index = load_caller_evidence(args.caller_tsv)
 
     annotsv_by_id, annotsv_by_coord = build_annotsv_indexes(annotsv_rows)
     needlr_index = build_needlr_index(needlr_rows)
@@ -449,8 +529,20 @@ def main() -> int:
     output_rows: list[dict] = []
     annotsv_match_count = 0
     needlr_match_count = 0
+    n_sv = len(sv_rows)
 
-    for sv in sv_rows:
+    print(
+        f"[INFO] Spatial matching enabled: bin_size={SPATIAL_BIN_SIZE:,} bp, "
+        f"master_SVs={n_sv}, needLR_rows={len(needlr_rows)}",
+        file=sys.stderr,
+    )
+
+    for sv_number, sv in enumerate(sv_rows, start=1):
+        if sv_number == 1 or sv_number % 1000 == 0 or sv_number == n_sv:
+            print(
+                f"[INFO] Processing master SV {sv_number}/{n_sv}",
+                file=sys.stderr,
+            )
         sv_id = sv["SV_ID"]
         ann_matches, ann_match_method = annotsv_matches_for_sv(
             sv, annotsv_by_id, annotsv_by_coord
@@ -472,7 +564,7 @@ def main() -> int:
         support_class = first(summary, ["CALLER_SUPPORT_CLASS"])
 
         support_detail, evidence_flags, evidence_match_method = caller_evidence_for_sv(
-            sv, caller_by_id, caller_by_type_chrom
+            sv, caller_by_id, caller_spatial_index
         )
 
         if needlr_enabled:
@@ -574,7 +666,6 @@ def main() -> int:
                     row[key] = value
             output_rows.append(row)
 
-    n_sv = len(sv_rows)
     ann_rate = (annotsv_match_count / n_sv * 100.0) if n_sv else 0.0
     print(
         f"[INFO] AnnotSV master-SV match: {annotsv_match_count}/{n_sv} "
