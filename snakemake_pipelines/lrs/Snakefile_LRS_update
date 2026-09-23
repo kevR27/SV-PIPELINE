@@ -71,7 +71,7 @@ VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 FILTER_SV_EVIDENCE_SCRIPT = config["filter_sv_evidence_script"]
 EVIDENCE_MIN_SUPPORT = config.get("evidence_min_support", 2)
 EVIDENCE_MIN_SVLEN = config.get("evidence_min_svlen", 50)
-EVIDENCE_MAX_SVLEN = config.get("evidence_max_svlen", 250_000_000)
+EVIDENCE_MAX_SVLEN = config.get("evidence_max_svlen")
 EVIDENCE_MIN_GQ = config.get("evidence_min_gq")
 EVIDENCE_BLACKLIST_BED = config.get("evidence_blacklist_bed")
 
@@ -402,6 +402,7 @@ rule filter_sniffles_sv:
         vcf=PATH + "{sample}/sv/sniffles2/{sample}_sniffles.filtered.vcf"
     params:
         min_gq=lambda wc: f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else "",
+        max_svlen=lambda wc: f"--max-svlen {EVIDENCE_MAX_SVLEN}" if EVIDENCE_MAX_SVLEN is not None else "",
         blacklist=lambda wc: f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
     conda:
         CONDAENV + "annotsv.yaml"
@@ -415,7 +416,7 @@ rule filter_sniffles_sv:
             --caller Sniffles2 \
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
-            --max-svlen {EVIDENCE_MAX_SVLEN} \
+            {params.max_svlen} \
             {params.min_gq} \
             {params.blacklist} \
             --output-tsv {output.tsv} \
@@ -435,6 +436,7 @@ rule filter_cutesv_sv:
         vcf=PATH + "{sample}/sv/cutesv/{sample}_cutesv.filtered.vcf"
     params:
         min_gq=lambda wc: f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else "",
+        max_svlen=lambda wc: f"--max-svlen {EVIDENCE_MAX_SVLEN}" if EVIDENCE_MAX_SVLEN is not None else "",
         blacklist=lambda wc: f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
     conda:
         CONDAENV + "annotsv.yaml"
@@ -448,7 +450,7 @@ rule filter_cutesv_sv:
             --caller cuteSV \
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
-            --max-svlen {EVIDENCE_MAX_SVLEN} \
+            {params.max_svlen} \
             {params.min_gq} \
             {params.blacklist} \
             --output-tsv {output.tsv} \
@@ -468,6 +470,7 @@ rule filter_delly_sv:
         vcf=PATH + "{sample}/sv/delly/{sample}_delly.filtered.vcf"
     params:
         min_gq=lambda wc: f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else "",
+        max_svlen=lambda wc: f"--max-svlen {EVIDENCE_MAX_SVLEN}" if EVIDENCE_MAX_SVLEN is not None else "",
         blacklist=lambda wc: f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
     conda:
         CONDAENV + "annotsv.yaml"
@@ -481,7 +484,7 @@ rule filter_delly_sv:
             --caller delly \
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
-            --max-svlen {EVIDENCE_MAX_SVLEN} \
+            {params.max_svlen} \
             {params.min_gq} \
             {params.blacklist} \
             --output-tsv {output.tsv} \
