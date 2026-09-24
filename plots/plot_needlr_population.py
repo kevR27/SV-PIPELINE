@@ -122,7 +122,16 @@ def main():
     ax1, ax2, ax3, ax4 = axes.flatten()
 
     colors = ["#BDBDBD", "#56B4E9", "#0072B2", "#D55E00", "#777777"]
-    ax1.bar(burden["AF_class"], burden["percent"], color=colors)
+    bars = ax1.bar(burden["AF_class"], burden["percent"], color=colors)
+    for bar, count, pct in zip(bars, burden["count"], burden["percent"]):
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 1.0,
+            f"{int(count):,}\n({pct:.1f}%)",
+            ha="center",
+            va="bottom",
+            fontsize=8.5,
+        )
     ax1.set_ylabel("Variants (%)")
     ax1.tick_params(axis="x", rotation=22)
     for i, row in burden.iterrows():
