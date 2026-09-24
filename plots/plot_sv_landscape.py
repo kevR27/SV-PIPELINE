@@ -31,7 +31,7 @@ CANONICAL_RE = re.compile(r"^chr(?:[1-9]|1[0-9]|2[0-2]|X|Y|M|MT)$", re.IGNORECAS
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Plot the master SV landscape.")
+    p = argparse.ArgumentParser(description="Plot the merged SV landscape.")
     p.add_argument("--input", required=True, help="*_integrated_SV_gene_analysis.tsv")
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--title", default="Genome-wide structural-variant landscape")
@@ -103,7 +103,7 @@ def main():
     order = [x for x in ["DEL", "INS", "DUP", "INV", "BND", "CNV", "OTHER"] if x in set(type_counts["SVTYPE"])]
     vals = type_counts.set_index("SVTYPE").reindex(order)["count"].fillna(0)
     ax1.bar(order, vals, color=[SVTYPE_COLORS.get(x, "#999999") for x in order])
-    ax1.set_ylabel("Unique master SVs")
+    ax1.set_ylabel("Number of unique SVs")
     ax1.set_xlabel("SV type")
     style_axis(ax1, "y")
     add_panel_label(ax1, "A")
@@ -126,7 +126,7 @@ def main():
                 color=SVTYPE_COLORS.get(svtype, "#999999"),
             )
     ax2.set_xlabel(r"SV size, $\log_{10}$(bp)")
-    ax2.set_ylabel("Unique master SVs")
+    ax2.set_ylabel("Number of unique SVs")
     ax2.legend(frameon=False, ncol=3)
     style_axis(ax2, "y")
     add_panel_label(ax2, "B")
@@ -158,7 +158,7 @@ def main():
         )
         bottom += values
     ax3.set_xlabel("Canonical chromosome")
-    ax3.set_ylabel("Unique master SVs")
+    ax3.set_ylabel("Number of unique SVs")
     ax3.tick_params(axis="x", rotation=45)
     ax3.legend(frameon=False, ncol=3, fontsize=8)
     style_axis(ax3, "y")
@@ -181,7 +181,7 @@ def main():
         )
         bottom += values
     ax4.set_xlabel("SV type")
-    ax4.set_ylabel("Unique master SVs")
+    ax4.set_ylabel("Number of unique SVs")
     ax4.legend(frameon=False, fontsize=9)
     style_axis(ax4, "y")
     add_panel_label(ax4, "D")
@@ -191,7 +191,7 @@ def main():
     fig.text(
         0.5,
         0.008,
-        f"Chromosome burden panel uses canonical chromosomes only; {noncanonical_n:,} master SVs on alternate/random/unplaced contigs remain in the source table.",
+        f"Chromosome distribution is shown for canonical chromosomes only; {noncanonical_n:,} SVs on alternate, random or unplaced contigs remain in the source table.",
         ha="center",
         fontsize=9,
     )
