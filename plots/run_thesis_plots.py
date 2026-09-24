@@ -69,6 +69,7 @@ def main():
         "tldr": out / "07_orthogonal" / "tldr",
         "phasing": out / "08_phasing",
         "methylation": out / "09_methylation",
+        "integration": out / "10_integrated_evidence",
     }
     for folder in folders.values():
         folder.mkdir(parents=True, exist_ok=True)
@@ -96,6 +97,7 @@ def main():
     needlr = sample_root / "sv" / "needlr" / f"{s}_needLR_RESULTS.tsv"
     ranked = sample_root / "gene_discovery" / f"{s}_ranked_candidates.tsv"
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
+    gene_summary = sample_root / "gene_discovery" / f"{s}_gene_multimodal_evidence_summary.tsv"
     straglr = sample_root / "sv" / "straglr" / f"{s}_straglr.annotated.tsv"
     tldr = sample_root / "mei" / "tldr" / f"{s}.tldr.table.txt"
 
@@ -186,6 +188,14 @@ def main():
                     "--out-prefix", str(folders["phenotype"] / f"{s}_gene_hpo"),
                 ],
                 [phenotypes, ranked],
+            ),
+            (
+                [
+                    py, str(HERE / "plot_gene_multimodal_summary.py"),
+                    "--input", str(gene_summary),
+                    "--out-prefix", str(folders["integration"] / f"{s}_gene_multimodal_evidence"),
+                ],
+                [gene_summary],
             ),
         ]
     )
