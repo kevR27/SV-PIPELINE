@@ -16,8 +16,7 @@ from plot_utils import save_figure, set_thesis_style, style_axis
 
 def parse_args():
     p = argparse.ArgumentParser(description="Plot phasing QC from phased VCFs.")
-    p.add_argument("--clair3-vcf", default=None, help="Phased Clair3 small-variant VCF")
-    p.add_argument("--whatshap-vcf", default=None, help="Legacy alias for a WhatsHap-phased small-variant VCF")
+    p.add_argument("--whatshap-vcf", default=None, help="WhatsHap-phased small-variant VCF")
     p.add_argument("--longphase-vcf", default=None, help="LongPhase phased VCF")
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--title", default="Phasing quality-control summary")
@@ -82,10 +81,8 @@ def main():
     set_thesis_style()
 
     inputs = []
-    if args.clair3_vcf:
-        inputs.append((args.clair3_vcf, "Clair3 phased"))
-    elif args.whatshap_vcf:
-        inputs.append((args.whatshap_vcf, "WhatsHap phased"))
+    if args.whatshap_vcf:
+        inputs.append((args.whatshap_vcf, "WhatsHap"))
     if args.longphase_vcf:
         inputs.append((args.longphase_vcf, "LongPhase"))
 
@@ -107,7 +104,7 @@ def main():
     summary_df.to_csv(prefix.with_name(prefix.name + "_summary.tsv"), sep="\t", index=False)
     ps_df.to_csv(prefix.with_name(prefix.name + "_phase_sets.tsv"), sep="\t", index=False)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.8))
+    fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.6))
     ax1, ax2 = axes
 
     ax1.bar(
@@ -117,6 +114,9 @@ def main():
     )
     ax1.set_ylabel("Heterozygous genotypes phased (%)")
     ax1.set_ylim(0, 105)
+    for i, value in enumerate(summary_df["fraction_het_phased"] * 100.0):
+        if pd.notna(value):
+            ax1.text(i, value + 1.5, f"{value:.1f}%", ha="center", va="bottom", fontsize=10)
     style_axis(ax1, "y")
 
     if not ps_df.empty:
@@ -131,13 +131,13 @@ def main():
         ax2.set_ylabel("Variants per phase set")
     style_axis(ax2, "y")
 
-    fig.suptitle(args.title, fontsize=14, fontweight="bold", y=0.995)
+    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
     fig.text(
         0.5,
         0.01,
         "This is phasing QC; candidate-locus haplotype interpretation should use the phased VCF/BAM evidence directly.",
         ha="center",
-        fontsize=8.2,
+        fontsize=9,
     )
     fig.tight_layout(rect=[0, 0.03, 1, 0.96])
     outputs = save_figure(fig, prefix)
