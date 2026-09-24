@@ -118,13 +118,15 @@ def main():
     ancestry_summary = pd.DataFrame(ancestry_rows)
     ancestry_summary.to_csv(prefix.with_name(prefix.name + "_ancestry_summary.tsv"), sep="\t", index=False)
 
-    fig, axes = plt.subplots(2, 2, figsize=(11.8, 8.5))
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 9.6))
     ax1, ax2, ax3, ax4 = axes.flatten()
 
     colors = ["#BDBDBD", "#56B4E9", "#0072B2", "#D55E00", "#777777"]
     ax1.bar(burden["AF_class"], burden["percent"], color=colors)
     ax1.set_ylabel("Variants (%)")
-    ax1.tick_params(axis="x", rotation=25)
+    ax1.tick_params(axis="x", rotation=22)
+    for i, row in burden.iterrows():
+        ax1.text(i, row["percent"] + 1.0, f"{int(row['count']):,}", ha="center", va="bottom", fontsize=9)
     style_axis(ax1, "y")
     add_panel_label(ax1, "A")
 
@@ -164,13 +166,13 @@ def main():
     style_axis(ax4, "y")
     add_panel_label(ax4, "D")
 
-    fig.suptitle(args.title, fontsize=14, fontweight="bold", y=0.995)
+    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
     fig.text(
         0.5,
         0.008,
         f"Overall frequency source: {af_col}. AF=0 means not observed in the needLR control dataset; it is not a pathogenicity label.",
         ha="center",
-        fontsize=8.3,
+        fontsize=9,
     )
     fig.tight_layout(rect=[0, 0.025, 1, 0.97])
     outputs = save_figure(fig, prefix)
