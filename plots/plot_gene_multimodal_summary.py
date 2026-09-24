@@ -57,6 +57,8 @@ def main():
         ("straglr_matched_SV_count", "Straglr overlap"),
         ("tldr_matched_SV_count", "TLDR overlap"),
         ("longphase_phased_SV_count", "LongPhase phased"),
+        ("whatshap_nearby_phased_SV_count", "Nearby WhatsHap phase"),
+        ("methylation_evaluated_SV_count", "Methylation context"),
     ]
 
     matrix_cols = []
@@ -118,7 +120,7 @@ def main():
     fig.text(
         0.5,
         0.008,
-        "Dark teal indicates that at least one SV/evidence item for that gene satisfies the indicated layer; this is prioritization evidence, not pathogenicity.",
+        "Dark teal indicates that at least one SV/context item for that gene satisfies the indicated layer. WhatsHap and methylation columns are contextual, not SV confirmations or pathogenicity evidence.",
         ha="center",
         fontsize=9,
     )
