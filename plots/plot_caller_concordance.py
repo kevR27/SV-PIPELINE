@@ -98,7 +98,7 @@ def plot_upset(intersections: pd.DataFrame, set_sizes: pd.DataFrame, callers: li
     n = len(intersections)
     x = np.arange(n)
 
-    fig = plt.figure(figsize=(11.7, 7.4))
+    fig = plt.figure(figsize=(13.5, 8.5))
     gs = fig.add_gridspec(
         2,
         2,
@@ -137,7 +137,7 @@ def plot_upset(intersections: pd.DataFrame, set_sizes: pd.DataFrame, callers: li
             f"{int(value):,}",
             ha="center",
             va="bottom",
-            fontsize=8,
+            fontsize=9,
         )
 
     y = np.arange(len(callers))
@@ -155,12 +155,17 @@ def plot_upset(intersections: pd.DataFrame, set_sizes: pd.DataFrame, callers: li
     xmax = max(float(max(sizes)), 1.0)
     ax_sets.set_xlim(xmax * 1.2, 0)
     for yi, value in zip(y, sizes):
-        ax_sets.text(value + xmax * 0.025, yi, f"{int(value):,}", ha="right", va="center", fontsize=8)
+        ax_sets.text(value * 0.98, yi, f"{int(value):,}", ha="left", va="center", fontsize=9, color="white", fontweight="bold")
 
     ax_matrix.set_xlim(-0.5, n - 0.5)
     ax_matrix.set_ylim(-0.5, len(callers) - 0.5)
     ax_matrix.invert_yaxis()
-    ax_matrix.set_xticks([])
+    ax_matrix.set_xticks(x)
+    combo_labels = [
+        " + ".join(c for c, bit in zip(callers, vec) if bit == "1")
+        for vec in intersections["SUPP_VEC"]
+    ]
+    ax_matrix.set_xticklabels(combo_labels, rotation=35, ha="right", fontsize=8.5)
     ax_matrix.set_yticks(y)
     ax_matrix.set_yticklabels(callers)
     for spine in ax_matrix.spines.values():
@@ -179,13 +184,13 @@ def plot_upset(intersections: pd.DataFrame, set_sizes: pd.DataFrame, callers: li
             ax_matrix.scatter([i] * len(active), active, s=68, color="#222222", zorder=3)
     add_panel_label(ax_matrix, "C")
 
-    fig.suptitle(title, fontsize=14, fontweight="bold", y=0.99)
+    fig.suptitle(title, fontsize=16, fontweight="bold", y=0.99)
     fig.text(
         0.5,
         0.01,
         "Bars show exact caller intersections; the complete merged callset remains the master SV universe.",
         ha="center",
-        fontsize=8.5,
+        fontsize=9,
     )
     return fig
 
