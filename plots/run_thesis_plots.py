@@ -58,6 +58,21 @@ def main():
     out = Path(args.out_dir).expanduser().resolve() if args.out_dir else sample_root / "plots"
     out.mkdir(parents=True, exist_ok=True)
 
+    folders = {
+        "qc": out / "01_qc",
+        "caller": out / "02_caller_concordance",
+        "landscape": out / "03_sv_landscape",
+        "population": out / "04_population_frequency",
+        "candidates": out / "05_candidate_prioritization",
+        "phenotype": out / "06_phenotype",
+        "straglr": out / "07_orthogonal" / "straglr",
+        "tldr": out / "07_orthogonal" / "tldr",
+        "phasing": out / "08_phasing",
+        "methylation": out / "09_methylation",
+    }
+    for folder in folders.values():
+        folder.mkdir(parents=True, exist_ok=True)
+
     py = sys.executable
     s = args.sample
 
@@ -87,9 +102,7 @@ def main():
     whatshap_phased = first_glob(
         sample_root,
         [
-            "clair3/**/*phased*.vcf.gz",
-            "small_variants/**/*phased*.vcf.gz",
-            "phasing/**/*clair3*.vcf.gz",
+            "phasing/*phased*.vcf.gz",
             "phasing/**/*phased*.vcf.gz",
         ],
     )
@@ -120,7 +133,7 @@ def main():
         cmd = [
             py, str(HERE / "plot_lrs_qc.py"),
             "--summary", str(coverage_summary),
-            "--out-prefix", str(out / f"{s}_coverage_qc"),
+            "--out-prefix", str(folders["qc"] / f"{s}_coverage_qc"),
         ]
         required = [coverage_summary]
         if coverage_dist:
@@ -137,7 +150,7 @@ def main():
                     py, str(HERE / "plot_caller_concordance.py"),
                     "--input", str(caller_summary),
                     "--caller-order", caller_order,
-                    "--out-prefix", str(out / f"{s}_caller_concordance"),
+                    "--out-prefix", str(folders["caller"] / f"{s}_caller_concordance"),
                 ],
                 [caller_summary],
             ),
@@ -145,7 +158,7 @@ def main():
                 [
                     py, str(HERE / "plot_sv_landscape.py"),
                     "--input", str(integrated),
-                    "--out-prefix", str(out / f"{s}_sv_landscape"),
+                    "--out-prefix", str(folders["landscape"] / f"{s}_sv_landscape"),
                 ],
                 [integrated],
             ),
@@ -153,7 +166,7 @@ def main():
                 [
                     py, str(HERE / "plot_candidate_evidence_matrix.py"),
                     "--input", str(integrated),
-                    "--out-prefix", str(out / f"{s}_candidate_evidence"),
+                    "--out-prefix", str(folders["candidates"] / f"{s}_candidate_evidence"),
                 ],
                 [integrated],
             ),
@@ -161,7 +174,7 @@ def main():
                 [
                     py, str(HERE / "plot_candidate_genes.py"),
                     "--input", str(ranked),
-                    "--out-prefix", str(out / f"{s}_candidate_genes"),
+                    "--out-prefix", str(folders["candidates"] / f"{s}_candidate_genes"),
                 ],
                 [ranked],
             ),
@@ -170,7 +183,7 @@ def main():
                     py, str(HERE / "plot_gene_hpo_heatmap.py"),
                     "--input", str(phenotypes),
                     "--ranking", str(ranked),
-                    "--out-prefix", str(out / f"{s}_gene_hpo"),
+                    "--out-prefix", str(folders["phenotype"] / f"{s}_gene_hpo"),
                 ],
                 [phenotypes, ranked],
             ),
@@ -184,7 +197,7 @@ def main():
                     [
                         py, str(HERE / "plot_needlr_population.py"),
                         "--input", str(needlr),
-                        "--out-prefix", str(out / f"{s}_needlr_population"),
+                        "--out-prefix", str(folders["population"] / f"{s}_needlr_population"),
                     ],
                     [needlr],
                 ),
@@ -192,7 +205,7 @@ def main():
                     [
                         py, str(HERE / "plot_straglr.py"),
                         "--input", str(straglr),
-                        "--out-prefix", str(out / f"{s}_straglr"),
+                        "--out-prefix", str(folders["straglr"] / f"{s}_straglr"),
                     ],
                     [straglr],
                 ),
@@ -200,7 +213,7 @@ def main():
                     [
                         py, str(HERE / "plot_mei.py"),
                         "--input", str(tldr),
-                        "--out-prefix", str(out / f"{s}_mei"),
+                        "--out-prefix", str(folders["tldr"] / f"{s}_mei"),
                     ],
                     [tldr],
                 ),
@@ -211,7 +224,7 @@ def main():
         py,
         str(HERE / "plot_phasing_qc.py"),
         "--out-prefix",
-        str(out / f"{s}_phasing_qc"),
+        str(folders["phasing"] / f"{s}_phasing_qc"),
     ]
     phase_required = []
     if whatshap_phased:
@@ -239,7 +252,7 @@ def main():
                     "--region",
                     args.methylation_region,
                     "--out-prefix",
-                    str(out / f"{s}_methylation"),
+                    str(folders["methylation"] / f"{s}_methylation"),
                 ],
                 [methylation],
             )
