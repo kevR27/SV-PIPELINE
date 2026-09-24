@@ -1,245 +1,289 @@
 # SV-PIPELINE
 
-Long- and short-read whole-genome sequencing workflows for genome-wide structural-variant discovery and interpretation, developed for unresolved rare neurological disease with a particular focus on optic neuropathies and mitochondrial/neuromuscular phenotypes.
+This repository contains the workflow I am developing for my Master's project in Pharmaceutical Biotechnology. The main aim is to analyse whole-genome sequencing data from patients with rare neurological diseases, with a particular focus on optic neuropathies, and to investigate whether structural variants or other genomic alterations can help explain cases that remain unresolved after conventional genetic testing.
 
-The repository is designed around a diagnostic question rather than around a single caller:
+The project is mainly based on Oxford Nanopore long-read whole-genome sequencing, with a parallel short-read workflow that can later be used for comparison.
 
-> Can whole-genome sequencing identify clinically relevant genomic mechanisms that may be missed by an analysis focused mainly on SNVs, small indels, or conventional CNV testing?
+The main question behind the pipeline is quite simple:
 
-The long-read workflow uses Oxford Nanopore whole-genome data and combines several independent SV callers with gene/phenotype annotation and orthogonal evidence. The optic-neuropathy gene panel is used for interpretation, but it is **not used to restrict genome-wide SV discovery**. This preserves the possibility of finding variants in known disease genes as well as new or unexpected candidate genes.
+> **Can whole-genome sequencing reveal clinically relevant variants that may be missed when the analysis is focused mainly on SNVs, small indels or conventional CNVs?**
 
-The active long-read workflow is `snakemake_pipelines/lrs/Snakefile_LRS_update`. A separate downstream workflow, `Snakefile_LRS_postprocess`, adds orthogonal evidence and generates interpretation tables and thesis figures without rerunning variant calling.
+For this reason, the workflow does not focus only on one type of variant or one list of genes. Structural variants are first searched genome-wide, and the optic-neuropathy gene panel is used later as an interpretation layer.
 
----
+The active long-read workflow is:
 
-## 1. Biological hypothesis and analysis questions
+```text
+snakemake_pipelines/lrs/Snakefile_LRS_update
+```
 
-The working hypothesis is that a proportion of unresolved neurological/optic-neuropathy cases may be explained by genomic alterations that are difficult to capture or interpret with standard small-variant analysis alone. These can include:
+A second workflow,
 
-- deletions, duplications, inversions, insertions and breakends;
-- large or complex rearrangements;
-- tandem-repeat expansions;
-- mobile-element insertions;
-- variants whose interpretation depends on phasing or local genomic context;
-- regulatory or methylation changes that may provide additional biological context.
+```text
+snakemake_pipelines/lrs/Snakefile_LRS_postprocess
+```
 
-The pipeline therefore asks several linked questions.
-
-**Question 1 — Is there a structural variant in the genome that could explain the phenotype?**  
-Three long-read SV callers are used independently and merged into a patient-level master SV callset.
-
-**Question 2 — Is the event technically credible?**  
-Caller-specific read support, FILTER status, caller concordance, size, QC flags and sequencing depth are retained rather than reduced to a single binary decision.
-
-**Question 3 — Does the event affect a biologically relevant gene or region?**  
-The master callset is annotated genome-wide with AnnotSV and supplemented with VEP.
-
-**Question 4 — Is the event rare enough to be compatible with a rare-disease hypothesis?**  
-needLR is used as a supplementary ONT population-frequency source and is matched back to the master SVs.
-
-**Question 5 — Does the affected gene fit the patient's disease biology?**  
-Panel membership, OMIM/GenCC information and offline Monarch/HPO phenotype relationships are combined for prioritization.
-
-**Question 6 — Is there additional long-read evidence that changes the interpretation?**  
-Straglr, TLDR, LongPhase/WhatsHap and modkit provide repeat, mobile-element, phasing and methylation context.
-
-The result is not an automatic pathogenicity classifier. The pipeline produces an auditable evidence framework that helps select variants for expert review, orthogonal confirmation and clinical interpretation.
+is used afterwards to combine additional evidence and generate the final interpretation tables and thesis plots.
 
 ---
 
-## 2. Why whole-genome discovery is used
+## 1. General idea of the project
 
-The structural-variant arm is intentionally genome-wide. Restricting SV discovery to an optic-neuropathy BED would make the analysis blind to:
+Patients with optic neuropathies and other rare neurological disorders can remain genetically unresolved even after exome sequencing or targeted analysis.
 
-- large rearrangements extending outside a panel interval;
-- breakpoints outside coding exons;
-- regulatory or intergenic events;
-- variants affecting genes not yet included in the panel;
-- new candidate genes with a phenotype relationship to the patient.
+One possible reason is that the disease-causing alteration is not a simple SNV or small indel. It could instead be:
 
-The optic-neuropathy panel is therefore applied **after discovery** as an interpretation layer. A variant can be labelled as a panel-gene event or a non-panel candidate without changing whether it remains in the master callset.
+- a deletion or duplication;
+- an inversion;
+- a large insertion;
+- a complex rearrangement;
+- a tandem-repeat expansion;
+- a mobile-element insertion;
+- a variant whose effect depends on the haplotype;
+- or a genomic alteration associated with changes in local methylation.
 
-The LRS design assumes standard ONT whole-genome sequencing. Adaptive sampling is not part of the active workflow.
+Long-read sequencing is useful here because individual reads can span much larger genomic regions and can therefore provide information that is difficult to obtain from short reads alone.
+
+The workflow was therefore designed to answer a series of practical questions:
+
+1. **Is there an SV in the genome that could be relevant for the patient's phenotype?**
+2. **Is the call technically supported by the sequencing data?**
+3. **Do different SV callers identify the same event?**
+4. **Does the SV affect a known optic-neuropathy gene or another biologically interesting gene?**
+5. **Is the variant rare in available population data?**
+6. **Does the affected gene have a phenotype relationship compatible with the patient?**
+7. **Is there any additional evidence from repeats, mobile elements, phasing or methylation?**
+
+The pipeline is not intended to automatically decide whether a variant is pathogenic. Its purpose is to organize the different pieces of evidence so that promising candidates can be reviewed more carefully and, when necessary, confirmed with an independent method.
 
 ---
 
-## 3. Core LRS workflow
+## 2. Why the SV analysis is genome-wide
+
+The optic-neuropathy panel is important for interpretation, but I did not want to use it as a hard restriction during SV calling.
+
+A large rearrangement can start outside a gene and still disrupt it. A breakpoint can fall in an intronic or regulatory region. Also, a patient could carry a variant in a gene that is not yet part of the current panel.
+
+For this reason, the main SV callers work genome-wide.
+
+Afterwards, each variant can be classified as affecting:
+
+```text
+a known optic-neuropathy/panel gene
+or
+a non-panel gene that may still be relevant
+```
+
+This allows the analysis to keep both a diagnostic component and a discovery component.
+
+The current LRS workflow uses standard ONT whole-genome sequencing rather than adaptive sampling.
+
+---
+
+## 3. Overview of the long-read workflow
 
 ```text
 ONT WGS BAM
 │
 ├── mosdepth
-│     └── sequencing-depth QC
+│     └── coverage QC
 │
 ├── Clair3
 │     └── panel SNV/indel calling
 │           └── WhatsHap
-│                 └── small-variant phasing + haplotagged BAM
+│                 └── small-variant phasing
 │
 ├── Sniffles2 ─┐
-├── cuteSV     ├── caller normalization/QC ──> Jasmine ──> MASTER SV VCF
-└── DELLY LR   ┘                                  │
-                                                  ├── caller-support summary
-                                                  ├── AnnotSV genome-wide
-                                                  │      └── panel-derived view
-                                                  ├── VEP supplementary annotation
-                                                  ├── gene extraction
-                                                  ├── Monarch/HPO prioritization
-                                                  └── integrated SV/gene evidence table
+├── cuteSV     ├── filtering/normalization ──> Jasmine ──> MASTER SV VCF
+└── DELLY LR   ┘                                      │
+                                                      ├── caller support
+                                                      ├── AnnotSV
+                                                      ├── VEP
+                                                      ├── gene annotation
+                                                      ├── HPO/Monarch
+                                                      └── integrated SV/gene table
 
-ONT BAM ──> dedicated Sniffles2 v2.6.2 ──> needLR
-                                             └── population-frequency evidence
-                                                 matched back to MASTER SVs
+ONT BAM ──> Sniffles2 2.6.2 ──> needLR
+                                 └── population-frequency information
 
-ONT BAM ──> Straglr ──> tandem-repeat evidence
-ONT BAM ──> TLDR ──> mobile-element insertion evidence
-ONT BAM ──> modkit ──> CpG methylation evidence
-Clair3 + filtered Sniffles2 + BAM ──> LongPhase ──> SNP/SV phasing
+ONT BAM ──> Straglr ──> tandem-repeat expansions
+ONT BAM ──> TLDR ──> mobile-element insertions
+ONT BAM ──> modkit ──> methylation
+Clair3 + Sniffles2 + BAM ──> LongPhase ──> SNP/SV phasing
 
-MASTER integrated table
-        +
-Straglr / TLDR / LongPhase / WhatsHap / methylation
-        ↓
-post-processing interpretation tables
-        ↓
-thesis-quality plots and candidate summaries
+                           ↓
+
+                 final integrated evidence
+                           ↓
+                    thesis plots/tables
 ```
 
 ---
 
-## 4. Step-by-step rationale
+## 4. Quality control and small variants
 
-### 4.1 mosdepth — sequencing-depth QC
+### mosdepth
 
-**Input:** aligned ONT BAM  
-**Output:** per-sample depth distribution and summary files.
+The first step is to check sequencing depth with **mosdepth**.
 
-mosdepth is used before interpretation because low or uneven coverage can explain missed calls or unstable genotype/support estimates. Coverage is not itself evidence that an SV is pathogenic, but it is essential context when comparing samples or investigating why one caller failed to detect a known event.
+This is important because a missed SV is not always a biological negative result. Sometimes a region simply has insufficient coverage.
 
-Main outputs:
+The main outputs are:
 
 ```text
 <sample>/coverage/<sample>.mosdepth.global.dist.txt
 <sample>/coverage/<sample>.mosdepth.summary.txt
 ```
 
-**Question answered:** Was the genome sequenced deeply and uniformly enough for the downstream result to be interpretable?
+These files are later used to compare coverage between samples and to interpret possible false-negative calls.
 
----
+### Clair3
 
-### 4.2 Clair3 — complementary SNV/indel arm
+**Clair3** is used as a complementary small-variant caller.
 
-Clair3 is not the main discovery engine of this project. It is retained as a complementary small-variant layer, currently targeted to the optic-neuropathy BED.
+The main focus of the project is structural variation, so Clair3 is currently targeted to the optic-neuropathy regions rather than being used as the main genome-wide discovery tool.
 
-**Why it is included:** an unresolved patient can still carry relevant SNVs/indels, and small variants are useful for phasing with nearby structural variants.
-
-**Output:** compressed small-variant VCF.
+Its output can still be useful because a patient may carry relevant SNVs or indels, and these variants can also help with phasing.
 
 ```text
 <sample>/snp_clair3/<sample>.vcf.gz
 ```
 
-**Question answered:** Are there small variants in the disease-focused regions that should be considered together with the structural-variant result?
+### WhatsHap
 
----
-
-### 4.3 WhatsHap — small-variant phasing and haplotagging
-
-WhatsHap phases the Clair3 calls using the patient's long reads and creates a haplotagged BAM.
-
-**Why it is included:** phase can determine whether multiple variants occur on the same or different haplotypes and can support later locus-specific interpretation.
-
-Main outputs:
+**WhatsHap** phases the small variants using the long reads and produces both a phased VCF and a haplotagged BAM.
 
 ```text
 <sample>/phasing/<sample>.phased.vcf.gz
 <sample>/phasing/<sample>.phased.bam
 ```
 
-**Question answered:** Which small variants can be assigned to the same haplotype?
+This becomes useful when I want to understand whether different variants are on the same or on different haplotypes.
 
 ---
 
-## 5. Genome-wide structural-variant discovery
+## 5. Structural-variant calling
 
-No single SV caller is treated as complete. Long-read callers differ in how they cluster read signatures, represent breakpoints and apply internal QC. The workflow therefore uses three complementary callers.
+One of the main choices in this pipeline was not to rely on a single SV caller.
 
-### 5.1 Sniffles2
+Different callers use different algorithms and can behave differently for the same event, especially for large or complex variants. Using several callers allows me to compare their results instead of assuming that one caller is always correct.
 
-Sniffles2 is a primary long-read SV caller and reports deletions, duplications, insertions, inversions and breakend-type events from long-read alignments.
-
-The main discovery environment is kept separate from the needLR-compatible Sniffles environment. The repository currently pins the main discovery branch to Sniffles2 2.8.1.
-
-The workflow can optionally expose QC-failed Sniffles candidates with `--qc-output-all` when the controlled `COV_VAR` rescue is enabled. Importantly, this does **not** mean that every QC-failed candidate is accepted.
-
-Current rescue logic:
+The three long-read callers are:
 
 ```text
-Sniffles FILTER = COV_VAR
-AND SVTYPE in {DEL, DUP}
-AND read support >= 2
-AND |SVLEN| >= 50 kb
-        ↓
-retain for downstream review
-        ↓
-mark EVIDENCE_FLAGS = RESCUED_COV_VAR
+Sniffles2
+cuteSV
+DELLY
 ```
 
-Other Sniffles QC failures remain excluded.
+### Sniffles2
 
-**Why this exists:** validation against known large deletions showed that caller-version-specific coverage QC can remove a biologically real large SV even when the breakpoint and supporting reads are present. The rescue is therefore narrow and auditable rather than a global `--no-qc` policy.
+Sniffles2 is one of the main callers used for long-read SV discovery.
 
----
+The main discovery environment is currently kept separate from the Sniffles version used for needLR.
 
-### 5.2 cuteSV
-
-cuteSV provides an independent long-read SV signature/clustering approach.
-
-**Why it is included:** agreement between callers increases technical confidence, while disagreement is also informative because different algorithms can detect different event representations.
-
-The ONT-oriented clustering parameters are defined explicitly in the Snakefile. Parameters for very large deletions should be benchmarked against known-positive samples rather than assumed to be optimal for every dataset.
-
-**Question answered:** Does an independent long-read clustering strategy recover the same event, and if not, where does caller sensitivity differ?
-
----
-
-### 5.3 DELLY long-read mode
-
-DELLY is run in ONT long-read mode.
-
-**Why it is included:** it provides a third, algorithmically distinct source of breakpoint/SV evidence. A variant that is missed by Sniffles2 or cuteSV may still be retained by DELLY, and vice versa.
-
-**Question answered:** Is the event supported by an additional SV-calling model?
-
----
-
-## 6. Caller normalization and pre-Jasmine evidence filtering
-
-The raw caller VCFs use different INFO/FORMAT fields. `parse_sv_caller_vcf.py` converts them into a common caller-evidence schema containing coordinates, SV type, size, FILTER status and normalized support.
-
-The normalized evidence is then processed by `filter_sv_evidence.py`.
-
-Current hard filters include:
+For the discovery branch, the repository currently uses:
 
 ```text
-minimum caller support = 2
-minimum |SVLEN| = 50 bp
-no global upper SV-length cutoff
+Sniffles2 2.8.1
 ```
 
-Additional information such as imprecision, low genotype quality or blacklist overlap can be retained as flags rather than automatically deleting the record.
+During testing with known positive samples, I observed that some large deletions can be detected by Sniffles but removed by its internal coverage-based QC.
 
-The filtering script streams rows instead of loading the complete genome-wide table into memory, which is important when Sniffles `--qc-output-all` creates large evidence files.
+For this reason, the workflow contains a controlled rescue for large calls labelled:
 
-**Why this step is separate from the caller:** the goal is to make the inclusion criteria visible and comparable across callers before merging.
+```text
+COV_VAR
+```
 
-**Question answered:** Which caller records have enough basic evidence to be presented to the cross-caller merging step?
+The rescue is intentionally conservative:
+
+```text
+FILTER = COV_VAR
+SVTYPE = DEL or DUP
+support >= 2 reads
+|SVLEN| >= 50 kb
+```
+
+If these conditions are satisfied, the call can continue in the pipeline but is explicitly marked:
+
+```text
+RESCUED_COV_VAR
+```
+
+This keeps the decision visible instead of silently treating the call as a normal PASS event.
+
+Other Sniffles QC failures are still excluded.
+
+### cuteSV
+
+cuteSV is used as a second independent long-read caller.
+
+Its clustering approach is different from Sniffles2, so it can provide useful confirmation of an event or reveal differences in caller sensitivity.
+
+I am using known-positive samples to test and tune its behaviour, particularly for very large deletions, because default caller parameters are not necessarily optimal for every dataset.
+
+The point is not to force cuteSV to reproduce Sniffles2. Instead, the comparison helps show which events are consistently recovered and which are caller-dependent.
+
+### DELLY
+
+DELLY is used in long-read ONT mode as the third caller.
+
+It gives another independent representation of the SV evidence.
+
+This is particularly useful because a real event can sometimes be missed by one caller but detected by another. In the known-positive samples, this has already been useful for understanding differences between the callers.
 
 ---
 
-## 7. Jasmine — the master patient SV universe
+## 6. Normalizing and filtering the caller results
 
-The filtered caller VCFs are merged per patient with Jasmine using a fixed order:
+Sniffles2, cuteSV and DELLY do not report their evidence in exactly the same format.
+
+For this reason, their VCFs are first converted into a common evidence table using:
+
+```text
+scripts/parse_sv_caller_vcf.py
+```
+
+The table contains information such as:
+
+```text
+SV ID
+chromosome
+start/end
+SV type
+SV length
+FILTER status
+read support
+genotype-related information
+```
+
+The normalized results are then processed by:
+
+```text
+scripts/filter_sv_evidence.py
+```
+
+The current basic thresholds are:
+
+```text
+minimum read support = 2
+minimum SV size = 50 bp
+no global maximum SV size
+```
+
+I chose not to apply an upper size cutoff because large rearrangements are actually one of the variant classes I am interested in.
+
+Some additional features, such as imprecision or low genotype quality, can be kept as flags instead of automatically removing the event.
+
+The filtering script also keeps the decisions visible in the output so that it is possible to understand why a call was retained or rejected.
+
+---
+
+## 7. Jasmine and the master SV callset
+
+After caller-specific filtering, the three VCFs are merged with **Jasmine**.
+
+The input order is fixed:
 
 ```text
 1. Sniffles2
@@ -247,9 +291,9 @@ The filtered caller VCFs are merged per patient with Jasmine using a fixed order
 3. DELLY
 ```
 
-This order defines the meaning of Jasmine `SUPP_VEC`.
+This is important because Jasmine's `SUPP_VEC` is interpreted according to this order.
 
-Examples:
+For example:
 
 ```text
 100 = Sniffles2 only
@@ -259,263 +303,238 @@ Examples:
 111 = all three callers
 ```
 
-The workflow uses `--allow_intrasample` because all three inputs are different caller representations of the **same biological sample**.
-
-The complete sorted/indexed Jasmine VCF is the **source-of-truth master SV universe**:
+The complete Jasmine VCF is considered the **master SV callset for each patient**:
 
 ```text
 <sample>/sv/merged/<sample>_merged_SV.vcf.gz
 ```
 
-A second VCF containing variants supported by at least the configured number of callers is created as a companion high-confidence evidence set:
+I do not remove an SV simply because it was detected by only one caller.
+
+A single-caller event can still be real, especially when dealing with difficult genomic regions or large rearrangements. Caller concordance is therefore treated as one piece of technical evidence rather than as a strict definition of truth.
+
+A separate multi-caller VCF is also produced:
 
 ```text
 <sample>/sv/merged/<sample>_merged_SV.high_confidence.vcf.gz
 ```
 
-This companion file does **not** replace the complete master callset. A clinically relevant single-caller SV is not automatically false.
-
-**Question answered:** Which caller representations likely describe the same biological event, and how much cross-caller support does each master SV have?
+This is useful as a higher-confidence companion set, but it does not replace the complete Jasmine VCF.
 
 ---
 
-## 8. Caller-support summary
+## 8. Population frequency with needLR
 
-`summarize_sv_caller_support.py` decodes Jasmine provenance and generates:
+For a rare disease project, one of the most useful questions is whether a candidate SV is common in the population.
 
-```text
-<sample>/sv/merged/<sample>_caller_support_summary.tsv
-```
+For this I use **needLR**.
 
-This table records which callers support each master SV and provides the basis for caller-concordance plots.
+needLR is kept as a separate branch because its ONT backend was generated using a Sniffles2-compatible representation.
 
-**Interpretation:** caller count is technical evidence, not a pathogenicity score.
-
----
-
-## 9. needLR — supplementary population-frequency evidence
-
-needLR is intentionally kept outside the Jasmine master-calling chain.
-
-A dedicated Sniffles2 2.6.2 query VCF is created because the needLR ONT backend was built from a Sniffles2-compatible representation. The cross-caller Jasmine VCF is therefore **not** used as the direct needLR query.
+The workflow therefore uses:
 
 ```text
 ONT BAM
-  ↓
+   ↓
 Sniffles2 2.6.2
-  ↓
+   ↓
 needLR
-  ↓
-population-frequency evidence
-  ↓
-coordinate/type matching back to Jasmine master SV
 ```
 
-Main outputs:
+The main results are:
 
 ```text
 <sample>/sv/needlr/<sample>_needLR_RESULTS.tsv
 <sample>/sv/needlr/<sample>_needLR_RESULTS.vcf.gz
 ```
 
-Important rules:
+The needLR result is then matched back to the Jasmine master variants by compatible SV type and genomic coordinates.
 
-- needLR is a supplementary annotation source, not a gatekeeper.
-- a missing needLR match must **not** be interpreted as allele frequency zero.
-- BNDs and SVs >=10 Mb remain in the master analysis even when they are not evaluable by needLR.
-- needLR evidence is matched by compatible SV type and genomic coordinates, not merely because two records affect the same gene.
+This is important because the Jasmine SV and the needLR query SV are not necessarily represented with exactly the same ID or breakpoint.
 
-**Question answered:** Is a compatible representation of this SV observed in the available ONT population reference, and at what frequency?
+A missing needLR match is **not automatically considered AF = 0**.
+
+It simply means that the variant could not be matched/evaluated in that branch.
+
+Also, variants that are outside needLR's supported range, such as BNDs or very large SVs, are still kept in the main analysis.
 
 ---
 
-## 10. AnnotSV — primary structural-variant annotation
+## 9. Annotating the structural variants
 
-AnnotSV consumes the complete Jasmine master VCF directly.
+### AnnotSV
 
-It provides gene overlap and clinically useful SV annotations and is run genome-wide first. A panel-only view is then derived from the full annotation.
+**AnnotSV** is the main annotation tool used for the structural variants.
 
-Main outputs:
+It is run directly on the complete Jasmine VCF.
+
+The genome-wide output is:
 
 ```text
 <sample>/sv/annotsv/<sample>_merged_SV.annotsv.tsv
+```
+
+A panel-only view is then extracted:
+
+```text
 <sample>/sv/annotsv/<sample>_merged_SV.annotsv.panel_only.tsv
 ```
 
-**Why this order matters:** panel filtering before annotation would defeat the genome-wide discovery hypothesis.
+This order is important.
 
-**Question answered:** Which genes and clinically relevant genomic features are affected by each master SV?
+I first want to know what the SV affects genome-wide. Only afterwards do I ask whether one of the affected genes belongs to the optic-neuropathy panel.
 
----
+### VEP
 
-## 11. VEP — supplementary consequence annotation
-
-VEP is run on the same complete Jasmine master VCF.
-
-It is supplementary rather than the primary SV annotation source.
-
-Main outputs:
+**VEP** is also run on the Jasmine VCF as a supplementary annotation layer.
 
 ```text
 <sample>/sv/vep/<sample>_SV_VEP.txt
-<sample>/sv/vep/<sample>_SV_VEP.panel_only.txt
 ```
 
-**Question answered:** What additional transcript/consequence context can be attached to the master SV representation?
+In this pipeline, AnnotSV remains the main structural-variant annotation source, while VEP provides additional transcript/consequence information.
 
 ---
 
-## 12. Genome-wide gene and phenotype discovery
+## 10. From a list of genes to biologically relevant candidates
 
-After AnnotSV, all genes affected by master SVs are extracted.
+Once the SVs are annotated, the pipeline extracts all affected genes.
 
-The pipeline creates both:
+Two useful lists are produced:
 
 ```text
 <sample>_SV_genes.txt
 <sample>_nonpanel_genes.txt
 ```
 
-This is intentional. The panel helps recognize known optic-neuropathy genes, but non-panel genes remain available for discovery.
+The second file is important because I do not want the analysis to stop at the current panel.
 
-The offline Monarch Knowledge Graph/HPO branch then asks whether affected genes are connected to the disease phenotype anchors.
+The affected genes are then compared with phenotype information from an offline Monarch/HPO knowledge graph.
 
-Outputs include:
+This produces:
 
 ```text
 <sample>_human_gene_phenotypes.tsv
 <sample>_ranked_candidates.tsv
 ```
 
-The ranking combines biological context such as panel membership and phenotype relationships to prioritize review.
+The aim is to prioritize genes that make biological sense for the phenotype.
 
-**Important:** `CANDIDATE_CLASS` and phenotype scores are prioritization aids. They are not automatic clinical classifications and should not be treated as substitutes for variant interpretation guidelines.
+For example, a non-panel gene should not automatically be ignored if it has a strong relationship with mitochondrial function, retinal ganglion-cell biology, neurodegeneration or relevant HPO terms.
 
-**Question answered:** Which affected genes are most biologically compatible with the phenotype, including genes outside the original panel?
+The ranking is therefore a way to decide **what deserves closer inspection**, not an automatic pathogenicity classification.
 
 ---
 
-## 13. Integrated SV/gene evidence table
+## 11. Main integrated output
 
-The main interpretation product of the core LRS workflow is:
+The most important table produced by the core LRS workflow is:
 
 ```text
 <sample>/gene_discovery/<sample>_integrated_SV_gene_analysis.tsv
 ```
 
-The table is defined from the Jasmine master callset. One row is written per **(master SV, overlapping gene)**.
+Each row represents a master SV together with one of the genes it overlaps.
 
-It integrates:
-
-- master SV coordinates, type and length;
-- Jasmine caller provenance;
-- caller count and `SUPP_VEC`;
-- normalized read-support evidence;
-- caller evidence/QC flags;
-- affected genes;
-- AnnotSV matching and annotation;
-- needLR allele-frequency evidence and evaluation status;
-- OMIM and GenCC information where available;
-- optic-neuropathy panel status;
-- phenotype score;
-- candidate-priority class;
-- retained master VCF INFO fields.
-
-Representative columns include:
+The table combines information from the different parts of the pipeline, including:
 
 ```text
 SV_ID
-CHROM / START / END
-CHR2 / POS2
-SVTYPE / SVLEN
-CALLERS / CALLER_COUNT
+chromosome/start/end
+SVTYPE
+SVLEN
+which callers detected the event
+caller count
 SUPP / SUPP_VEC
-CALLER_READ_SUPPORT
-CALLER_EVIDENCE_FLAGS
-GENES
-NEEDLR_AF / NEEDLR_STATUS
-OMIM / GENCC
-ANNotsv_Classification
-PANEL_STATUS
-PHENOTYPE_SCORE
-CANDIDATE_CLASS
+read support
+caller QC flags
+affected gene
+AnnotSV information
+needLR population frequency/status
+OMIM
+GenCC
+panel status
+phenotype score
+candidate class
 ```
 
-This table is the main bridge between **variant discovery** and **biological interpretation**.
+This is the table I use to move from:
+
+```text
+"there are thousands of SVs in this genome"
+```
+
+to:
+
+```text
+"these are the events that are worth investigating in more detail"
+```
 
 ---
 
-## 14. Orthogonal long-read evidence
+## 12. Additional long-read evidence
 
-The following branches are intentionally not counted as additional Jasmine SV callers. They answer different biological questions.
+Not every interesting genomic event is best represented as a classical deletion, duplication, insertion or inversion.
 
-### 14.1 Straglr — tandem-repeat expansions
+For this reason, I also keep several independent analysis branches.
 
-Straglr searches for tandem-repeat expansions and the results are gene-annotated.
+### Straglr
 
-Outputs:
+**Straglr** is used to investigate tandem-repeat expansions.
 
 ```text
-<sample>/sv/straglr/<sample>_straglr.vcf
-<sample>/sv/straglr/<sample>_straglr.tsv
 <sample>/sv/straglr/<sample>_straglr.annotated.tsv
 ```
 
-**Question answered:** Is there a repeat-expansion mechanism that a conventional breakpoint-SV callset may not represent adequately?
+This is useful because repeat expansions can be disease-causing but may not appear cleanly in the main breakpoint-based SV callset.
 
----
+### TLDR
 
-### 14.2 TLDR — mobile-element insertions
-
-TLDR provides an independent mobile-element insertion analysis.
-
-Output:
+**TLDR** is used for mobile-element insertions.
 
 ```text
 <sample>/mei/tldr/<sample>.tldr.table.txt
 ```
 
-**Question answered:** Is a mobile-element insertion present at or near a candidate locus?
+This provides another type of variant evidence that is not completely covered by the three main SV callers.
 
----
+### LongPhase
 
-### 14.3 LongPhase — SNP/SV phasing
-
-LongPhase combines the same-patient small variants, filtered Sniffles SVs, BAM and reference.
-
-Output:
+**LongPhase** uses the small variants, filtered Sniffles SVs and long-read BAM to provide SNP/SV phasing.
 
 ```text
 <sample>/phasing_longphase/<sample>.longphase.vcf.gz
 ```
 
-**Question answered:** Can a candidate SV be placed in haplotypic context with nearby sequence variants?
+This can help place a structural variant in the same haplotypic context as nearby variants.
 
----
+### modkit
 
-### 14.4 modkit — methylation context
-
-modkit generates CpG methylation evidence from modification-aware ONT BAMs, retaining 5mC and 5hmC as separate modification classes.
-
-Main output:
+**modkit** is used to obtain CpG methylation information from modification-aware ONT data.
 
 ```text
 <sample>/methylation/<sample>.cpg.bedmethyl.gz
 ```
 
-Methylation is treated as **context**, not as proof that an SV is causal.
+I consider methylation as additional biological context rather than direct confirmation that an SV is pathogenic.
 
-**Question answered:** Does a candidate region show an informative local methylation pattern that may support follow-up biological interpretation?
+It can become particularly useful when a candidate region has already been identified and I want to look at the local epigenetic pattern.
 
 ---
 
-## 15. Post-processing: integrating orthogonal and multimodal context
+## 13. Post-processing and multimodal integration
 
-Run `Snakefile_LRS_postprocess` only after the core LRS workflow has produced its integrated table.
+The main calling workflow and the interpretation/plotting workflow are separated on purpose.
 
-The post-processing workflow does not recall variants. It preserves the Jasmine master SV universe and attaches additional evidence.
+After the core LRS analysis is complete, I run:
 
-It creates:
+```text
+Snakefile_LRS_postprocess
+```
+
+This avoids rerunning the expensive variant-calling steps every time I change a plot or add a new interpretation layer.
+
+The post-processing workflow creates:
 
 ```text
 <sample>_integrated_SV_gene_with_orthogonal_evidence.tsv
@@ -524,92 +543,116 @@ It creates:
 <sample>_gene_multimodal_evidence_summary.tsv
 ```
 
-### Integrated orthogonal-evidence table
+The idea is to keep the Jasmine SV callset as the backbone and then add other information around it.
 
-Adds coordinate-aware Straglr, TLDR and optional LongPhase evidence to master SVs.
+At the same time, Straglr or TLDR findings that do not match a Jasmine SV are not simply thrown away. They are kept separately as independent findings.
 
-### Independent orthogonal findings
-
-Retains relevant Straglr/TLDR findings that do **not** have a compatible Jasmine counterpart. This prevents biologically interesting repeat or MEI findings from disappearing simply because they are not represented as a conventional master SV.
-
-### Multimodal-context table
-
-Adds nearby WhatsHap-phased small variants and local methylation context. These layers remain distinct from SV caller support.
-
-### Gene-level multimodal summary
-
-Collapses evidence at the gene level for candidate review without double-counting the same master SV simply because it overlaps more than one annotation row.
+This is useful because a repeat expansion or mobile-element insertion may be biologically important even if it is not represented by the main SV callers in exactly the same way.
 
 ---
 
-## 16. What information is available at the end?
+## 14. What I expect to obtain at the end
 
-The pipeline is designed so that the final review can answer, for each candidate:
+For each potentially interesting event, I want to be able to answer questions such as:
 
-| Evidence layer | Final information |
+| Question | Information available |
 | --- | --- |
-| Technical QC | sequencing depth and coverage distribution |
-| Master SV | chromosome, breakpoints, SV type, SV length |
-| Caller provenance | which of Sniffles2/cuteSV/DELLY detected the event |
-| Read support | normalized per-caller supporting evidence |
-| Caller QC | PASS/FAIL-derived flags and controlled rescue annotations |
-| Cross-caller confidence | `SUPP`, `SUPP_VEC`, caller count |
-| Gene effect | overlapping/affected genes from AnnotSV |
-| Known-disease context | panel membership, OMIM, GenCC |
-| Population evidence | needLR AF/status when evaluable |
-| Phenotype relevance | Monarch/HPO relationship and phenotype score |
-| Candidate priority | discovery-oriented candidate class |
-| Repeat evidence | Straglr repeat-expansion findings |
-| MEI evidence | TLDR mobile-element findings |
-| Haplotype context | WhatsHap/LongPhase phasing |
-| Epigenetic context | modkit methylation information |
-| Final review level | SV-level, SV-gene-level and gene-level integrated tables |
+| Was the sample sufficiently covered? | mosdepth |
+| What kind of SV is it? | SVTYPE, SVLEN, breakpoints |
+| Which caller found it? | Sniffles2 / cuteSV / DELLY |
+| How many callers agree? | CALLER_COUNT, SUPP, SUPP_VEC |
+| Is there enough read support? | normalized caller support |
+| Did the caller flag any QC issue? | evidence flags |
+| Which gene is affected? | AnnotSV |
+| Is it a known optic-neuropathy gene? | PANEL_STATUS |
+| Is it associated with disease? | OMIM / GenCC |
+| Is it rare in ONT population data? | needLR |
+| Does the gene fit the phenotype? | Monarch/HPO |
+| Is there repeat-expansion evidence? | Straglr |
+| Is there an MEI? | TLDR |
+| Can the event be phased? | WhatsHap / LongPhase |
+| Is there useful methylation context? | modkit |
 
-The intended end point is therefore not simply “a VCF.” It is a traceable chain:
+So the final product is not only a VCF.
+
+The analysis moves through several levels:
 
 ```text
-raw long-read evidence
-        ↓
-caller-specific SV hypotheses
-        ↓
-transparent QC
-        ↓
-patient-level master SV
-        ↓
-gene + clinical annotation
-        ↓
-population-frequency evidence
-        ↓
-phenotype prioritization
-        ↓
-repeat / MEI / phasing / methylation context
-        ↓
-candidate variants for expert review and confirmation
+sequencing data
+      ↓
+SV calls
+      ↓
+caller QC
+      ↓
+merged patient SVs
+      ↓
+gene annotation
+      ↓
+population frequency
+      ↓
+phenotype relevance
+      ↓
+orthogonal evidence
+      ↓
+candidate variants for manual review
 ```
 
 ---
 
-## 17. Source-of-truth and interpretation rules
+## 15. Important interpretation choices
 
-These rules are central to the pipeline design.
+There are a few rules I try to keep consistent throughout the workflow.
 
-1. The complete Jasmine VCF is the master LRS structural-variant universe.
-2. A variant is not removed merely because needLR, VEP or another annotation layer cannot evaluate it.
-3. Multi-caller support increases technical evidence but does not define pathogenicity.
-4. Single-caller variants remain available for interpretation.
-5. The high-confidence multi-caller VCF is a companion set, not the master callset.
-6. Panel membership is an annotation, not a genome-wide discovery restriction.
-7. needLR absence is not equivalent to allele frequency zero.
-8. BNDs and very large SVs remain in the master analysis even if a supplementary tool has a restricted evaluation range.
-9. Straglr, TLDR, phasing and methylation are orthogonal/contextual layers and do not inflate Jasmine caller count.
-10. Candidate ranking is prioritization, not an automatic diagnostic classification.
-11. Known-positive samples should be used to benchmark sensitivity before applying parameter changes to the full cohort.
+- The complete Jasmine VCF is the main LRS SV callset.
+- Multi-caller support is useful, but a single-caller call is not automatically discarded.
+- needLR is used as population evidence, not as a filter that defines which SVs exist.
+- No needLR match does not mean AF = 0.
+- The optic-neuropathy panel is used for interpretation, not for restricting genome-wide SV discovery.
+- Straglr, TLDR, phasing and methylation are independent evidence layers and are not counted as additional Jasmine callers.
+- Candidate ranking helps prioritize variants but does not replace clinical interpretation.
+- Large SVs are intentionally retained rather than removed by a global upper-size filter.
+- Known-positive samples are used to test whether changes in caller versions or parameters improve or reduce sensitivity.
 
 ---
 
-## 18. Running the active LRS workflow
+## 16. Validation with known-positive samples
 
-From the LRS workflow directory:
+Before applying the workflow to unresolved patients, I am testing it on samples in which a structural variant is already known.
+
+This is especially useful for large deletions because it allows me to check the complete path:
+
+```text
+known biological SV
+        ↓
+raw caller
+        ↓
+caller QC
+        ↓
+our filtering
+        ↓
+Jasmine
+        ↓
+AnnotSV
+        ↓
+integrated table
+```
+
+For each positive sample, I check:
+
+1. whether Sniffles2 detects the event;
+2. whether cuteSV detects it;
+3. whether DELLY detects it;
+4. whether internal caller QC removes it;
+5. whether our evidence filter retains it;
+6. whether Jasmine merges compatible calls correctly;
+7. whether the expected gene is annotated;
+8. whether the event is still present in the final integrated table.
+
+This validation has already shown why it is important not to treat one caller or one software version as absolute truth.
+
+---
+
+## 17. Running the LRS workflow
 
 ```bash
 cd /DATA/casadei7/tools/SV-PIPELINE-main/snakemake_pipelines/lrs
@@ -624,7 +667,7 @@ snakemake \
   --printshellcmds
 ```
 
-Dry run first:
+I normally check the DAG first with a dry run:
 
 ```bash
 snakemake \
@@ -637,13 +680,19 @@ snakemake \
   --printshellcmds
 ```
 
-The output root is controlled by `path:` in `config_lrs.yaml`.
+The output directory is controlled by:
+
+```yaml
+path: ...
+```
+
+inside `config_lrs.yaml`.
 
 ---
 
-## 19. Running post-processing
+## 18. Running the post-processing workflow
 
-Build the downstream interpretation tables:
+After the core workflow is complete:
 
 ```bash
 snakemake \
@@ -654,7 +703,7 @@ snakemake \
   --cores 8
 ```
 
-Generate all applicable thesis plots explicitly:
+To generate all available thesis plots:
 
 ```bash
 snakemake \
@@ -666,72 +715,56 @@ snakemake \
   all_thesis_plots
 ```
 
-Plotting is intentionally separated from biological calling so figures can be regenerated without rerunning the expensive WGS analysis.
+The plotting step is separate from variant calling so that figures can be regenerated without rerunning the complete WGS pipeline.
 
 ---
 
-## 20. Thesis plotting layer
+## 19. Thesis plots
 
-The plotting layer generates publication/thesis-oriented PDF, SVG and high-resolution PNG outputs plus source TSV summaries where applicable.
-
-Current plot groups include:
+The plotting scripts are organized by biological question:
 
 ```text
-01_qc/
-02_caller_concordance/
-03_sv_landscape/
-04_population_frequency/
-05_candidate_prioritization/
-06_phenotype/
-07_orthogonal/
-    ├── straglr/
-    └── tldr/
-08_phasing/
-09_methylation/
-10_integrated_evidence/
+<sample>/plots/
+├── 01_qc/
+├── 02_caller_concordance/
+├── 03_sv_landscape/
+├── 04_population_frequency/
+├── 05_candidate_prioritization/
+├── 06_phenotype/
+├── 07_orthogonal/
+│   ├── straglr/
+│   └── tldr/
+├── 08_phasing/
+├── 09_methylation/
+└── 10_integrated_evidence/
 ```
 
-These figures are intended to answer different questions rather than repeat the same information:
+The aim is to generate figures that help answer different parts of the analysis:
 
-- coverage/QC: is the sample technically comparable?
-- caller concordance: which calls are shared or caller-specific?
-- SV landscape: what types/sizes/chromosomes dominate the callset?
-- population frequency: which evaluable SVs are rare/common?
-- candidate prioritization: which affected genes deserve review?
-- HPO heatmap: which genes have phenotype relationships?
-- repeat/MEI plots: are there orthogonal mechanisms outside the breakpoint-SV model?
-- phasing: can candidate alleles be placed on haplotypes?
-- methylation: is there candidate-region epigenetic context?
-- integrated evidence matrix: how many independent evidence layers support each candidate?
+- how good the sequencing data are;
+- how much the callers agree;
+- which SV types and sizes are present;
+- which variants are rare;
+- which genes are the most interesting;
+- how genes relate to the phenotype;
+- whether there are repeat or MEI findings;
+- whether candidate variants can be phased;
+- whether a candidate region has useful methylation information;
+- and how the different evidence layers come together for the final candidates.
 
-See `plots/README.md` for individual plotting commands.
+More details are available in:
 
----
-
-## 21. Recommended validation strategy
-
-Before scaling the workflow to an unresolved cohort, validate it against samples with known structural variants.
-
-Recommended checks:
-
-1. confirm the known event is visible in the raw caller outputs;
-2. verify whether it passes or fails each caller's internal QC;
-3. inspect the normalized caller evidence and filtering decision;
-4. verify that Jasmine merges compatible caller representations correctly;
-5. inspect `SUPP_VEC`, `IDLIST` and caller provenance;
-6. confirm AnnotSV maps the master event to the expected gene(s);
-7. verify needLR status without treating an unmatched call as AF=0;
-8. confirm the event survives into the integrated SV/gene table;
-9. inspect the orthogonal/context layers;
-10. only then apply the same settings to unresolved cases.
-
-This validation strategy is particularly important for very large deletions because caller versions and default size/QC parameters can materially change sensitivity.
+```text
+plots/README.md
+```
 
 ---
 
-## 22. Short-read workflow
+## 20. Short-read workflow
 
-The repository also contains a parallel short-read WGS workflow:
+The repository also contains a parallel short-read WGS workflow.
+
+The idea is similar, but the tools are adapted to Illumina data:
 
 ```text
 Illumina BAM
@@ -740,53 +773,33 @@ Illumina BAM
 ├── DeepVariant -> WhatsHap
 │
 ├── Manta ─┐
-└── DELLY ─┴── caller evidence filter -> SURVIVOR -> MASTER SRS SV VCF
-                                                   │
-                                                   ├── caller-support summary
-                                                   ├── AnnotSV
-                                                   ├── VEP
-                                                   ├── Monarch/HPO
-                                                   └── integrated SV/gene table
+└── DELLY ─┴── filtering -> SURVIVOR -> MASTER SRS SV VCF
+                                              │
+                                              ├── AnnotSV
+                                              ├── VEP
+                                              ├── caller support
+                                              ├── Monarch/HPO
+                                              └── integrated table
 
 BAM -> ExpansionHunter
 BAM -> MELTv2
 ```
 
-The same conceptual rules are retained:
+The SRS workflow can later be compared with the LRS results to investigate which classes of variants are better recovered with long-read sequencing.
 
-- the complete merged VCF is the master SRS SV universe;
-- multi-caller support is evidence, not an exclusion requirement;
-- the panel remains a downstream interpretation layer;
-- ExpansionHunter and MELT are independent orthogonal branches;
-- needLR is not applied to SRS;
-- the shared integrated-table schema reports needLR as not applicable for SRS.
-
-Run with:
-
-```bash
-cd /DATA/casadei7/tools/SV-PIPELINE-main/snakemake_pipelines/srs
-
-snakemake \
-  --snakefile Snakefile_SRS \
-  --use-conda \
-  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 32 \
-  --printshellcmds
-```
-
-The SRS branch provides a framework for later LRS-vs-SRS comparison, including assessment of which SV classes, breakpoint representations or difficult genomic regions benefit most from long-read sequencing.
+This comparison is particularly interesting for large SVs, difficult breakpoints, repetitive regions and other genomic events that are challenging for short reads.
 
 ---
 
-## 23. Repository structure
+## 21. Repository structure
 
 ```text
 SV-PIPELINE/
 ├── envs/                       conda environments
-├── PANEL_OA/                   optic-neuropathy panel resources
-├── reference/                  local reference/annotation resources
-├── scripts/                    parsing, filtering and integration scripts
-├── plots/                      thesis/post-processing visualization layer
+├── PANEL_OA/                   optic-neuropathy panel files
+├── reference/                  reference and annotation resources
+├── scripts/                    parsing/filtering/integration scripts
+├── plots/                      plotting and post-processing scripts
 └── snakemake_pipelines/
     ├── lrs/
     │   ├── Snakefile_LRS_update
@@ -798,27 +811,37 @@ SV-PIPELINE/
 
 ---
 
-## 24. Practical interpretation of a final candidate
+## 22. How I interpret a final candidate
 
-A strong candidate does not have to satisfy every layer, but the final tables allow a reviewer to ask:
+The final question is not simply:
 
 ```text
-Is the SV technically supported?
-        ↓
-Was it detected by one or several callers?
-        ↓
-Does it affect a known optic-neuropathy gene?
-        ├── yes -> established-disease interpretation
-        └── no  -> genome-wide candidate discovery remains possible
-        ↓
-Is the event rare in the available ONT population reference?
-        ↓
-Does the affected gene fit the phenotype/HPO profile?
-        ↓
-Is there repeat, MEI, phase or methylation context?
-        ↓
-Does the total evidence justify manual review,
-orthogonal validation and clinical interpretation?
+"Was this variant called?"
 ```
 
-That is the central purpose of the pipeline: to move from a large genome-wide SV callset to a transparent, biologically informed shortlist without discarding potentially relevant variants simply because one caller or one annotation resource cannot evaluate them.
+Instead, I try to follow the complete evidence:
+
+```text
+Is the SV supported by the reads?
+        ↓
+Which callers detected it?
+        ↓
+Does it affect a relevant gene?
+        ↓
+Is the gene already known for optic neuropathy?
+        │
+        ├── yes -> evaluate in the known disease context
+        │
+        └── no  -> keep it as a possible genome-wide candidate
+        ↓
+Is the variant rare?
+        ↓
+Does the gene fit the phenotype?
+        ↓
+Is there useful repeat, MEI, phasing or methylation information?
+        ↓
+Is the total evidence strong enough to justify
+manual review and orthogonal confirmation?
+```
+
+This is the main purpose of the pipeline: not simply to generate more variants, but to make the large amount of information from whole-genome long-read sequencing easier to interpret in a rare-disease context.
