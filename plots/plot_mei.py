@@ -117,7 +117,7 @@ def main():
     fig.text(
         0.5,
         0.008,
-        f"Main figure uses {status}. TLDR is an orthogonal MEI layer; Jasmine overlap is established by breakpoint-aware matching.",
+        f"Main figure uses {status}. TLDR provides additional mobile-element insertion evidence; overlap with merged SVs is assessed by breakpoint proximity.",
         ha="center",
         fontsize=9,
     )
