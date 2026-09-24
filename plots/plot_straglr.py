@@ -17,7 +17,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Plot Straglr locus-level repeat evidence.")
     p.add_argument("--input", required=True, help="*_straglr.annotated.tsv")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=25)
+    p.add_argument("--top-n", type=int, default=20)
     p.add_argument("--title", default="Tandem-repeat expansion evidence")
     return p.parse_args()
 
@@ -65,13 +65,13 @@ def main():
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work.to_csv(prefix.with_name(prefix.name + "_top_loci.tsv"), sep="\t", index=False)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12.5, max(6.2, 0.30 * len(work) + 2.0)))
+    fig, axes = plt.subplots(1, 2, figsize=(14.0, max(7.0, 0.36 * len(work) + 2.2)), gridspec_kw={"width_ratios": [1.25, 1.0]})
     ax1, ax2 = axes
     y = np.arange(len(work))
 
     ax1.barh(y, work["_support"], color="#0072B2")
     ax1.set_yticks(y)
-    ax1.set_yticklabels(work["_label"], fontsize=7.5)
+    ax1.set_yticklabels(work["_label"], fontsize=9)
     ax1.set_xlabel("Supporting reads")
     ax1.set_ylabel("Repeat locus")
     style_axis(ax1, "x")
@@ -81,18 +81,25 @@ def main():
     xlabel = "Maximum copy number" if use_cn else "Maximum repeat size"
     if x.notna().any():
         ax2.scatter(x, work["_support"], s=45 + work["_coverage"].fillna(0).clip(lower=0) * 2, color="#E69F00", edgecolor="white", linewidth=0.5)
-        for _, row in work.iterrows():
+        label_rows = work.sort_values(["_support", "_cn"], ascending=False).head(8)
+        for _, row in label_rows.iterrows():
             xpos = row["_cn"] if use_cn else row["_size"]
             if pd.notna(xpos):
-                ax2.annotate(str(row["_label"]).split(" | ")[0], (xpos, row["_support"]), xytext=(3, 3), textcoords="offset points", fontsize=6.5)
+                ax2.annotate(
+                    str(row["_label"]).split(" | ")[0],
+                    (xpos, row["_support"]),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                )
     else:
         ax2.text(0.5, 0.5, "No numeric copy-number/size values detected", transform=ax2.transAxes, ha="center", va="center")
     ax2.set_xlabel(xlabel)
     ax2.set_ylabel("Supporting reads")
     style_axis(ax2, "both")
 
-    fig.suptitle(args.title, fontsize=14, fontweight="bold", y=0.995)
-    fig.text(0.5, 0.01, "Straglr is displayed as a separate tandem-repeat evidence layer; loci are not treated as Jasmine caller confirmations.", ha="center", fontsize=8.2)
+    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
+    fig.text(0.5, 0.01, "Straglr is displayed as a separate tandem-repeat evidence layer; loci are not treated as Jasmine caller confirmations.", ha="center", fontsize=9)
     fig.tight_layout(rect=[0, 0.025, 1, 0.97])
     outputs = save_figure(fig, prefix)
     plt.close(fig)
