@@ -175,13 +175,20 @@ def plot_upset(intersections: pd.DataFrame, set_sizes: pd.DataFrame, callers: li
         if yi % 2:
             ax_matrix.axhspan(yi - 0.5, yi + 0.5, color="#F5F5F5", zorder=0)
 
+    combination_labels = []
     for i, vec in enumerate(intersections["SUPP_VEC"]):
         active = [j for j, bit in enumerate(vec) if bit == "1"]
-        ax_matrix.scatter([i] * len(callers), y, s=55, color="#D6D6D6", zorder=1)
+        ax_matrix.scatter([i] * len(callers), y, s=62, color="#D6D6D6", zorder=1)
         if len(active) > 1:
-            ax_matrix.plot([i, i], [min(active), max(active)], color="#222222", lw=1.4, zorder=2)
+            ax_matrix.plot([i, i], [min(active), max(active)], color="#222222", lw=1.5, zorder=2)
         if active:
-            ax_matrix.scatter([i] * len(active), active, s=68, color="#222222", zorder=3)
+            ax_matrix.scatter([i] * len(active), active, s=78, color="#222222", zorder=3)
+        names = [callers[j] for j in active]
+        combination_labels.append(" + ".join(names))
+
+    ax_matrix.set_xticks(x)
+    ax_matrix.set_xticklabels(combination_labels, rotation=38, ha="right", fontsize=8.5)
+    ax_matrix.tick_params(axis="x", pad=5)
     add_panel_label(ax_matrix, "C")
 
     fig.suptitle(title, fontsize=16, fontweight="bold", y=0.99)
