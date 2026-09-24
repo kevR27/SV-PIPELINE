@@ -82,6 +82,21 @@ def main():
         else:
             work["_" + source.lower()] = False
 
+    whatshap_count_col = first_existing(work, ["WHATSHAP_PHASED_HET_COUNT"])
+    methylation_context_col = first_existing(work, ["METHYLATION_CONTEXT"])
+    m5_col = first_existing(work, ["METHYLATION_5MC_MEAN_PERCENT"])
+    h5_col = first_existing(work, ["METHYLATION_5HMC_MEAN_PERCENT"])
+
+    work["_whatshap_count"] = numeric(work[whatshap_count_col]).fillna(0) if whatshap_count_col else 0
+    if methylation_context_col:
+        work["_methylation_evaluated"] = (
+            work[methylation_context_col].fillna("").astype(str).str.upper().eq("EVALUATED")
+        )
+    else:
+        work["_methylation_evaluated"] = False
+    work["_methylation_5mc"] = numeric(work[m5_col]) if m5_col else np.nan
+    work["_methylation_5hmc"] = numeric(work[h5_col]) if h5_col else np.nan
+
     rows = []
     for gene, group in work.groupby("gene", sort=False):
         unique = group.drop_duplicates(id_col)
@@ -97,6 +112,10 @@ def main():
                 "tldr_matched_SV_count": int(unique["_tldr_match"].sum()),
                 "longphase_matched_SV_count": int(unique["_longphase_match"].sum()),
                 "longphase_phased_SV_count": int(unique["_longphase_phased"].sum()),
+                "whatshap_nearby_phased_SV_count": int((unique["_whatshap_count"] > 0).sum()),
+                "methylation_evaluated_SV_count": int(unique["_methylation_evaluated"].sum()),
+                "mean_breakpoint_5mC_percent": float(unique["_methylation_5mc"].mean()) if unique["_methylation_5mc"].notna().any() else np.nan,
+                "mean_breakpoint_5hmC_percent": float(unique["_methylation_5hmc"].mean()) if unique["_methylation_5hmc"].notna().any() else np.nan,
                 "max_phenotype_score": float(unique["_phenotype"].max()) if len(unique) else 0.0,
                 "panel_gene": "YES" if bool(unique["_panel"].any()) else "NO",
                 "candidate_class": join_values(group[candidate_col]) if candidate_col else ".",
