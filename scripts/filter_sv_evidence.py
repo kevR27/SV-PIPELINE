@@ -14,8 +14,8 @@ annotation column rather than used to drop the call, so a human reviewer can
 still see and evaluate it in the final integrated table.
 
 Outputs:
-  --output-tsv   the input table with two new columns: EVIDENCE_STATUS
-                 (PASS/FAIL) and EVIDENCE_FLAGS (semicolon-separated soft flags)
+  --output-tsv   the input table with EVIDENCE_STATUS, EVIDENCE_FAIL_REASONS,
+                 and EVIDENCE_FLAGS appended
   --output-ids   a plain-text list of SV_IDs with EVIDENCE_STATUS=PASS,
                  one per line, suitable for `bcftools view -i 'ID=@file'`
 """
@@ -124,106 +124,150 @@ def main() -> int:
     a = ap.parse_args()
 
     blacklist = load_blacklist(a.blacklist_bed)
+    rescue_svtypes = {
+        x.strip().upper()
+        for x in a.rescue_cov_var_svtypes.split(",")
+        if x.strip()
+    }
 
-    with open(a.caller_tsv, "r", encoding="utf-8", errors="replace", newline="") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        rows = list(reader)
-        fieldnames = list(reader.fieldnames or [])
-
-    n_total = len(rows)
-    n_pass = 0
-    for row in rows:
-        flags = []
-        fail_reasons = []
-
-        filt = row.get("FILTER", MISSING)
-        support = to_float(row.get("CALLER_SUPPORT"))
-        svtype = (row.get("SVTYPE", MISSING) or MISSING).upper()
-        svlen = to_float(row.get("SVLEN"))
-        svlen_abs = abs(svlen) if svlen is not None else None
-
-        rescue_svtypes = {
-            x.strip().upper()
-            for x in a.rescue_cov_var_svtypes.split(",")
-            if x.strip()
-        }
-        rescued_cov_var = (
-            a.rescue_cov_var
-            and a.caller.lower() == "sniffles2"
-            and filt == "COV_VAR"
-            and support is not None
-            and support >= a.rescue_cov_var_min_support
-            and svlen_abs is not None
-            and svlen_abs >= a.rescue_cov_var_min_svlen
-            and svtype in rescue_svtypes
-        )
-
-        if a.require_pass and filt not in ("PASS", MISSING, "."):
-            if rescued_cov_var:
-                flags.append("RESCUED_COV_VAR")
-            else:
-                fail_reasons.append("NON_PASS_FILTER")
-
-        if support is None or support < a.min_support:
-            fail_reasons.append("LOW_SUPPORT")
-
-        if svlen_abs is None:
-            # BND / TRA and similar records often have no SVLEN; don't fail
-            # them on size, just note it
-            flags.append("NO_SVLEN")
-        elif svlen_abs < a.min_svlen:
-            fail_reasons.append("SIZE_BELOW_MIN")
-        elif a.max_svlen is not None and svlen_abs > a.max_svlen:
-            fail_reasons.append("SIZE_ABOVE_MAX")
-
-        imprecise = row.get("CALLER_IMPRECISE", MISSING)
-        precise = row.get("CALLER_PRECISE", MISSING)
-        if imprecise not in (MISSING, "", "False") or precise in ("false", "False", "0"):
-            flags.append("IMPRECISE")
-
-        gq = to_float(row.get("CALLER_GQ"))
-        if a.min_gq is not None and gq is not None and gq < a.min_gq:
-            flags.append("LOW_GQ")
-
-        if blacklist:
-            chrom = row.get("CHROM", MISSING)
-            start = row.get("START", MISSING)
-            end = row.get("END", MISSING)
-            end = end if end not in (MISSING, "") else start
-            if chrom not in (MISSING, "") and start not in (MISSING, ""):
-                try:
-                    if overlaps_blacklist(blacklist, chrom, start, end):
-                        flags.append("BLACKLIST_REGION")
-                except ValueError:
-                    pass
-
-        status = "FAIL" if fail_reasons else "PASS"
-        if status == "PASS":
-            n_pass += 1
-        row["EVIDENCE_STATUS"] = status
-        row["EVIDENCE_FAIL_REASONS"] = ";".join(fail_reasons) if fail_reasons else MISSING
-        row["EVIDENCE_FLAGS"] = ";".join(flags) if flags else MISSING
-
-    out_cols = fieldnames + ["EVIDENCE_STATUS", "EVIDENCE_FAIL_REASONS", "EVIDENCE_FLAGS"]
     out_tsv = Path(a.output_tsv)
-    out_tsv.parent.mkdir(parents=True, exist_ok=True)
-    with out_tsv.open("w", encoding="utf-8", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=out_cols, delimiter="\t", extrasaction="ignore", lineterminator="\n")
-        w.writeheader()
-        w.writerows(rows)
-
     out_ids = Path(a.output_ids)
+    out_tsv.parent.mkdir(parents=True, exist_ok=True)
     out_ids.parent.mkdir(parents=True, exist_ok=True)
-    with out_ids.open("w", encoding="utf-8") as fh:
-        for row in rows:
-            if row["EVIDENCE_STATUS"] == "PASS":
-                fh.write(row["SV_ID"] + "\n")
 
-    n_rescued_cov_var = sum(
-        1
-        for row in rows
-        if "RESCUED_COV_VAR" in row.get("EVIDENCE_FLAGS", "").split(";")
-    )
+    # Write to temporary files and atomically replace the requested outputs
+    # only after the entire input TSV has been processed successfully. This
+    # avoids leaving apparently complete partial outputs after an interruption.
+    tmp_tsv = Path(str(out_tsv) + ".tmp")
+    tmp_ids = Path(str(out_ids) + ".tmp")
+
+    n_total = 0
+    n_pass = 0
+    n_rescued_cov_var = 0
+
+    try:
+        with (
+            open(a.caller_tsv, "r", encoding="utf-8", errors="replace", newline="") as in_fh,
+            tmp_tsv.open("w", encoding="utf-8", newline="") as out_fh,
+            tmp_ids.open("w", encoding="utf-8") as ids_fh,
+        ):
+            reader = csv.DictReader(in_fh, delimiter="\t")
+            fieldnames = list(reader.fieldnames or [])
+            out_cols = fieldnames + [
+                "EVIDENCE_STATUS",
+                "EVIDENCE_FAIL_REASONS",
+                "EVIDENCE_FLAGS",
+            ]
+            writer = csv.DictWriter(
+                out_fh,
+                fieldnames=out_cols,
+                delimiter="\t",
+                extrasaction="ignore",
+                lineterminator="\n",
+            )
+            writer.writeheader()
+
+            for row in reader:
+                n_total += 1
+                flags = []
+                fail_reasons = []
+
+                filt = row.get("FILTER", MISSING)
+                support = to_float(row.get("CALLER_SUPPORT"))
+                svtype = (row.get("SVTYPE", MISSING) or MISSING).upper()
+                svlen = to_float(row.get("SVLEN"))
+                svlen_abs = abs(svlen) if svlen is not None else None
+
+                rescued_cov_var = (
+                    a.rescue_cov_var
+                    and a.caller.lower() == "sniffles2"
+                    and filt == "COV_VAR"
+                    and support is not None
+                    and support >= a.rescue_cov_var_min_support
+                    and svlen_abs is not None
+                    and svlen_abs >= a.rescue_cov_var_min_svlen
+                    and svtype in rescue_svtypes
+                )
+
+                if a.require_pass and filt not in ("PASS", MISSING, "."):
+                    if rescued_cov_var:
+                        flags.append("RESCUED_COV_VAR")
+                        n_rescued_cov_var += 1
+                    else:
+                        fail_reasons.append("NON_PASS_FILTER")
+
+                if support is None or support < a.min_support:
+                    fail_reasons.append("LOW_SUPPORT")
+
+                if svlen_abs is None:
+                    # BND / TRA and similar records often have no SVLEN; do
+                    # not fail them on size, just record the missing length.
+                    flags.append("NO_SVLEN")
+                elif svlen_abs < a.min_svlen:
+                    fail_reasons.append("SIZE_BELOW_MIN")
+                elif a.max_svlen is not None and svlen_abs > a.max_svlen:
+                    fail_reasons.append("SIZE_ABOVE_MAX")
+
+                imprecise = row.get("CALLER_IMPRECISE", MISSING)
+                precise = row.get("CALLER_PRECISE", MISSING)
+                if (
+                    imprecise not in (MISSING, "", "False")
+                    or precise in ("false", "False", "0")
+                ):
+                    flags.append("IMPRECISE")
+
+                gq = to_float(row.get("CALLER_GQ"))
+                if a.min_gq is not None and gq is not None and gq < a.min_gq:
+                    flags.append("LOW_GQ")
+
+                if blacklist:
+                    chrom = row.get("CHROM", MISSING)
+                    start = row.get("START", MISSING)
+                    end_pos = row.get("END", MISSING)
+                    end_pos = (
+                        end_pos if end_pos not in (MISSING, "") else start
+                    )
+                    if (
+                        chrom not in (MISSING, "")
+                        and start not in (MISSING, "")
+                    ):
+                        try:
+                            if overlaps_blacklist(
+                                blacklist,
+                                chrom,
+                                start,
+                                end_pos,
+                            ):
+                                flags.append("BLACKLIST_REGION")
+                        except ValueError:
+                            pass
+
+                status = "FAIL" if fail_reasons else "PASS"
+                if status == "PASS":
+                    n_pass += 1
+
+                row["EVIDENCE_STATUS"] = status
+                row["EVIDENCE_FAIL_REASONS"] = (
+                    ";".join(fail_reasons) if fail_reasons else MISSING
+                )
+                row["EVIDENCE_FLAGS"] = (
+                    ";".join(flags) if flags else MISSING
+                )
+
+                writer.writerow(row)
+
+                if status == "PASS":
+                    sv_id = row.get("SV_ID", MISSING)
+                    if sv_id not in (MISSING, ""):
+                        ids_fh.write(sv_id + "\n")
+
+        tmp_tsv.replace(out_tsv)
+        tmp_ids.replace(out_ids)
+    except Exception:
+        tmp_tsv.unlink(missing_ok=True)
+        tmp_ids.unlink(missing_ok=True)
+        raise
+
     print(f"[OK] caller={a.caller} total={n_total} pass={n_pass} "
           f"fail={n_total - n_pass} rescued_cov_var={n_rescued_cov_var} "
           f"output_tsv={out_tsv} output_ids={out_ids}",
