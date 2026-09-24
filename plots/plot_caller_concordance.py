@@ -125,7 +125,7 @@ def plot_upset(intersections: pd.DataFrame, set_sizes: pd.DataFrame, callers: li
     bars = ax_top.bar(x, intersections["intersection_size"], color=bar_colors, width=0.72)
     ymax = max(float(intersections["intersection_size"].max()) * 1.17, 1.0)
     ax_top.set_ylim(0, ymax)
-    ax_top.set_ylabel("Number of master SVs")
+    ax_top.set_ylabel("Number of merged SVs")
     ax_top.set_xticks([])
     style_axis(ax_top, "y")
     add_panel_label(ax_top, "A")
@@ -195,7 +195,7 @@ def plot_upset(intersections: pd.DataFrame, set_sizes: pd.DataFrame, callers: li
     fig.text(
         0.5,
         0.01,
-        "Bars show exact caller intersections; the complete merged callset remains the master SV universe.",
+        "Bars show the number of SVs detected by each caller combination after merging.",
         ha="center",
         fontsize=9,
     )
