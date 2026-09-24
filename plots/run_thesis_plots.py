@@ -93,7 +93,13 @@ def main():
     caller_summary = sample_root / "sv" / "merged" / f"{s}_caller_support_summary.tsv"
     integrated_base = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_analysis.tsv"
     integrated_extended = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_orthogonal_evidence.tsv"
-    integrated = integrated_extended if integrated_extended.exists() else integrated_base
+    integrated_multimodal = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_multimodal_context.tsv"
+    if integrated_multimodal.exists():
+        integrated = integrated_multimodal
+    elif integrated_extended.exists():
+        integrated = integrated_extended
+    else:
+        integrated = integrated_base
     needlr = sample_root / "sv" / "needlr" / f"{s}_needLR_RESULTS.tsv"
     ranked = sample_root / "gene_discovery" / f"{s}_ranked_candidates.tsv"
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
@@ -112,8 +118,11 @@ def main():
         sample_root,
         [
             "phasing_longphase/*.longphase.vcf.gz",
+            "phasing_longphase/*.longphase*.vcf",
             "phasing/**/*longphase*.vcf.gz",
-            "**/*.longphase.vcf.gz",
+            "phasing/**/*longphase*.vcf",
+            "**/*.longphase_SV.vcf",
+            "**/*.longphase*.vcf.gz",
         ],
     )
 
@@ -122,8 +131,10 @@ def main():
         [
             "methylation/*.cpg.bedmethyl.gz",
             "methylation/*.bedmethyl.gz",
+            "methylation/*.bed.gz",
             "**/*.cpg.bedmethyl.gz",
             "**/*.bedmethyl.gz",
+            "**/*.bed.gz",
         ],
     )
 
@@ -249,28 +260,20 @@ def main():
     else:
         print("[SKIP] no WhatsHap/LongPhase phased VCF found")
 
-    if args.platform == "lrs" and args.methylation_region and methylation:
-        jobs.append(
-            (
-                [
-                    py,
-                    str(HERE / "plot_methylation.py"),
-                    "--input",
-                    str(methylation),
-                    "--format",
-                    "bedmethyl",
-                    "--region",
-                    args.methylation_region,
-                    "--out-prefix",
-                    str(folders["methylation"] / f"{s}_methylation"),
-                ],
-                [methylation],
-            )
-        )
-    elif args.platform == "lrs" and args.methylation_region:
-        print("[SKIP] methylation region requested but no bedMethyl file was found")
+    if args.platform == "lrs" and methylation:
+        methylation_cmd = [
+            py,
+            str(HERE / "plot_methylation.py"),
+            "--input",
+            str(methylation),
+            "--out-prefix",
+            str(folders["methylation"] / f"{s}_methylation"),
+        ]
+        if args.methylation_region:
+            methylation_cmd += ["--region", args.methylation_region]
+        jobs.append((methylation_cmd, [methylation]))
     elif args.platform == "lrs":
-        print("[SKIP] methylation plot requires --methylation-region")
+        print("[SKIP] no modkit bedMethyl/.bed.gz file found")
 
     for command, required in jobs:
         run(command, required, args.dry_run)
