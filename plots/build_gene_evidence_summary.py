@@ -74,7 +74,7 @@ def main():
     work["_caller_count"] = numeric(work[caller_count_col]).fillna(0) if caller_count_col else 0
     work["_af"] = numeric(work[af_col]) if af_col else np.nan
     work["_phenotype"] = numeric(work[pheno_col]).fillna(0) if pheno_col else 0
-    work["_panel"] = yes(work[panel_col]) if panel_col else False
+    work["_panel"] = (work[panel_col].fillna("").astype(str).str.upper().str.contains("PANEL_GENE|^YES$", regex=True)) if panel_col else False
 
     for source in ["STRAGLR_MATCH", "TLDR_MATCH", "LONGPHASE_MATCH", "LONGPHASE_PHASED"]:
         if source in work.columns:
