@@ -182,3 +182,37 @@ same master SV across multiple SV-gene rows.
 WhatsHap is retained as a small-variant phasing/QC layer rather than treated as
 an SV caller. Methylation remains a candidate-region annotation because a CpG
 overlap is not equivalent to SV confirmation.
+
+
+## Revised organized output layout
+
+The plot runner now writes each analysis layer into a dedicated sample folder:
+
+```text
+<sample>/plots/
+├── 01_qc/
+├── 02_caller_concordance/
+├── 03_sv_landscape/
+├── 04_population_frequency/
+├── 05_candidate_prioritization/
+├── 06_phenotype/
+├── 07_orthogonal/
+│   ├── straglr/
+│   └── tldr/
+├── 08_phasing/
+├── 09_methylation/
+└── 10_integrated_evidence/
+```
+
+The downstream interpretation tables are also separated by biological meaning:
+
+```text
+<sample>_integrated_SV_gene_with_orthogonal_evidence.tsv
+<sample>_independent_orthogonal_findings.tsv
+<sample>_integrated_SV_gene_with_multimodal_context.tsv
+<sample>_gene_multimodal_evidence_summary.tsv
+```
+
+The orthogonal table contains coordinate-/ID-compatible Straglr, TLDR and LongPhase evidence attached to the Jasmine-defined master SV universe. The multimodal-context table adds nearby WhatsHap-phased small variants and local modkit methylation context without treating either as SV confirmation.
+
+Modkit plotting now accepts standard bedMethyl content compressed under `.bedmethyl.gz` or generic `.bed.gz` names. With no configured candidate region it produces a genome-wide canonical-chromosome methylation summary; when `thesis_methylation_region` is set, it produces a detailed regional methylation/coverage track instead.
