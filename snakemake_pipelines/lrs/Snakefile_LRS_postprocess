@@ -69,9 +69,47 @@ def gene_summary_table(sample):
     )
 
 
+def first_existing_path(paths):
+    for path in paths:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def longphase_path(sample):
+    return first_existing_path([
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase_SV.vcf",
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf",
+    ])
+
+
 def longphase_arg(sample):
-    path = PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
-    return f"--longphase-vcf {path}" if os.path.exists(path) else ""
+    path = longphase_path(sample)
+    return f"--longphase-vcf {path}" if path else ""
+
+
+def whatshap_path(sample):
+    return first_existing_path([
+        PATH + f"{sample}/phasing/{sample}.phased.vcf.gz",
+        PATH + f"{sample}/phasing/{sample}.phased.vcf",
+    ])
+
+
+def methylation_path(sample):
+    return first_existing_path([
+        PATH + f"{sample}/methylation/{sample}.cpg.bedmethyl.gz",
+        PATH + f"{sample}/methylation/{sample}.bedmethyl.gz",
+        PATH + f"{sample}/methylation/{sample}.bed.gz",
+    ])
+
+
+def multimodal_context_table(sample):
+    return (
+        PATH
+        + f"{sample}/gene_discovery/"
+        + f"{sample}_integrated_SV_gene_with_multimodal_context.tsv"
+    )
 
 
 def sample_ready_for_postprocess(sample):
@@ -131,6 +169,10 @@ rule all:
         expand(
             PATH + "{sample}/gene_discovery/{sample}_gene_multimodal_evidence_summary.tsv",
             sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv",
+            sample=POSTPROCESS_SAMPLES,
         )
 
 
@@ -172,6 +214,39 @@ rule integrate_orthogonal_sv_evidence:
 
         test -s {output.tsv}
         test -e {output.independent}
+        """
+
+
+rule integrate_candidate_context:
+    input:
+        integrated=rules.integrate_candidate_context.output.tsv,
+        script=PLOTS + "/integrate_candidate_context.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv"
+    params:
+        methylation_arg=lambda wc: (
+            f"--methylation-bed {methylation_path(wc.sample)}"
+            if methylation_path(wc.sample)
+            else ""
+        ),
+        whatshap_arg=lambda wc: (
+            f"--whatshap-vcf {whatshap_path(wc.sample)}"
+            if whatshap_path(wc.sample)
+            else ""
+        )
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        python {input.script} \
+            --integrated {input.integrated} \
+            {params.methylation_arg} \
+            {params.whatshap_arg} \
+            --output {output.tsv}
+
+        test -s {output.tsv}
         """
 
 
@@ -217,7 +292,10 @@ def existing_plot_inputs(wc):
         PATH + f"{sample}/mei/tldr/{sample}.tldr.table.txt",
         PATH + f"{sample}/phasing/{sample}.phased.vcf.gz",
         PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase_SV.vcf",
         PATH + f"{sample}/methylation/{sample}.cpg.bedmethyl.gz",
+        PATH + f"{sample}/methylation/{sample}.bedmethyl.gz",
+        PATH + f"{sample}/methylation/{sample}.bed.gz",
     ]
 
     return [path for path in candidates if os.path.exists(path)]
@@ -247,6 +325,7 @@ rule thesis_plots_sample:
             PLOTS + "/plot_phasing_qc.py",
             PLOTS + "/plot_methylation.py",
             PLOTS + "/plot_gene_multimodal_summary.py",
+            PLOTS + "/integrate_candidate_context.py",
         ]
     output:
         marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
