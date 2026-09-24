@@ -122,6 +122,18 @@ def main():
             work[display] = yes_flag(work[col]).astype(int)
             optional_flags.append(display)
 
+    whatshap_count_col = first_existing(work, ["WHATSHAP_PHASED_HET_COUNT"])
+    if whatshap_count_col:
+        work["Nearby WhatsHap phase"] = (numeric(work[whatshap_count_col]).fillna(0) > 0).astype(int)
+        optional_flags.append("Nearby WhatsHap phase")
+
+    methylation_context_col = first_existing(work, ["METHYLATION_CONTEXT"])
+    if methylation_context_col:
+        work["Methylation context"] = (
+            work[methylation_context_col].fillna("").astype(str).str.upper().eq("EVALUATED")
+        ).astype(int)
+        optional_flags.append("Methylation context")
+
     work["_plot_priority"] = (
         work["Multi-caller"] * 2
         + work[f"needLR AF ≤ {args.rare_af:g}"] * 2
@@ -189,7 +201,7 @@ def main():
     fig.text(
         0.5,
         0.008,
-        "Dark teal indicates evidence presence. Ordering is a review aid, not a pathogenicity classification.",
+        "Dark teal indicates evidence/context presence. WhatsHap and methylation are local context layers, not SV confirmations. Ordering is a review aid, not a pathogenicity classification.",
         ha="center",
         fontsize=9,
     )
