@@ -132,14 +132,22 @@ def main():
             hpo = hpo[hpo[hpo_id].fillna("").astype(str).str.startswith("HP:")].copy()
             hpo["_anchor"] = yes(hpo[anchor]) if anchor else False
             hsum = (
-                hpo.groupby(hgene)
-                .agg(
-                    retrieved_HPO_count=(hpo_id, "nunique"),
-                    retrieved_anchor_HPO_count=("_anchor", "sum"),
-                )
+                hpo.groupby(hgene)[hpo_id]
+                .nunique()
+                .rename("retrieved_HPO_count")
                 .reset_index()
                 .rename(columns={hgene: "gene"})
             )
+            anchor_sum = (
+                hpo[hpo["_anchor"]]
+                .groupby(hgene)[hpo_id]
+                .nunique()
+                .rename("retrieved_anchor_HPO_count")
+                .reset_index()
+                .rename(columns={hgene: "gene"})
+            )
+            hsum = hsum.merge(anchor_sum, on="gene", how="left")
+            hsum["retrieved_anchor_HPO_count"] = hsum["retrieved_anchor_HPO_count"].fillna(0)
             summary = summary.merge(hsum, on="gene", how="left")
 
     sort_cols = [c for c in ["integrated_discovery_score", "max_phenotype_score", "master_SV_count"] if c in summary.columns]
