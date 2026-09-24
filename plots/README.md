@@ -142,3 +142,43 @@ snakemake -s Snakefile_LRS_postprocess --use-conda --cores 8 \
 
 If a candidate methylation region has been selected, set `thesis_methylation_region`
 in `config_lrs.yaml`; otherwise methylation plotting is skipped while the other plots run.
+
+
+## Organized output structure
+
+The sample-level runner now writes figures and their source TSVs into thematic folders:
+
+```text
+<sample>/plots/
+├── 01_qc/
+├── 02_caller_concordance/
+├── 03_sv_landscape/
+├── 04_population_frequency/
+├── 05_candidate_prioritization/
+├── 06_phenotype/
+├── 07_orthogonal/
+│   ├── straglr/
+│   └── tldr/
+├── 08_phasing/
+├── 09_methylation/
+└── 10_integrated_evidence/
+```
+
+The post-processing workflow also creates three interpretation tables in
+`<sample>/gene_discovery/`:
+
+```text
+<sample>_integrated_SV_gene_with_orthogonal_evidence.tsv
+<sample>_independent_orthogonal_findings.tsv
+<sample>_gene_multimodal_evidence_summary.tsv
+```
+
+The extended master table keeps the Jasmine-defined SV universe and adds
+coordinate-aware Straglr/TLDR evidence plus LongPhase SV phasing. The
+independent table retains PASS TLDR and Straglr findings without a Jasmine
+counterpart. The gene summary collapses evidence without double-counting the
+same master SV across multiple SV-gene rows.
+
+WhatsHap is retained as a small-variant phasing/QC layer rather than treated as
+an SV caller. Methylation remains a candidate-region annotation because a CpG
+overlap is not equivalent to SV confirmation.
