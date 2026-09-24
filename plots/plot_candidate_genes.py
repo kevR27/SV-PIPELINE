@@ -17,7 +17,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Plot prioritized SV-associated genes.")
     p.add_argument("--input", required=True, help="*_ranked_candidates.tsv")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=25)
+    p.add_argument("--top-n", type=int, default=20)
     p.add_argument("--title", default="Genome-wide SV-associated gene prioritization")
     return p.parse_args()
 
@@ -55,7 +55,7 @@ def main():
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work.to_csv(prefix.with_name(prefix.name + "_top_candidates.tsv"), sep="\t", index=False)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12.5, max(6.5, 0.31 * len(work) + 2.2)), gridspec_kw={"width_ratios": [1.65, 1.0]})
+    fig, axes = plt.subplots(1, 2, figsize=(14.2, max(7.2, 0.36 * len(work) + 2.4)), gridspec_kw={"width_ratios": [1.55, 1.05]})
     ax1, ax2 = axes
     y = np.arange(len(work))
 
@@ -73,8 +73,18 @@ def main():
     x_sv = work["_sv_count"].values
     x_anchor = work["_anchor"].values
     ax2.scatter(x_sv, x_anchor, s=sizes, c=colors, edgecolor="white", linewidth=0.5)
+    label_mask = work["_panel"].copy()
+    top_label_idx = work.sort_values(["_score", "_anchor"], ascending=False).head(8).index
+    label_mask.loc[top_label_idx] = True
     for i, gene in enumerate(work[gene_col]):
-        ax2.annotate(str(gene), (x_sv[i], x_anchor[i]), xytext=(3, 3), textcoords="offset points", fontsize=7)
+        if bool(label_mask.iloc[i]):
+            ax2.annotate(
+                str(gene),
+                (x_sv[i], x_anchor[i]),
+                xytext=(5, 5),
+                textcoords="offset points",
+                fontsize=8.5,
+            )
     ax2.set_xlabel("SV count")
     ax2.set_ylabel("Optic-neuropathy anchor HPO count")
     style_axis(ax2, "both")
@@ -86,8 +96,8 @@ def main():
     else:
         group_text = ""
 
-    fig.suptitle(args.title, fontsize=14, fontweight="bold", y=0.995)
-    fig.text(0.5, 0.01, "Blue = panel gene; orange = non-panel gene. Bubble area scales with the number of intersecting SVs. Discovery score is prioritization, not pathogenicity.", ha="center", fontsize=8.2)
+    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
+    fig.text(0.5, 0.01, "Blue = panel gene; orange = non-panel gene. Bubble area scales with the number of intersecting SVs. Discovery score is prioritization, not pathogenicity.", ha="center", fontsize=9)
     if group_text:
         fig.text(0.5, 0.027, group_text, ha="center", fontsize=7.5)
     fig.tight_layout(rect=[0, 0.045, 1, 0.97])
