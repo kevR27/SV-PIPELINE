@@ -61,7 +61,7 @@ def main():
         prefix.with_name(prefix.name + "_chromosome_depth.tsv"), sep="\t", index=False
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.8, 4.9))
+    fig, axes = plt.subplots(1, 2, figsize=(13.8, 5.8))
     ax1, ax2 = axes
 
     if args.global_dist and Path(args.global_dist).exists():
@@ -71,7 +71,9 @@ def main():
         ax1.plot(plot_dist["depth"], plot_dist["fraction"], color="#0072B2", linewidth=1.8)
         ax1.set_xlabel("Depth")
         ax1.set_ylabel("Fraction of genome at ≥ depth")
-        ax1.set_xlim(left=0)
+        informative = plot_dist[plot_dist["fraction"] >= 0.001]
+        xmax = float(informative["depth"].max()) if not informative.empty else float(plot_dist["depth"].quantile(0.99))
+        ax1.set_xlim(0, max(25, min(xmax + 5, 120)))
         ax1.set_ylim(0, 1.02)
     elif not autosomal.empty:
         autosomal["chrom_sort"] = (
@@ -106,7 +108,7 @@ def main():
             )
             autosomal = autosomal.sort_values("chrom_sort")
         ax2.bar(autosomal[chrom_col], autosomal[mean_col], color="#6E6E6E")
-        ax2.tick_params(axis="x", rotation=55)
+        ax2.tick_params(axis="x", rotation=45)
     else:
         ax2.text(0.5, 0.5, "Autosomal rows not detected", transform=ax2.transAxes, ha="center", va="center")
     ax2.set_xlabel("Chromosome")
@@ -125,7 +127,7 @@ def main():
             )
             ax2.legend(frameon=False, fontsize=8)
 
-    fig.suptitle(args.title, fontsize=14, fontweight="bold", y=0.995)
+    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     outputs = save_figure(fig, prefix)
     plt.close(fig)
