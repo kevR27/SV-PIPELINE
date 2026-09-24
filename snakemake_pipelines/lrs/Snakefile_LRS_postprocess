@@ -219,7 +219,7 @@ rule integrate_orthogonal_sv_evidence:
 
 rule integrate_candidate_context:
     input:
-        integrated=rules.integrate_candidate_context.output.tsv,
+        integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
         script=PLOTS + "/integrate_candidate_context.py"
     output:
         tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv"
@@ -252,7 +252,7 @@ rule integrate_candidate_context:
 
 rule build_gene_multimodal_summary:
     input:
-        integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
+        integrated=rules.integrate_candidate_context.output.tsv,
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         script=PLOTS + "/build_gene_evidence_summary.py"
@@ -307,7 +307,7 @@ def existing_plot_inputs(wc):
 
 rule thesis_plots_sample:
     input:
-        integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
+        integrated=rules.integrate_candidate_context.output.tsv,
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
         available=existing_plot_inputs,
         plot_scripts=[
