@@ -177,7 +177,7 @@ def main():
     ax.set_yticks(np.arange(n))
     ax.set_yticklabels(work["_label"], fontsize=9)
     ax.set_xlabel("Evidence layer")
-    ax.set_ylabel("Master SV | overlapping gene")
+    ax.set_ylabel("SV | overlapping gene")
     ax.set_xticks(np.arange(-0.5, len(evidence_cols), 1), minor=True)
     ax.set_yticks(np.arange(-0.5, n, 1), minor=True)
     ax.grid(which="minor", color="white", linewidth=1.0)
