@@ -246,6 +246,7 @@ rule thesis_plots_sample:
             PLOTS + "/plot_mei.py",
             PLOTS + "/plot_phasing_qc.py",
             PLOTS + "/plot_methylation.py",
+            PLOTS + "/plot_gene_multimodal_summary.py",
         ]
     output:
         marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
