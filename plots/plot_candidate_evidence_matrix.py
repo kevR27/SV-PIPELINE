@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import numpy as np
 import pandas as pd
 
@@ -16,9 +17,9 @@ from plot_utils import add_panel_label, first_existing, numeric, read_tsv, save_
 
 def parse_args():
     p = argparse.ArgumentParser(description="Plot integrated evidence for prioritized SV-gene pairs.")
-    p.add_argument("--input", required=True, help="*_integrated_SV_gene_analysis.tsv")
+    p.add_argument("--input", required=True, help="Integrated or extended SV-gene analysis TSV")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=30)
+    p.add_argument("--top-n", type=int, default=20)
     p.add_argument("--rare-af", type=float, default=0.01)
     p.add_argument("--title", default="Integrated evidence for prioritized SV-gene candidates")
     return p.parse_args()
@@ -30,8 +31,11 @@ def text_present(series: pd.Series) -> pd.Series:
 
 
 def caller_present(series: pd.Series, caller: str) -> pd.Series:
-    pattern = re.escape(caller)
-    return series.fillna("").astype(str).str.contains(pattern, case=False, regex=True)
+    return series.fillna("").astype(str).str.contains(re.escape(caller), case=False, regex=True)
+
+
+def yes_flag(series: pd.Series) -> pd.Series:
+    return series.fillna("").astype(str).str.upper().isin(["YES", "TRUE", "1"])
 
 
 def main():
@@ -43,12 +47,26 @@ def main():
 
     id_col = first_existing(df, ["SV_ID", "ID"])
     gene_col = first_existing(df, ["GENES", "Gene", "GENE", "ANNotsv_Gene"])
+    chrom_col = first_existing(df, ["CHROM", "chrom"])
+    start_col = first_existing(df, ["START", "POS"])
+    type_col = first_existing(df, ["SVTYPE", "SV_type"])
     if id_col is None or gene_col is None:
         raise ValueError("Input needs an SV ID and gene column.")
 
     work = df.copy()
     work["_gene"] = work[gene_col].fillna(".").astype(str)
-    work["_label"] = work[id_col].fillna(".").astype(str) + " | " + work["_gene"]
+    if chrom_col and start_col and type_col:
+        work["_label"] = (
+            work[chrom_col].astype(str)
+            + ":"
+            + work[start_col].astype(str)
+            + " "
+            + work[type_col].astype(str)
+            + " | "
+            + work["_gene"]
+        )
+    else:
+        work["_label"] = work[id_col].fillna(".").astype(str) + " | " + work["_gene"]
 
     callers_col = first_existing(work, ["CALLERS"])
     caller_count_col = first_existing(work, ["CALLER_COUNT", "SUPP"])
@@ -58,7 +76,6 @@ def main():
     omim_col = first_existing(work, ["OMIM", "NEEDLR_OMIM"])
     gencc_col = first_existing(work, ["GENCC", "NEEDLR_GENCC"])
     ann_col = first_existing(work, ["ANNotsv_Classification", "AnnotSV_Classification"])
-    candidate_col = first_existing(work, ["CANDIDATE_CLASS"])
 
     if callers_col:
         caller_text = work[callers_col]
@@ -77,10 +94,10 @@ def main():
         work[f"needLR AF ≤ {args.rare_af:g}"] = ((af <= args.rare_af) & af.notna()).astype(int)
         work["needLR AF = 0"] = (af.eq(0) & af.notna()).astype(int)
     else:
+        af = pd.Series(np.nan, index=work.index)
         work["needLR evaluable"] = 0
         work[f"needLR AF ≤ {args.rare_af:g}"] = 0
         work["needLR AF = 0"] = 0
-        af = pd.Series(np.nan, index=work.index)
 
     if panel_col:
         ptxt = work[panel_col].fillna("").astype(str).str.upper()
@@ -94,19 +111,17 @@ def main():
     pheno = numeric(work[pheno_col]).fillna(0) if pheno_col else pd.Series(0, index=work.index)
     work["Phenotype overlap"] = (pheno > 0).astype(int)
 
-    # Optional orthogonal evidence is present only in the downstream extended table.
-    straglr_col = first_existing(work, ["STRAGLR_MATCH"])
-    tldr_col = first_existing(work, ["TLDR_MATCH"])
-    if straglr_col:
-        work["Straglr match"] = (
-            work[straglr_col].fillna("").astype(str).str.upper().eq("YES")
-        ).astype(int)
-    if tldr_col:
-        work["TLDR match"] = (
-            work[tldr_col].fillna("").astype(str).str.upper().eq("YES")
-        ).astype(int)
+    optional_flags = []
+    for source_col, display in [
+        ("STRAGLR_MATCH", "Straglr match"),
+        ("TLDR_MATCH", "TLDR match"),
+        ("LONGPHASE_MATCH", "LongPhase match"),
+    ]:
+        col = first_existing(work, [source_col])
+        if col:
+            work[display] = yes_flag(work[col]).astype(int)
+            optional_flags.append(display)
 
-    # Ranking is deliberately transparent and is not a pathogenicity score.
     work["_plot_priority"] = (
         work["Multi-caller"] * 2
         + work[f"needLR AF ≤ {args.rare_af:g}"] * 2
@@ -114,64 +129,71 @@ def main():
         + work["OMIM evidence"]
         + work["GenCC evidence"]
         + work["Phenotype overlap"] * 2
+        + sum(work[x] for x in optional_flags)
         + pheno.rank(pct=True).fillna(0)
     )
     work["_pheno"] = pheno
     work["_af"] = af
-    work = work.sort_values(["_plot_priority", "_pheno"], ascending=False).head(args.top_n).copy()
-    work = work.drop_duplicates(subset=["_label"], keep="first")
+    work = (
+        work.sort_values(["_plot_priority", "_pheno"], ascending=False)
+        .drop_duplicates(subset=["_label"], keep="first")
+        .head(args.top_n)
+        .copy()
+    )
 
     evidence_cols = [
-        "Sniffles2",
-        "cuteSV",
-        "Delly",
-        "Multi-caller",
-        "needLR evaluable",
-        f"needLR AF ≤ {args.rare_af:g}",
-        "needLR AF = 0",
-        "Panel gene",
-        "AnnotSV class",
-        "OMIM evidence",
-        "GenCC evidence",
-        "Phenotype overlap",
-    ]
-    if straglr_col:
-        evidence_cols.append("Straglr match")
-    if tldr_col:
-        evidence_cols.append("TLDR match")
+        "Sniffles2", "cuteSV", "Delly", "Multi-caller",
+        "needLR evaluable", f"needLR AF ≤ {args.rare_af:g}", "needLR AF = 0",
+        "Panel gene", "AnnotSV class", "OMIM evidence", "GenCC evidence", "Phenotype overlap",
+    ] + optional_flags
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    out_cols = [id_col, gene_col] + [c for c in [caller_count_col, af_col, panel_col, pheno_col, ann_col, candidate_col] if c] + evidence_cols
-    work[out_cols].to_csv(prefix.with_name(prefix.name + "_matrix.tsv"), sep="\t", index=False)
+    work[[id_col, gene_col] + evidence_cols].to_csv(
+        prefix.with_name(prefix.name + "_matrix.tsv"), sep="\t", index=False
+    )
 
     matrix = work[evidence_cols].astype(float).to_numpy()
     n = len(work)
-    fig_h = max(6.0, 0.30 * n + 2.0)
-    fig, ax = plt.subplots(figsize=(13.4, fig_h))
-    ax.imshow(matrix, aspect="auto", interpolation="nearest", cmap="Greys", vmin=0, vmax=1)
+    fig_h = max(7.2, 0.42 * n + 2.6)
+    fig, ax = plt.subplots(figsize=(15.5, fig_h))
+    cmap = ListedColormap(["#F3F4F4", "#0B6E69"])
+    ax.imshow(matrix, aspect="auto", interpolation="nearest", cmap=cmap, vmin=0, vmax=1)
+
     ax.set_xticks(np.arange(len(evidence_cols)))
-    ax.set_xticklabels(evidence_cols, rotation=42, ha="right")
+    ax.set_xticklabels(evidence_cols, rotation=42, ha="right", fontsize=9)
     ax.set_yticks(np.arange(n))
-    ax.set_yticklabels(work["_label"], fontsize=7.5)
+    ax.set_yticklabels(work["_label"], fontsize=9)
     ax.set_xlabel("Evidence layer")
     ax.set_ylabel("Master SV | overlapping gene")
     ax.set_xticks(np.arange(-0.5, len(evidence_cols), 1), minor=True)
     ax.set_yticks(np.arange(-0.5, n, 1), minor=True)
-    ax.grid(which="minor", color="white", linewidth=0.8)
+    ax.grid(which="minor", color="white", linewidth=1.0)
     ax.tick_params(which="minor", bottom=False, left=False)
     add_panel_label(ax, "A")
 
-    # Add compact quantitative annotations to the right without converting them to binary evidence.
     for i, (_, row) in enumerate(work.iterrows()):
         af_txt = "AF n/e" if pd.isna(row["_af"]) else f"AF={row['_af']:.3g}"
-        pheno_txt = f"phenotype={row['_pheno']:.2f}"
-        ax.text(len(evidence_cols) - 0.15, i, f"  {af_txt}; {pheno_txt}", va="center", ha="left", fontsize=6.8, clip_on=False)
-    ax.set_xlim(-0.5, len(evidence_cols) + 3.0)
+        ax.text(
+            len(evidence_cols) - 0.15,
+            i,
+            f"  {af_txt}; phenotype={row['_pheno']:.2f}",
+            va="center",
+            ha="left",
+            fontsize=8,
+            clip_on=False,
+        )
+    ax.set_xlim(-0.5, len(evidence_cols) + 3.4)
 
-    fig.suptitle(args.title, fontsize=14, fontweight="bold", y=0.995)
-    fig.text(0.5, 0.01, "Filled cells indicate evidence presence only. The display ordering is a review aid and must not be interpreted as a pathogenicity classification.", ha="center", fontsize=8.2)
-    fig.tight_layout(rect=[0, 0.025, 1, 0.97])
+    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
+    fig.text(
+        0.5,
+        0.008,
+        "Dark teal indicates evidence presence. Ordering is a review aid, not a pathogenicity classification.",
+        ha="center",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=[0, 0.03, 1, 0.97])
     outputs = save_figure(fig, prefix)
     plt.close(fig)
     print("[OK]", *outputs, sep="\n")
