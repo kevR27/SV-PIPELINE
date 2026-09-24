@@ -28,6 +28,10 @@ ORTHOGONAL_TLDR_BP_TOL = config.get(
     "orthogonal_tldr_breakpoint_tolerance",
     500,
 )
+ORTHOGONAL_LONGPHASE_BP_TOL = config.get(
+    "orthogonal_longphase_breakpoint_tolerance",
+    500,
+)
 
 THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
 
@@ -47,6 +51,27 @@ def extended_table(sample):
         + f"{sample}/gene_discovery/"
         + f"{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv"
     )
+
+
+def independent_findings_table(sample):
+    return (
+        PATH
+        + f"{sample}/gene_discovery/"
+        + f"{sample}_independent_orthogonal_findings.tsv"
+    )
+
+
+def gene_summary_table(sample):
+    return (
+        PATH
+        + f"{sample}/gene_discovery/"
+        + f"{sample}_gene_multimodal_evidence_summary.tsv"
+    )
+
+
+def longphase_arg(sample):
+    path = PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
+    return f"--longphase-vcf {path}" if os.path.exists(path) else ""
 
 
 def sample_ready_for_postprocess(sample):
@@ -98,6 +123,14 @@ rule all:
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv",
             sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/gene_discovery/{sample}_independent_orthogonal_findings.tsv",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/gene_discovery/{sample}_gene_multimodal_evidence_summary.tsv",
+            sample=POSTPROCESS_SAMPLES,
         )
 
 
@@ -109,12 +142,16 @@ rule integrate_orthogonal_sv_evidence:
     input:
         integrated=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
         straglr=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
-        tldr=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
+        tldr=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",
+        script=PLOTS + "/intersect_orthogonal_sv_evidence.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv"
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv",
+        independent=PATH + "{sample}/gene_discovery/{sample}_independent_orthogonal_findings.tsv"
     params:
         straglr_tol=ORTHOGONAL_STRAGLR_BP_TOL,
-        tldr_tol=ORTHOGONAL_TLDR_BP_TOL
+        tldr_tol=ORTHOGONAL_TLDR_BP_TOL,
+        longphase_tol=ORTHOGONAL_LONGPHASE_BP_TOL,
+        longphase_arg=lambda wc: longphase_arg(wc.sample)
     conda:
         CONDAENV + "plots.yaml"
     shell:
@@ -122,12 +159,39 @@ rule integrate_orthogonal_sv_evidence:
         set -euo pipefail
         mkdir -p $(dirname {output.tsv})
 
-        python {PLOTS}/intersect_orthogonal_sv_evidence.py \
+        python {input.script} \
             --integrated {input.integrated} \
             --straglr {input.straglr} \
             --tldr {input.tldr} \
+            {params.longphase_arg} \
             --straglr-breakpoint-tol {params.straglr_tol} \
             --tldr-breakpoint-tol {params.tldr_tol} \
+            --longphase-breakpoint-tol {params.longphase_tol} \
+            --independent-output {output.independent} \
+            --output {output.tsv}
+
+        test -s {output.tsv}
+        test -e {output.independent}
+        """
+
+
+rule build_gene_multimodal_summary:
+    input:
+        integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
+        ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
+        phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
+        script=PLOTS + "/build_gene_evidence_summary.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_gene_multimodal_evidence_summary.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --integrated {input.integrated} \
+            --ranking {input.ranking} \
+            --phenotypes {input.phenotypes} \
             --output {output.tsv}
 
         test -s {output.tsv}
@@ -166,7 +230,23 @@ def existing_plot_inputs(wc):
 rule thesis_plots_sample:
     input:
         integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
-        available=existing_plot_inputs
+        gene_summary=rules.build_gene_multimodal_summary.output.tsv,
+        available=existing_plot_inputs,
+        plot_scripts=[
+            PLOTS + "/run_thesis_plots.py",
+            PLOTS + "/plot_utils.py",
+            PLOTS + "/plot_lrs_qc.py",
+            PLOTS + "/plot_caller_concordance.py",
+            PLOTS + "/plot_sv_landscape.py",
+            PLOTS + "/plot_needlr_population.py",
+            PLOTS + "/plot_candidate_evidence_matrix.py",
+            PLOTS + "/plot_candidate_genes.py",
+            PLOTS + "/plot_gene_hpo_heatmap.py",
+            PLOTS + "/plot_straglr.py",
+            PLOTS + "/plot_mei.py",
+            PLOTS + "/plot_phasing_qc.py",
+            PLOTS + "/plot_methylation.py",
+        ]
     output:
         marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
     params:
