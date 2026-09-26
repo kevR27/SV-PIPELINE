@@ -364,6 +364,17 @@ def main() -> int:
                 "AnnotSV_GENCC_evidence": ";".join(sorted(set(a["gencc_classification"]))),
                 "AnnotSV_ClinVar_evidence": ";".join(sorted(set(a["clinvar"]))),
                 "AnnotSV_constraint_evidence": ";".join(sorted(set(a["constraint"]))),
+
+                # Explicit interpretation columns retained in the gene-ranking
+                # output so the most useful biological context is visible
+                # without reopening the full AnnotSV table.
+                "PANEL_STATUS": "PANEL_GENE" if gene in panel else "NONPANEL_GENE",
+                "CANDIDATE_CLASS": candidate_group,
+                "OMIM": ";".join(sorted(set(a["omim"]))) or ".",
+                "GENCC": gencc_summary["all_terms"],
+                "ANNOTSV_GENERAL_CLASSIFICATION": (
+                    ";".join(sorted(set(a["acmg_class"]))) or "."
+                ),
                 "candidate_group": candidate_group,
                 "classification": candidate_group,
                 "ranking_model": "phenotype13_geneDisease4_sv2_v2",
