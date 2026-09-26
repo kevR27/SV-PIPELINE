@@ -219,9 +219,33 @@ def sv_database_evidence(ann_row: dict, svtype: str) -> dict[str, str]:
     }
 
 
-def source_overlap_flag(pathogenic_source: str, benign_source: str, database: str) -> str:
-    """Summarize whether an AnnotSV source string mentions a specific SV database."""
-    combined = f"{pathogenic_source};{benign_source}".upper()
+def source_overlap_flag(
+    pathogenic_source: str,
+    benign_source: str,
+    database: str,
+    *,
+    scope: str,
+) -> str:
+    """Report source mentions, without interpreting missing data as a negative.
+
+    YES: database mentioned in at least one source field.
+    NOT_REPORTED: source text exists, but this database is not mentioned.
+    UNKNOWN: both source fields are missing; absence of overlap and unavailable
+        annotations cannot be distinguished from these fields alone.
+    NOT_APPLICABLE: this integration has no dedicated mapping for the SV type.
+    These flags do not establish database availability or variant pathogenicity.
+    """
+    if scope == "NO_DEDICATED_ANNOTSV_SV_DATABASE_FIELDS":
+        return "NOT_APPLICABLE"
+    missing_tokens = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
+    sources = [
+        str(value).strip().upper()
+        for value in (pathogenic_source, benign_source)
+        if value is not None and str(value).strip().upper() not in missing_tokens
+    ]
+    if not sources:
+        return "UNKNOWN"
+    combined = ";".join(sources)
     patterns = {
         "CLINVAR": ("CLINVAR", "CLN"),
         "DBVAR": ("DBVAR",),
@@ -230,7 +254,7 @@ def source_overlap_flag(pathogenic_source: str, benign_source: str, database: st
         "1000G": ("1000G", "1000 GENOMES", "1000GENOMES"),
         "CLINGEN": ("CLINGEN", "HI3", "TS3", "HI40", "TS40"),
     }
-    return "YES" if any(token in combined for token in patterns[database]) else "NO"
+    return "YES" if any(token in combined for token in patterns[database]) else "NOT_REPORTED"
 
 
 def split_values(value) -> list[str]:
@@ -865,6 +889,7 @@ def main() -> int:
                             sv_db["pathogenic_source"],
                             sv_db["benign_source"],
                             "CLINVAR",
+                            scope=sv_db["scope"],
                         ),
                     ),
                     (
@@ -873,6 +898,7 @@ def main() -> int:
                             sv_db["pathogenic_source"],
                             sv_db["benign_source"],
                             "DBVAR",
+                            scope=sv_db["scope"],
                         ),
                     ),
                     (
@@ -881,6 +907,7 @@ def main() -> int:
                             sv_db["pathogenic_source"],
                             sv_db["benign_source"],
                             "GNOMAD",
+                            scope=sv_db["scope"],
                         ),
                     ),
                     (
@@ -889,6 +916,7 @@ def main() -> int:
                             sv_db["pathogenic_source"],
                             sv_db["benign_source"],
                             "DGV",
+                            scope=sv_db["scope"],
                         ),
                     ),
                     (
@@ -897,6 +925,7 @@ def main() -> int:
                             sv_db["pathogenic_source"],
                             sv_db["benign_source"],
                             "1000G",
+                            scope=sv_db["scope"],
                         ),
                     ),
                     (
@@ -905,6 +934,7 @@ def main() -> int:
                             sv_db["pathogenic_source"],
                             sv_db["benign_source"],
                             "CLINGEN",
+                            scope=sv_db["scope"],
                         ),
                     ),
                     (
