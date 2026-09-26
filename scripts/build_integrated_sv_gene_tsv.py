@@ -106,6 +106,72 @@ def normalize_svtype(value: str) -> str:
     return x
 
 
+ACMG_CLASS_LABELS = {
+    1: "BENIGN",
+    2: "LIKELY_BENIGN",
+    3: "VUS",
+    4: "LIKELY_PATHOGENIC",
+    5: "PATHOGENIC",
+}
+
+
+def acmg_class_label(value) -> str:
+    """Normalize AnnotSV ACMG class while retaining the original value separately."""
+    if value in (None, "", MISSING):
+        return MISSING
+
+    raw = str(value).strip()
+    match = re.search(r"(?:class\s*)?([1-5])(?:\.0)?$", raw, re.IGNORECASE)
+    if match:
+        return ACMG_CLASS_LABELS[int(match.group(1))]
+
+    upper = raw.upper().replace(" ", "_").replace("-", "_")
+    aliases = {
+        "BENIGN": "BENIGN",
+        "LIKELY_BENIGN": "LIKELY_BENIGN",
+        "VARIANT_OF_UNKNOWN_SIGNIFICANCE": "VUS",
+        "VARIANT_OF_UNCERTAIN_SIGNIFICANCE": "VUS",
+        "VUS": "VUS",
+        "LIKELY_PATHOGENIC": "LIKELY_PATHOGENIC",
+        "PATHOGENIC": "PATHOGENIC",
+    }
+    return aliases.get(upper, raw)
+
+
+def dosage_score_label(value) -> str:
+    """Translate ClinGen HI/TS score to a readable evidence term."""
+    if value in (None, "", MISSING):
+        return "NOT_AVAILABLE"
+
+    raw = str(value).strip().split(";")[0].split("|")[0].strip()
+    try:
+        score = int(float(raw))
+    except ValueError:
+        return f"UNPARSED_{raw}"
+
+    return {
+        3: "SUFFICIENT_EVIDENCE",
+        2: "EMERGING_EVIDENCE",
+        1: "LITTLE_EVIDENCE",
+        0: "NO_EVIDENCE",
+        40: "DOSAGE_SENSITIVITY_UNLIKELY",
+        30: "AUTOSOMAL_RECESSIVE_GENE",
+        -1: "NOT_EVALUATED",
+    }.get(score, f"SCORE_{score}")
+
+
+def dosage_relevance(svtype: str, hi_value, ts_value) -> str:
+    """Choose the ClinGen dosage mechanism that matches the SV direction."""
+    svtype = normalize_svtype(svtype)
+    if svtype == "DEL":
+        return "HI_" + dosage_score_label(hi_value)
+    if svtype == "DUP":
+        return "TS_" + dosage_score_label(ts_value)
+    if svtype == "CNV":
+        return "NOT_APPLICABLE_CNV_DIRECTION_UNKNOWN"
+    return "NOT_APPLICABLE_NON_CNV"
+
+
 def split_values(value) -> list[str]:
     if value in (None, "", MISSING):
         return []
@@ -628,8 +694,135 @@ def main() -> int:
                     ("NEEDLR_HPO", first(needlr_row, ["HPO", "HPO_terms", "HPO_Terms"])),
                     ("NEEDLR_OMIM", first(needlr_row, ["OMIM", "OMIM_phenotypes"])),
                     ("NEEDLR_GENCC", first(needlr_row, ["GenCC", "GENCC", "GenCC_phenotypes"])),
-                    ("OMIM", first(ann_row, ["OMIM", "AnnotSV_OMIM", "AnnotSV_OMIM_evidence"])),
-                    ("GENCC", first(ann_row, ["GENCC", "GenCC", "AnnotSV_GENCC", "AnnotSV_GENCC_evidence"])),
+                    (
+                        "OMIM",
+                        first(
+                            ann_row,
+                            [
+                                "OMIM_phenotype",
+                                "OMIM",
+                                "AnnotSV_OMIM",
+                                "AnnotSV_OMIM_evidence",
+                            ],
+                        ),
+                    ),
+                    (
+                        "OMIM_INHERITANCE",
+                        first(ann_row, ["OMIM_inheritance", "OMIM inheritance"]),
+                    ),
+                    (
+                        "OMIM_MORBID",
+                        first(ann_row, ["OMIM_morbid", "OMIM_morbid_candidate"]),
+                    ),
+                    (
+                        "GENCC",
+                        first(
+                            ann_row,
+                            [
+                                "GenCC_classification",
+                                "GENCC_classification",
+                                "GENCC",
+                                "GenCC",
+                                "AnnotSV_GENCC",
+                                "AnnotSV_GENCC_evidence",
+                            ],
+                        ),
+                    ),
+                    (
+                        "GENCC_DISEASE",
+                        first(ann_row, ["GenCC_disease", "GENCC_disease"]),
+                    ),
+                    (
+                        "GENCC_MOI",
+                        first(ann_row, ["GenCC_moi", "GENCC_moi"]),
+                    ),
+                    (
+                        "GENE_DISEASE_EVIDENCE_SCORE",
+                        first(
+                            ranking_row,
+                            [
+                                "gene_disease_evidence_score",
+                                "GENE_DISEASE_EVIDENCE_SCORE",
+                            ],
+                        ),
+                    ),
+                    (
+                        "GENE_DISEASE_EVIDENCE_LEVEL",
+                        first(
+                            ranking_row,
+                            [
+                                "gene_disease_evidence_level",
+                                "GENE_DISEASE_EVIDENCE_LEVEL",
+                            ],
+                        ),
+                    ),
+                    (
+                        "GENE_DISEASE_EVIDENCE_SOURCE",
+                        first(
+                            ranking_row,
+                            [
+                                "gene_disease_evidence_source",
+                                "GENE_DISEASE_EVIDENCE_SOURCE",
+                            ],
+                        ),
+                    ),
+                    (
+                        "GENE_DISEASE_EVIDENCE_CONFLICT",
+                        first(
+                            ranking_row,
+                            [
+                                "gene_disease_evidence_conflict",
+                                "GENE_DISEASE_EVIDENCE_CONFLICT",
+                            ],
+                        ),
+                    ),
+                    ("CLINGEN_HI", first(ann_row, ["HI"])),
+                    ("CLINGEN_TS", first(ann_row, ["TS"])),
+                    (
+                        "DOSAGE_RELEVANCE",
+                        dosage_relevance(
+                            sv["SVTYPE"],
+                            first(ann_row, ["HI"]),
+                            first(ann_row, ["TS"]),
+                        ),
+                    ),
+                    (
+                        "ANNOTSV_RANKING_SCORE",
+                        first(
+                            ann_row,
+                            ["AnnotSV_ranking_score", "AnnotSV ranking score"],
+                        ),
+                    ),
+                    (
+                        "ANNOTSV_RANKING_CRITERIA",
+                        first(
+                            ann_row,
+                            ["AnnotSV_ranking_criteria", "AnnotSV ranking criteria"],
+                        ),
+                    ),
+                    (
+                        "ANNOTSV_ACMG_CLASS_RAW",
+                        first(ann_row, ["ACMG_class", "ACMG class"]),
+                    ),
+                    (
+                        "ACMG_CNV_CLASS",
+                        (
+                            acmg_class_label(first(ann_row, ["ACMG_class", "ACMG class"]))
+                            if normalize_svtype(sv["SVTYPE"]) in {"DEL", "DUP"}
+                            else "NOT_APPLICABLE_NON_CNV"
+                        ),
+                    ),
+                    (
+                        "ACMG_CNV_SCORE",
+                        (
+                            first(
+                                ann_row,
+                                ["AnnotSV_ranking_score", "AnnotSV ranking score"],
+                            )
+                            if normalize_svtype(sv["SVTYPE"]) in {"DEL", "DUP"}
+                            else MISSING
+                        ),
+                    ),
                     (
                         "ANNotsv_Gene",
                         first(
@@ -642,11 +835,11 @@ def main() -> int:
                         first(
                             ann_row,
                             [
+                                "ACMG_class",
+                                "AnnotSV_Classification",
                                 "AnnotSV ranking",
                                 "AnnotSV_rank",
                                 "AnnotSV_ranking_score",
-                                "AnnotSV_Classification",
-                                "ACMG_class",
                             ],
                         ),
                     ),
@@ -657,6 +850,20 @@ def main() -> int:
                         else ("UNRESOLVED" if gene == MISSING else "NONPANEL_GENE"),
                     ),
                     ("PHENOTYPE_SCORE", first(ranking_row, ["phenotype_score", "PHENOTYPE_SCORE"])),
+                    (
+                        "SV_EVIDENCE_SCORE",
+                        first(ranking_row, ["SV_evidence_score", "SV_EVIDENCE_SCORE"]),
+                    ),
+                    (
+                        "INTEGRATED_DISCOVERY_SCORE",
+                        first(
+                            ranking_row,
+                            [
+                                "integrated_discovery_score",
+                                "INTEGRATED_DISCOVERY_SCORE",
+                            ],
+                        ),
+                    ),
                     ("CANDIDATE_CLASS", first(ranking_row, ["classification", "CANDIDATE_CLASS"])),
                 ]
             )
@@ -727,11 +934,29 @@ def main() -> int:
         "NEEDLR_OMIM",
         "NEEDLR_GENCC",
         "OMIM",
+        "OMIM_INHERITANCE",
+        "OMIM_MORBID",
         "GENCC",
+        "GENCC_DISEASE",
+        "GENCC_MOI",
+        "GENE_DISEASE_EVIDENCE_SCORE",
+        "GENE_DISEASE_EVIDENCE_LEVEL",
+        "GENE_DISEASE_EVIDENCE_SOURCE",
+        "GENE_DISEASE_EVIDENCE_CONFLICT",
+        "CLINGEN_HI",
+        "CLINGEN_TS",
+        "DOSAGE_RELEVANCE",
+        "ANNOTSV_RANKING_SCORE",
+        "ANNOTSV_RANKING_CRITERIA",
+        "ANNOTSV_ACMG_CLASS_RAW",
+        "ACMG_CNV_CLASS",
+        "ACMG_CNV_SCORE",
         "ANNotsv_Gene",
         "ANNotsv_Classification",
         "PANEL_STATUS",
         "PHENOTYPE_SCORE",
+        "SV_EVIDENCE_SCORE",
+        "INTEGRATED_DISCOVERY_SCORE",
         "CANDIDATE_CLASS",
     ]
     info_columns = sorted(
