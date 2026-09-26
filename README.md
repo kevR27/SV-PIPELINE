@@ -455,11 +455,61 @@ This produces:
 <sample>_ranked_candidates.tsv
 ```
 
-The ranking uses biological information such as panel membership and phenotype relationships to help prioritize candidate genes.
+### Gene ranking
 
-`CANDIDATE_CLASS` and phenotype scores are prioritization tools. They are not automatic clinical classifications.
+The ranking now keeps three types of information separate:
 
-**Question answered:** Which affected genes are most compatible with the phenotype, including genes outside the original panel?
+```text
+phenotype relevance
+        +
+curated gene-disease evidence
+        +
+a small SV-evidence component
+```
+
+The phenotype component has the largest weight because the main purpose is to identify genes that fit the neurological/optic-neuropathy phenotype.
+
+The gene-disease component uses GenCC classifications when available. These are kept as readable terms such as:
+
+```text
+Definitive
+Strong
+Moderate
+Supportive
+Limited
+Animal Model Only
+Disputed
+Refuted
+No known disease relationship
+```
+
+A small internal numerical value is attached to these terms only to help order candidates. It is called:
+
+```text
+gene_disease_evidence_score
+```
+
+This is **not a probability of pathogenicity**.
+
+If GenCC evidence is not available but an OMIM disease relationship is present, a smaller supportive value is used for research prioritization.
+
+The current integrated discovery score is:
+
+```text
+phenotype component       0-13
+gene-disease evidence     0-4
+SV evidence               0-2
+                          ----
+maximum                    19
+```
+
+SV count has only a small contribution because several SVs affecting the same gene do not automatically make that gene more likely to be disease-causing.
+
+Panel membership remains a separate category and is not added directly to the numerical score. This avoids automatically forcing known panel genes above potentially relevant non-panel genes.
+
+`CANDIDATE_CLASS`, `gene_disease_evidence_score`, and the integrated discovery score are prioritization tools. They are not automatic clinical classifications.
+
+**Question answered:** Which affected genes are most compatible with the phenotype and with known human disease evidence, including genes outside the original panel?
 
 ---
 
@@ -481,12 +531,14 @@ The table combines:
 - normalized read support;
 - caller QC/evidence flags;
 - affected genes;
-- AnnotSV information;
 - needLR population-frequency evidence;
-- OMIM and GenCC information;
+- OMIM and GenCC disease information;
+- gene-disease evidence level and score;
+- ClinGen haploinsufficiency (HI) and triplosensitivity (TS);
+- AnnotSV ranking score and ranking criteria;
+- ACMG CNV class for deletions and duplications;
 - panel status;
-- phenotype score;
-- candidate-priority class;
+- phenotype and discovery scores;
 - relevant INFO fields from the master VCF.
 
 Representative columns include:
@@ -496,20 +548,44 @@ SV_ID
 CHROM / START / END
 CHR2 / POS2
 SVTYPE / SVLEN
+
 CALLERS / CALLER_COUNT
 SUPP / SUPP_VEC
 CALLER_READ_SUPPORT
 CALLER_EVIDENCE_FLAGS
-GENES
+
 NEEDLR_AF / NEEDLR_STATUS
-OMIM / GENCC
-ANNotsv_Classification
+
+GENES
+OMIM
+GENCC
+GENCC_DISEASE
+GENCC_MOI
+GENE_DISEASE_EVIDENCE_SCORE
+GENE_DISEASE_EVIDENCE_LEVEL
+GENE_DISEASE_EVIDENCE_CONFLICT
+
+CLINGEN_HI
+CLINGEN_TS
+DOSAGE_RELEVANCE
+
+ANNOTSV_RANKING_SCORE
+ANNOTSV_RANKING_CRITERIA
+ACMG_CNV_SCORE
+ACMG_CNV_CLASS
+
 PANEL_STATUS
 PHENOTYPE_SCORE
+SV_EVIDENCE_SCORE
+INTEGRATED_DISCOVERY_SCORE
 CANDIDATE_CLASS
 ```
 
-This table connects the SV discovery results with the biological interpretation.
+For deletions, the dosage interpretation uses the ClinGen **HI** score. For duplications, it uses the ClinGen **TS** score.
+
+The ACMG CNV fields are only treated as formal CNV pathogenicity evidence for `DEL` and `DUP` events. Other SV types keep the AnnotSV ranking information but are not forced into a CNV-specific interpretation framework.
+
+This table connects the SV discovery results with gene relevance, dosage sensitivity, and variant-level pathogenicity evidence.
 
 ---
 
@@ -677,7 +753,10 @@ The following rules are central to the workflow:
 8. BNDs and very large SVs remain in the master analysis even when a supplementary tool has size or representation limits.
 9. Straglr, TLDR, phasing, and methylation are additional evidence layers and do not increase the Jasmine caller count.
 10. Candidate ranking is used for prioritization, not as an automatic diagnostic classification.
-11. Known-positive samples are used to test sensitivity before parameter changes are applied to the wider dataset.
+11. The gene-disease evidence score is an internal ranking value derived from curated GenCC/OMIM evidence; it is not a probability that a gene is pathogenic.
+12. For deletions and duplications, AnnotSV/ACMG CNV score and class are kept separately from the gene-priority score.
+13. ClinGen HI and TS are interpreted according to SV direction: HI for deletions and TS for duplications.
+14. Known-positive samples are used to test sensitivity before parameter changes are applied to the wider dataset.
 
 ---
 
