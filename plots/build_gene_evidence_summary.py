@@ -142,6 +142,8 @@ def main():
                     "AnnotSV_ACMG_classes",
                     "AnnotSV_OMIM_evidence", "AnnotSV_GENCC_evidence",
                     "AnnotSV_ClinVar_evidence", "AnnotSV_constraint_evidence",
+                    "PANEL_STATUS", "CANDIDATE_CLASS", "OMIM", "GENCC",
+                    "ANNOTSV_GENERAL_CLASSIFICATION",
                     "candidate_group", "classification", "ranking_model",
                     "interpretation",
                 ]
