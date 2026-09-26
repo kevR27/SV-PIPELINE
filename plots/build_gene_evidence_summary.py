@@ -133,10 +133,17 @@ def main():
                 c for c in [
                     "gene", "SV_count", "human_HPO_count",
                     "optic_neuropathy_anchor_HPO_count", "phenotype_score",
+                    "gene_disease_evidence_score", "gene_disease_evidence_level",
+                    "gene_disease_evidence_source", "gene_disease_evidence_conflict",
+                    "GenCC_classifications", "GenCC_disease", "GenCC_moi",
+                    "ClinGen_HI", "ClinGen_TS",
                     "SV_evidence_score", "integrated_discovery_score",
+                    "AnnotSV_ranking_scores", "AnnotSV_ranking_criteria",
+                    "AnnotSV_ACMG_classes",
                     "AnnotSV_OMIM_evidence", "AnnotSV_GENCC_evidence",
                     "AnnotSV_ClinVar_evidence", "AnnotSV_constraint_evidence",
-                    "candidate_group", "classification", "interpretation",
+                    "candidate_group", "classification", "ranking_model",
+                    "interpretation",
                 ]
                 if c in rank.columns
             ]
@@ -169,7 +176,16 @@ def main():
             hsum["retrieved_anchor_HPO_count"] = hsum["retrieved_anchor_HPO_count"].fillna(0)
             summary = summary.merge(hsum, on="gene", how="left")
 
-    sort_cols = [c for c in ["integrated_discovery_score", "max_phenotype_score", "master_SV_count"] if c in summary.columns]
+    sort_cols = [
+        c
+        for c in [
+            "integrated_discovery_score",
+            "gene_disease_evidence_score",
+            "max_phenotype_score",
+            "master_SV_count",
+        ]
+        if c in summary.columns
+    ]
     if sort_cols:
         for col in sort_cols:
             summary[col] = pd.to_numeric(summary[col], errors="coerce")
