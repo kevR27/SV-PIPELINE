@@ -172,6 +172,67 @@ def dosage_relevance(svtype: str, hi_value, ts_value) -> str:
     return "NOT_APPLICABLE_NON_CNV"
 
 
+def sv_database_evidence(ann_row: dict, svtype: str) -> dict[str, str]:
+    """Expose AnnotSV's SV-oriented benign/pathogenic database overlaps.
+
+    AnnotSV stores separate annotation fields for loss, gain, insertion and
+    inversion events. These values can contain evidence from resources such as
+    ClinVar/dbVar/ClinGen on the pathogenic side and gnomAD/DGV/1000G/ClinVar
+    on the benign/common side, depending on the installed AnnotSV annotation
+    release. They are overlap evidence, not exact-equivalence claims.
+    """
+    svtype = normalize_svtype(svtype)
+
+    if svtype == "DEL":
+        key = "loss"
+        scope = "LOSS"
+    elif svtype == "DUP":
+        key = "gain"
+        scope = "GAIN"
+    elif svtype == "INS":
+        key = "ins"
+        scope = "INSERTION"
+    elif svtype == "INV":
+        key = "inv"
+        scope = "INVERSION"
+    else:
+        return {
+            "scope": "NO_DEDICATED_ANNOTSV_SV_DATABASE_FIELDS",
+            "pathogenic_source": MISSING,
+            "pathogenic_coord": MISSING,
+            "pathogenic_phenotype": MISSING,
+            "pathogenic_hpo": MISSING,
+            "benign_source": MISSING,
+            "benign_coord": MISSING,
+            "benign_afmax": MISSING,
+        }
+
+    return {
+        "scope": scope,
+        "pathogenic_source": first(ann_row, [f"P_{key}_source"]),
+        "pathogenic_coord": first(ann_row, [f"P_{key}_coord"]),
+        "pathogenic_phenotype": first(ann_row, [f"P_{key}_phen"]),
+        "pathogenic_hpo": first(ann_row, [f"P_{key}_hpo"]),
+        "benign_source": first(ann_row, [f"B_{key}_source"]),
+        "benign_coord": first(ann_row, [f"B_{key}_coord"]),
+        "benign_afmax": first(ann_row, [f"B_{key}_AFmax"]),
+    }
+
+
+def source_overlap_flag(pathogenic_source: str, benign_source: str, database: str) -> str:
+    """Summarize whether an AnnotSV source string mentions a specific SV database."""
+    combined = f"{pathogenic_source};{benign_source}".upper()
+    patterns = {
+        "CLINVAR": ("CLINVAR", "CLN"),
+        "DBVAR": ("DBVAR",),
+        "GNOMAD": ("GNOMAD",),
+        "DGV": ("DGV",),
+        "1000G": ("1000G", "1000 GENOMES", "1000GENOMES"),
+        "CLINGEN": ("CLINGEN", "HI3", "TS3", "HI40", "TS40"),
+    }
+    return "YES" if any(token in combined for token in patterns[database]) else "NO"
+
+
 def split_values(value) -> list[str]:
     if value in (None, "", MISSING):
         return []
@@ -649,6 +710,7 @@ def main() -> int:
         for gene in genes:
             ann_row = annotsv_row_for_gene(ann_matches, gene)
             ranking_row = ranking.get(gene, {}) if gene != MISSING else {}
+            sv_db = sv_database_evidence(ann_row, sv["SVTYPE"])
 
             row = OrderedDict(
                 [
@@ -784,6 +846,65 @@ def main() -> int:
                             sv["SVTYPE"],
                             first(ann_row, ["HI"]),
                             first(ann_row, ["TS"]),
+                        ),
+                    ),
+                    ("SV_DATABASE_EVIDENCE_SCOPE", sv_db["scope"]),
+                    ("SV_PATHOGENIC_DB_SOURCE", sv_db["pathogenic_source"]),
+                    ("SV_PATHOGENIC_DB_COORD", sv_db["pathogenic_coord"]),
+                    (
+                        "SV_PATHOGENIC_DB_PHENOTYPE",
+                        sv_db["pathogenic_phenotype"],
+                    ),
+                    ("SV_PATHOGENIC_DB_HPO", sv_db["pathogenic_hpo"]),
+                    ("SV_BENIGN_DB_SOURCE", sv_db["benign_source"]),
+                    ("SV_BENIGN_DB_COORD", sv_db["benign_coord"]),
+                    ("SV_BENIGN_DB_AFMAX", sv_db["benign_afmax"]),
+                    (
+                        "SV_DB_CLINVAR_OVERLAP",
+                        source_overlap_flag(
+                            sv_db["pathogenic_source"],
+                            sv_db["benign_source"],
+                            "CLINVAR",
+                        ),
+                    ),
+                    (
+                        "SV_DB_DBVAR_OVERLAP",
+                        source_overlap_flag(
+                            sv_db["pathogenic_source"],
+                            sv_db["benign_source"],
+                            "DBVAR",
+                        ),
+                    ),
+                    (
+                        "SV_DB_GNOMAD_OVERLAP",
+                        source_overlap_flag(
+                            sv_db["pathogenic_source"],
+                            sv_db["benign_source"],
+                            "GNOMAD",
+                        ),
+                    ),
+                    (
+                        "SV_DB_DGV_OVERLAP",
+                        source_overlap_flag(
+                            sv_db["pathogenic_source"],
+                            sv_db["benign_source"],
+                            "DGV",
+                        ),
+                    ),
+                    (
+                        "SV_DB_1000G_OVERLAP",
+                        source_overlap_flag(
+                            sv_db["pathogenic_source"],
+                            sv_db["benign_source"],
+                            "1000G",
+                        ),
+                    ),
+                    (
+                        "SV_DB_CLINGEN_OVERLAP",
+                        source_overlap_flag(
+                            sv_db["pathogenic_source"],
+                            sv_db["benign_source"],
+                            "CLINGEN",
                         ),
                     ),
                     (
@@ -964,6 +1085,20 @@ def main() -> int:
         "CLINGEN_HI",
         "CLINGEN_TS",
         "DOSAGE_RELEVANCE",
+        "SV_DATABASE_EVIDENCE_SCOPE",
+        "SV_PATHOGENIC_DB_SOURCE",
+        "SV_PATHOGENIC_DB_COORD",
+        "SV_PATHOGENIC_DB_PHENOTYPE",
+        "SV_PATHOGENIC_DB_HPO",
+        "SV_BENIGN_DB_SOURCE",
+        "SV_BENIGN_DB_COORD",
+        "SV_BENIGN_DB_AFMAX",
+        "SV_DB_CLINVAR_OVERLAP",
+        "SV_DB_DBVAR_OVERLAP",
+        "SV_DB_GNOMAD_OVERLAP",
+        "SV_DB_DGV_OVERLAP",
+        "SV_DB_1000G_OVERLAP",
+        "SV_DB_CLINGEN_OVERLAP",
         "ANNOTSV_RANKING_SCORE",
         "ANNOTSV_RANKING_CRITERIA",
         "ANNOTSV_ACMG_CLASS_RAW",
