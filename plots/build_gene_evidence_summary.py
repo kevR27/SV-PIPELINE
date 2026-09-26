@@ -71,10 +71,34 @@ def main():
     panel_col = first_existing(work, ["PANEL_STATUS"])
     candidate_col = first_existing(work, ["CANDIDATE_CLASS"])
 
+    sv_db_flag_cols = {
+        "clinvar": first_existing(work, ["SV_DB_CLINVAR_OVERLAP"]),
+        "dbvar": first_existing(work, ["SV_DB_DBVAR_OVERLAP"]),
+        "gnomad": first_existing(work, ["SV_DB_GNOMAD_OVERLAP"]),
+        "dgv": first_existing(work, ["SV_DB_DGV_OVERLAP"]),
+        "1000g": first_existing(work, ["SV_DB_1000G_OVERLAP"]),
+        "clingen": first_existing(work, ["SV_DB_CLINGEN_OVERLAP"]),
+    }
+    pathogenic_db_col = first_existing(work, ["SV_PATHOGENIC_DB_SOURCE"])
+    benign_db_col = first_existing(work, ["SV_BENIGN_DB_SOURCE"])
+
     work["_caller_count"] = numeric(work[caller_count_col]).fillna(0) if caller_count_col else 0
     work["_af"] = numeric(work[af_col]) if af_col else np.nan
     work["_phenotype"] = numeric(work[pheno_col]).fillna(0) if pheno_col else 0
     work["_panel"] = (work[panel_col].fillna("").astype(str).str.upper().str.contains("PANEL_GENE|^YES$", regex=True)) if panel_col else False
+
+    for label, col in sv_db_flag_cols.items():
+        work[f"_svdb_{label}"] = yes(work[col]) if col else False
+
+    if pathogenic_db_col:
+        work["_pathogenic_db"] = ~work[pathogenic_db_col].fillna("").astype(str).isin(MISSING)
+    else:
+        work["_pathogenic_db"] = False
+
+    if benign_db_col:
+        work["_benign_db"] = ~work[benign_db_col].fillna("").astype(str).isin(MISSING)
+    else:
+        work["_benign_db"] = False
 
     for source in ["STRAGLR_MATCH", "TLDR_MATCH", "LONGPHASE_MATCH", "LONGPHASE_PHASED"]:
         if source in work.columns:
@@ -108,6 +132,14 @@ def main():
                 "multicaller_SV_count": int((unique["_caller_count"] >= 2).sum()),
                 "needLR_rare_SV_count": int(((af <= args.rare_af) & af.notna()).sum()) if len(af) else 0,
                 "needLR_unobserved_SV_count": int((af.eq(0) & af.notna()).sum()) if len(af) else 0,
+                "pathogenic_SV_database_overlap_count": int(unique["_pathogenic_db"].sum()),
+                "benign_SV_database_overlap_count": int(unique["_benign_db"].sum()),
+                "clinvar_SV_overlap_count": int(unique["_svdb_clinvar"].sum()),
+                "dbvar_SV_overlap_count": int(unique["_svdb_dbvar"].sum()),
+                "gnomad_SV_overlap_count": int(unique["_svdb_gnomad"].sum()),
+                "dgv_SV_overlap_count": int(unique["_svdb_dgv"].sum()),
+                "1000g_SV_overlap_count": int(unique["_svdb_1000g"].sum()),
+                "clingen_SV_overlap_count": int(unique["_svdb_clingen"].sum()),
                 "straglr_matched_SV_count": int(unique["_straglr_match"].sum()),
                 "tldr_matched_SV_count": int(unique["_tldr_match"].sum()),
                 "longphase_matched_SV_count": int(unique["_longphase_match"].sum()),
