@@ -844,6 +844,24 @@ def main() -> int:
                         ),
                     ),
                     (
+                        "ANNOTSV_GENERAL_CLASSIFICATION",
+                        (
+                            acmg_class_label(
+                                first(ann_row, ["ACMG_class", "ACMG class"])
+                            )
+                            if first(ann_row, ["ACMG_class", "ACMG class"]) != MISSING
+                            else MISSING
+                        ),
+                    ),
+                    (
+                        "ANNOTSV_CLASSIFICATION_SCOPE",
+                        (
+                            "GAIN_LOSS_CNV_FRAMEWORK"
+                            if normalize_svtype(sv["SVTYPE"]) in {"DEL", "DUP"}
+                            else "NO_FORMAL_GAIN_LOSS_CLASS_FOR_SVTYPE"
+                        ),
+                    ),
+                    (
                         "PANEL_STATUS",
                         "PANEL_GENE"
                         if gene in panel
@@ -953,6 +971,8 @@ def main() -> int:
         "ACMG_CNV_SCORE",
         "ANNotsv_Gene",
         "ANNotsv_Classification",
+        "ANNOTSV_GENERAL_CLASSIFICATION",
+        "ANNOTSV_CLASSIFICATION_SCOPE",
         "PANEL_STATUS",
         "PHENOTYPE_SCORE",
         "SV_EVIDENCE_SCORE",
