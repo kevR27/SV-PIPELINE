@@ -964,7 +964,7 @@ rule vep_sv_annotation:
             --assembly {VEP_ASSEMBLY} \
             --canonical \
             --overlaps \
-            --pick \
+            --flag_pick \
             --symbol \
             --biotype \
             --max_sv_size 250000000 \
