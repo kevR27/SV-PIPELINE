@@ -92,6 +92,15 @@ def split_values(value: str) -> list[str]:
     ]
 
 
+def is_positive_flag(value: str) -> bool:
+    return str(value or "").strip().upper() in {
+        "YES",
+        "TRUE",
+        "1",
+        "Y",
+    }
+
+
 def normalize_gencc_term(value: str) -> str | None:
     """Map raw GenCC text to one harmonized term when possible."""
     text = str(value or "").strip().upper()
@@ -296,7 +305,10 @@ def main() -> int:
         # small and capped at 2 points.
         sv_component = min(2.0, float(sv_count) * 0.5)
 
-        has_omim = bool(a["omim"] or a["omim_morbid"])
+        has_omim = bool(a["omim"]) or any(
+            is_positive_flag(value)
+            for value in a["omim_morbid"]
+        )
         gencc_summary = summarize_gencc(a["gencc_classification"], has_omim)
         gene_disease_component = float(gencc_summary["score"])
 
