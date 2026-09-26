@@ -425,7 +425,22 @@ The source fields can contain evidence derived from SV resources such as ClinVar
 
 These are kept as separate columns because the ACMG/ClinGen quantitative framework mainly applies to copy-number loss/gain. For insertions and inversions, the database-overlap evidence is therefore especially useful.
 
-The workflow records both the original source text and simple database-overlap flags. An overlap is treated as evidence, not as proof that the patient SV is exactly the same event as the database SV.
+The workflow records both the original source text and database-overlap flags. An overlap is treated as evidence, not as proof that the patient SV is exactly the same event as the database SV.
+
+The six `SV_DB_*_OVERLAP` columns (ClinVar, dbVar, gnomAD, DGV, 1000 Genomes and ClinGen) summarize database names reported in AnnotSV's source fields:
+
+| Flag | Meaning |
+| --- | --- |
+| `YES` | The database is mentioned in at least one source field. |
+| `NOT_REPORTED` | Source text exists, but this database is not mentioned. |
+| `UNKNOWN` | Both source fields are missing. These fields alone cannot distinguish no reported overlap from unavailable annotations. |
+| `NOT_APPLICABLE` | This integration has no dedicated source-field mapping for the SV type, including BND/translocations and complex types outside DEL/DUP/INS/INV. |
+
+Empty fields and the missing-value tokens `.`, `NA`, `N/A`, `NaN`, `None` and `null` are treated as missing, ignoring case and surrounding whitespace. Unsupported SV types receive `NOT_APPLICABLE` before source fields are checked.
+
+These flags expose existing AnnotSV annotations; they do not query databases independently or verify that a database is installed. `NOT_REPORTED` is not a verified negative database search, and none of these statuses establishes that an SV is benign. For `UNKNOWN` values, inspect the original AnnotSV TSV, expected source columns, annotation resources and row matching.
+
+The change is implemented in `build_integrated_sv_gene_tsv.py` ([commit d019bf9](https://github.com/kevR27/SV-PIPELINE/commit/d019bf9ae6193367990feb9055c3ab955e1fbda5)). Existing result tables retain their old flags until the integrated-table step is rerun with the updated script. Downstream summaries that previously expected only `YES`/`NO` must handle all four statuses.
 
 **Question answered:** Which genes and genomic features are affected, and is there known benign or pathogenic SV evidence overlapping the event?
 
