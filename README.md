@@ -395,7 +395,7 @@ Important rules:
 
 ---
 
-## 10. AnnotSV — main SV annotation
+## 10. AnnotSV — main SV annotation and SV-database evidence
 
 AnnotSV is the main annotation tool used for the structural variants.
 
@@ -412,15 +412,34 @@ The first file contains the genome-wide annotation. The panel-only file is deriv
 
 This order is important because the genome-wide discovery step should remain independent of the known gene panel.
 
-**Question answered:** Which genes and clinically relevant genomic features are affected by each master SV?
+In addition to gene annotation and CNV-oriented ACMG/ClinGen ranking, the integrated table now exposes AnnotSV's SV-specific benign/pathogenic overlap fields for:
+
+```text
+DEL  -> loss evidence
+DUP  -> gain evidence
+INS  -> insertion evidence
+INV  -> inversion evidence
+```
+
+The source fields can contain evidence derived from SV resources such as ClinVar, dbVar, ClinGen, gnomAD, DGV and 1000 Genomes, depending on the installed AnnotSV annotation release.
+
+These are kept as separate columns because the ACMG/ClinGen quantitative framework mainly applies to copy-number loss/gain. For insertions and inversions, the database-overlap evidence is therefore especially useful.
+
+The workflow records both the original source text and simple database-overlap flags. An overlap is treated as evidence, not as proof that the patient SV is exactly the same event as the database SV.
+
+**Question answered:** Which genes and genomic features are affected, and is there known benign or pathogenic SV evidence overlapping the event?
 
 ---
 
-## 11. VEP — supplementary consequence annotation
+## 11. VEP — supplementary transcript/consequence annotation
 
 VEP is also run on the complete Jasmine master VCF.
 
-It is used as a supplementary annotation layer rather than the main source of SV interpretation.
+It is used as a supplementary transcript/consequence layer rather than as the main tool for deciding which genes are affected by an SV.
+
+The workflow uses `--flag_pick`, not `--pick`.
+
+`--flag_pick` keeps all transcript/gene consequences and marks VEP's preferred consequence with the `PICK` flag. This is important for large SVs because one SV can span several genes and transcripts. Using `--pick` would keep only one selected consequence and would under-represent the full overlap.
 
 Main outputs:
 
@@ -429,7 +448,9 @@ Main outputs:
 <sample>/sv/vep/<sample>_SV_VEP.panel_only.txt
 ```
 
-**Question answered:** What additional transcript and consequence information can be added to each SV?
+AnnotSV remains the main genome-wide gene-mapping layer. VEP is used to add transcript-level consequence information.
+
+**Question answered:** What transcript-level consequences are associated with the SV, while keeping all affected genes/transcripts visible?
 
 ---
 
@@ -568,6 +589,21 @@ GENE_DISEASE_EVIDENCE_CONFLICT
 CLINGEN_HI
 CLINGEN_TS
 DOSAGE_RELEVANCE
+
+SV_DATABASE_EVIDENCE_SCOPE
+SV_PATHOGENIC_DB_SOURCE
+SV_PATHOGENIC_DB_COORD
+SV_PATHOGENIC_DB_PHENOTYPE
+SV_PATHOGENIC_DB_HPO
+SV_BENIGN_DB_SOURCE
+SV_BENIGN_DB_COORD
+SV_BENIGN_DB_AFMAX
+SV_DB_CLINVAR_OVERLAP
+SV_DB_DBVAR_OVERLAP
+SV_DB_GNOMAD_OVERLAP
+SV_DB_DGV_OVERLAP
+SV_DB_1000G_OVERLAP
+SV_DB_CLINGEN_OVERLAP
 
 ANNOTSV_RANKING_SCORE
 ANNOTSV_RANKING_CRITERIA
@@ -756,7 +792,9 @@ The following rules are central to the workflow:
 11. The gene-disease evidence score is an internal ranking value derived from curated GenCC/OMIM evidence; it is not a probability that a gene is pathogenic.
 12. For deletions and duplications, AnnotSV/ACMG CNV score and class are kept separately from the gene-priority score.
 13. ClinGen HI and TS are interpreted according to SV direction: HI for deletions and TS for duplications.
-14. Known-positive samples are used to test sensitivity before parameter changes are applied to the wider dataset.
+14. SV-specific database overlaps from AnnotSV are retained separately from ACMG CNV classification, especially for insertions and inversions.
+15. VEP retains all transcript/gene consequences with `--flag_pick`; AnnotSV remains the main source for genome-wide SV gene mapping.
+16. Known-positive samples are used to test sensitivity before parameter changes are applied to the wider dataset.
 
 ---
 
