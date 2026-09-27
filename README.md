@@ -24,6 +24,15 @@ snakemake_pipelines/lrs/Snakefile_LRS_postprocess
 
 adds complementary computational evidence and generates integrated interpretation tables and plots without rerunning the main variant-calling steps.
 
+## Analysis without patient phenotype or trio data
+
+Genome-wide SV discovery, panel/nonpanel views, caller support and AnnotSV/needLR
+annotations work without the four optional allele-evidence input files. Keep their
+configuration values `null` when those data are unavailable. The additional research
+score is not a required endpoint; missing patient/family evidence is not evidence
+against a candidate. Automatic annotation-availability reporting requires no manual
+curation or additional patient data.
+
 ## Allele-level assessment and correctness update
 
 Both LRS and SRS now preserve the genome-wide master callset and add a six-domain,
@@ -461,7 +470,7 @@ The six `SV_DB_*_OVERLAP` columns (ClinVar, dbVar, gnomAD, DGV, 1000 Genomes and
 
 Empty fields and the missing-value tokens `.`, `NA`, `N/A`, `NaN`, `None` and `null` are treated as missing, ignoring case and surrounding whitespace. Unsupported SV types receive `NOT_APPLICABLE` before source fields are checked.
 
-These flags expose existing AnnotSV annotations; they do not query databases independently or verify that a database is installed. `NOT_REPORTED` is not a verified negative database search, and none of these statuses establishes that an SV is benign. For `UNKNOWN` values, inspect the original AnnotSV TSV, expected source columns, annotation resources and row matching.
+These flags expose existing AnnotSV annotations; they do not query databases independently. `NOT_REPORTED` is not a verified negative database search, and none of these statuses establishes that an SV is benign. The automatic AnnotSV availability audit now adds separate `SV_PATHOGENIC_DB_STATUS`, `SV_BENIGN_DB_STATUS` and six `SV_DB_*_AVAILABILITY` fields. These distinguish missing output columns, unavailable/empty/unrecognized processed resources and no overlap reported. See [automatic availability reporting](docs/ANNOTSV_AVAILABILITY.md). The original overlap flags remain unchanged.
 
 The change is implemented in `build_integrated_sv_gene_tsv.py` ([commit d019bf9](https://github.com/kevR27/SV-PIPELINE/commit/d019bf9ae6193367990feb9055c3ab955e1fbda5)). Existing result tables retain their old flags until the integrated-table step is rerun with the updated script. Downstream summaries that previously expected only `YES`/`NO` must handle all four statuses.
 

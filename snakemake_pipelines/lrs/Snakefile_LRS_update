@@ -888,6 +888,8 @@ rule rank_genomewide_candidates:
 
 rule integrated_sv_gene_table:
     input:
+        audit=PATH + "{sample}/sv/annotsv/{sample}_annotation_availability.json",
+        audit_script=SCRIPTS + "/audit_annotsv_evidence.py",
         script=SCRIPTS + "/build_integrated_sv_gene_tsv.py",
         common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.jasmine_merge.output.vcf,
@@ -912,6 +914,7 @@ rule integrated_sv_gene_table:
             --jasmine-id-prefixes \
             --vcf {input.vcf} \
             --annotsv {input.annotsv} \
+            --annotsv-audit {input.audit:q} \
             --needlr {input.needlr} \
             --ranking {input.ranking} \
             --panel {input.panel} \
@@ -1130,3 +1133,5 @@ rule tldr_mei_confirmation:
 
 
 include: "../common/allele_assessment.smk"
+
+include: "../common/annotsv_evidence_audit.smk"
