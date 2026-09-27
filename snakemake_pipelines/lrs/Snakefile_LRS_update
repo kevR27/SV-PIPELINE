@@ -149,6 +149,9 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_disease_hypotheses.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.manifest.json", sample=SAMPLES),
 
         # Supplementary VEP
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
@@ -160,6 +163,7 @@ rule all:
         expand(PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz", sample=SAMPLES),
         expand(PATH + "{sample}/methylation/{sample}.cpg.bedmethyl.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing_longphase/{sample}.longphase_SV.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt", sample=SAMPLES)
 
 
@@ -358,6 +362,8 @@ rule delly_lr:
 
 rule sniffles2_caller_parse:
     input:
+        parser_script=SCRIPTS + "/parse_sv_caller_vcf.py",
+        parser_common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.sniffles2_sv.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv"
@@ -373,6 +379,8 @@ rule sniffles2_caller_parse:
 
 rule cutesv_caller_parse:
     input:
+        parser_script=SCRIPTS + "/parse_sv_caller_vcf.py",
+        parser_common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.cutesv.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv"
@@ -388,6 +396,8 @@ rule cutesv_caller_parse:
 
 rule delly_caller_parse:
     input:
+        parser_script=SCRIPTS + "/parse_sv_caller_vcf.py",
+        parser_common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.delly_lr.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.delly.caller.tsv"
@@ -629,68 +639,39 @@ rule sniffles2_needlr_query:
         """
 
 
+# Track backend files as inputs; record a release label in the run manifest.
+def needlr_backend_inputs(wc):
+    if os.path.isdir(NEEDLR_BACKEND):
+        return [os.path.join(root, name) for root, _, names in os.walk(NEEDLR_BACKEND)
+                for name in sorted(names)] or [NEEDLR_BACKEND]
+    return [NEEDLR_BACKEND]
+
+
 rule needlr_annotation:
     input:
-        vcf=rules.sniffles2_needlr_query.output.vcf
+        vcf=rules.sniffles2_needlr_query.output.vcf,
+        backend=needlr_backend_inputs,
+        script=SCRIPTS + "/run_needlr_fresh.py"
     output:
         tsv=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
-        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
+        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz",
+        manifest=PATH + "{sample}/sv/needlr/{sample}_needLR.manifest.json"
     log:
         PATH + "{sample}/logs/needlr/{sample}.needlr.log"
     params:
-        outdir=PATH + "{sample}/sv/needlr/annotate_out"
+        outdir=PATH + "{sample}/sv/needlr/annotate_out",
+        backend=NEEDLR_BACKEND,
+        version=config.get("needlr_backend_version", "UNSPECIFIED")
     threads: THREADS
     conda:
         CONDAENV + "needlr.yaml"
     shell:
         """
-        set -eu
-
-        mkdir -p {params.outdir}
-        mkdir -p $(dirname {log})
-
-        # If a complete native needLR result already exists, reuse it.
-        # Otherwise run the full annotation. Never delete annotate_out here.
-        results_tsv=$(find {params.outdir} \
-            -type f \
-            -name '*_RESULTS.tsv' \
-            -print -quit)
-
-        if [ -n "$results_tsv" ]; then
-            results_vcf="${{results_tsv%_RESULTS.tsv}}.vcf.gz"
-        else
-            results_vcf=""
-        fi
-
-        if [ -s "$results_tsv" ] && [ -s "$results_vcf" ]; then
-            echo "[needLR] Completed native results already exist; reusing them." > {log}
-        else
-            needLR annotate \
-                -O {params.outdir} \
-                -T {threads} \
-                -B {NEEDLR_BACKEND} \
-                --all \
-                {input.vcf} \
-                > {log} 2>&1
-
-            results_tsv=$(find {params.outdir} \
-                -type f \
-                -name '*_RESULTS.tsv' \
-                -print -quit)
-
-            test -n "$results_tsv"
-
-            results_vcf="${{results_tsv%_RESULTS.tsv}}.vcf.gz"
-
-            test -s "$results_tsv"
-            test -s "$results_vcf"
-        fi
-
-        cp "$results_tsv" {output.tsv}
-        cp "$results_vcf" {output.vcf}
-
-        test -s {output.tsv}
-        test -s {output.vcf}
+        mkdir -p $(dirname {log:q})
+        python {input.script:q} --vcf {input.vcf:q} --backend {params.backend:q} \
+            --backend-version {params.version:q} --outdir {params.outdir:q} \
+            --threads {threads} --tsv {output.tsv:q} --output-vcf {output.vcf:q} \
+            --manifest {output.manifest:q} > {log:q} 2>&1
         """
 
 ##################################################
@@ -880,6 +861,8 @@ rule human_gene_phenotypes:
 
 rule rank_genomewide_candidates:
     input:
+        script=SCRIPTS + "/rank_sv_gene_candidates.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
         annotsv=rules.annotsv_annotation.output.tsv,
         genes=rules.extract_sv_genes.output.genes,
         phenotypes=rules.human_gene_phenotypes.output.tsv,
@@ -905,6 +888,8 @@ rule rank_genomewide_candidates:
 
 rule integrated_sv_gene_table:
     input:
+        script=SCRIPTS + "/build_integrated_sv_gene_tsv.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.jasmine_merge.output.vcf,
         annotsv=rules.annotsv_annotation.output.tsv,
         needlr=rules.needlr_annotation.output.tsv,
@@ -924,6 +909,7 @@ rule integrated_sv_gene_table:
         mkdir -p $(dirname {output.tsv})
 
         python {SCRIPTS}/build_integrated_sv_gene_tsv.py \
+            --jasmine-id-prefixes \
             --vcf {input.vcf} \
             --annotsv {input.annotsv} \
             --needlr {input.needlr} \
@@ -1078,7 +1064,9 @@ rule longphase_phasing:
         bam=lambda wc: BAMS[wc.sample],
         ref=REF
     output:
-        vcf=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
+        vcf=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        sv=PATH + "{sample}/phasing_longphase/{sample}.longphase_SV.vcf.gz",
+        sv_index=PATH + "{sample}/phasing_longphase/{sample}.longphase_SV.vcf.gz.tbi"
     params:
         prefix=PATH + "{sample}/phasing_longphase/{sample}.longphase"
     threads: THREADS
@@ -1102,11 +1090,14 @@ rule longphase_phasing:
         bgzip -f {params.prefix}.vcf
         test -s {output.vcf}
         tabix -f -p vcf {output.vcf}
+        test -s {params.prefix}_SV.vcf
+        bgzip -@ {threads} -f {params.prefix}_SV.vcf
+        tabix -f -p vcf {output.sv}
         """
 
 
 ############################
-# Confirmatory MEI — TLDR  #
+# Complementary MEI — TLDR  #
 ############################
 
 rule tldr_mei_confirmation:
@@ -1136,3 +1127,6 @@ rule tldr_mei_confirmation:
         cp {params.outbase}.table.txt {output.table}
         test -s {output.table}
         """
+
+
+include: "../common/allele_assessment.smk"

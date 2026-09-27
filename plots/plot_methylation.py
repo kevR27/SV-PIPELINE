@@ -32,6 +32,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Plot modkit bedMethyl output.")
     p.add_argument("--input", required=True, help="modkit bedMethyl, .bed.gz, or .bedmethyl.gz")
     p.add_argument("--out-prefix", required=True)
+    p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
     p.add_argument("--region", default=None, help="Optional chr:start-end candidate region")
     p.add_argument("--min-coverage", type=int, default=5)
     p.add_argument("--chunksize", type=int, default=500000)
@@ -79,22 +80,9 @@ def normalize_mod_code(value):
     return str(value).strip() or "other"
 
 
-def detect_scale(path):
-    vals = []
-    with open_text(path) as fh:
-        for line in fh:
-            if line.startswith("#"):
-                continue
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) < 11:
-                continue
-            try:
-                vals.append(float(fields[10]))
-            except Exception:
-                continue
-            if len(vals) >= 1000:
-                break
-    return 100.0 if vals and max(vals) <= 1.0 else 1.0
+def detect_scale(units="percent"):
+    """Units are explicit: low percentages must never be inferred as fractions."""
+    return {"percent": 1.0, "fraction": 100.0}[units]
 
 
 def load_region(path, region, min_cov, scale):
@@ -353,7 +341,7 @@ def main():
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    scale = detect_scale(path)
+    scale = detect_scale(args.methylation_units)
     region = parse_region(args.region)
 
     if region:
@@ -368,3 +356,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

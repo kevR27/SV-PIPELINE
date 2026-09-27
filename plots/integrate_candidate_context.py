@@ -27,6 +27,8 @@ def parse_args():
     p.add_argument("--methylation-window", type=int, default=2000)
     p.add_argument("--whatshap-window", type=int, default=5000)
     p.add_argument("--min-methylation-coverage", type=int, default=5)
+    p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent",
+                   help="modkit bedMethyl column 11 is percent; no value-based inference")
     p.add_argument("--output", required=True)
     return p.parse_args()
 
@@ -108,24 +110,8 @@ def query_whatshap(index, chrom, centers, window):
     return len(hits), phase_sets
 
 
-def methylation_scale(path):
-    values = []
-    with open_text(path) as fh:
-        for line in fh:
-            if line.startswith("#"):
-                continue
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) < 11:
-                continue
-            try:
-                values.append(float(fields[10]))
-            except Exception:
-                continue
-            if len(values) >= 1000:
-                break
-    if values and max(values) <= 1.0:
-        return 100.0
-    return 1.0
+def methylation_scale(units="percent"):
+    return {"percent": 1.0, "fraction": 100.0}[units]
 
 
 def normalize_mod_code(value):
@@ -162,9 +148,13 @@ def parse_bedmethyl_record(line, scale, min_cov):
         percent = float(fields[10]) * scale
     except Exception:
         return None
-    if coverage < min_cov:
+    if not np.isfinite(percent) or not 0 <= percent <= 100:
+        raise ValueError("Invalid methylation percentage; verify --methylation-units")
+    if not np.isfinite(coverage) or coverage < min_cov:
         return None
     return {
+        "chrom": fields[0],
+        "strand": fields[5],
         "start": start,
         "end": end,
         "mod": normalize_mod_code(fields[3]),
@@ -188,7 +178,7 @@ def query_methylation_tabix(tabix, chrom, centers, window, scale, min_cov):
             rec = parse_bedmethyl_record(line, scale, min_cov)
             if rec is None:
                 continue
-            key = (rec["start"], rec["end"], rec["mod"])
+            key = (rec["chrom"], rec["start"], rec["end"], rec["strand"], rec["mod"])
             records[key] = rec
     return list(records.values())
 
@@ -235,7 +225,7 @@ def main():
     whatshap = load_whatshap(args.whatshap_vcf) if args.whatshap_vcf else {}
     methylation_path = Path(args.methylation_bed) if args.methylation_bed else None
     methylation_available = bool(methylation_path and methylation_path.exists())
-    scale = methylation_scale(methylation_path) if methylation_available else 1.0
+    scale = methylation_scale(args.methylation_units) if methylation_available else 1.0
     tabix = open_tabix(methylation_path) if methylation_available else None
 
     out = df.copy()
@@ -247,6 +237,7 @@ def main():
         "WHATSHAP_PHASE_SETS": ".",
         "METHYLATION_CONTEXT": "NOT_AVAILABLE" if not methylation_available else ("INDEX_MISSING" if tabix is None else "NO_CPG"),
         "METHYLATION_WINDOW_BP": args.methylation_window,
+        "METHYLATION_INPUT_UNITS": args.methylation_units,
         "METHYLATION_CPG_RECORD_COUNT": 0,
         "METHYLATION_MEAN_COVERAGE": ".",
         "METHYLATION_5MC_CPG_COUNT": 0,
@@ -267,12 +258,25 @@ def main():
             start = to_int(row[start_col])
             end = to_int(row[end_col]) if end_col else start
             centers = [start]
-            if end is not None and end != start:
+            is_bnd = str(row.get("SVTYPE", "")).upper() in {"BND", "TRA"}
+            if not is_bnd and end is not None and end != start:
                 centers.append(end)
 
             context = {}
             if args.whatshap_vcf:
                 count, phase_sets = query_whatshap(whatshap, chrom, centers, args.whatshap_window)
+                phase_sets = {f"{chrom}:{ps}" for ps in phase_sets}
+                if is_bnd and chr2_col and pos2_col:
+                    c2, p2 = str(row[chr2_col]), to_int(row[pos2_col])
+                    if c2 not in {"", ".", "nan", "None"} and p2 is not None:
+                        c2 = normalize_chrom(c2)
+                        if c2 == chrom:
+                            count, raw_sets = query_whatshap(whatshap, chrom, [start, p2], args.whatshap_window)
+                            phase_sets = {f"{chrom}:{ps}" for ps in raw_sets}
+                        else:
+                            n2, sets2 = query_whatshap(whatshap, c2, [p2], args.whatshap_window)
+                            count += n2
+                            phase_sets |= {f"{c2}:{ps}" for ps in sets2}
                 context.update(
                     {
                         "WHATSHAP_CONTEXT": "EVALUATED" if count else "NO_NEARBY_PHASED_HET",
@@ -291,7 +295,7 @@ def main():
                     scale,
                     args.min_methylation_coverage,
                 )
-                if chr2_col and pos2_col:
+                if is_bnd and chr2_col and pos2_col:
                     chr2 = row[chr2_col]
                     pos2 = to_int(row[pos2_col])
                     if pos2 is not None and str(chr2) not in {"", ".", "nan", "None"}:
@@ -305,7 +309,7 @@ def main():
                         )
                 unique = {}
                 for rec in records:
-                    unique[(rec["start"], rec["end"], rec["mod"], rec["percent"])] = rec
+                    unique[(rec["chrom"], rec["start"], rec["end"], rec["strand"], rec["mod"])] = rec
                 context.update(summarize_methylation(list(unique.values())))
 
             cache[sv_id] = context
@@ -336,3 +340,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -101,7 +101,7 @@ def main():
 
     if panel_col:
         ptxt = work[panel_col].fillna("").astype(str).str.upper()
-        work["Panel gene"] = ptxt.str.contains("PANEL_GENE|^YES$", regex=True).astype(int)
+        work["Panel gene"] = ptxt.str.strip().isin(["PANEL_GENE", "YES"]).astype(int)
     else:
         work["Panel gene"] = 0
 
@@ -213,3 +213,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

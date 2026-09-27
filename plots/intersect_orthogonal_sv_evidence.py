@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Attach orthogonal and phasing evidence to the integrated Jasmine SV-gene table.
+"""Attach complementary computational and phasing evidence to the integrated Jasmine SV-gene table.
 
 The Jasmine master SV universe is never replaced. Straglr and TLDR are
-coordinate-aware orthogonal discovery layers; LongPhase is used as SV phasing
+coordinate-aware complementary discovery layers; LongPhase is used as SV phasing
 evidence. Independent Straglr/TLDR findings without a master-SV match can be
 written to a separate table so they are not discarded.
 """
@@ -10,6 +10,7 @@ written to a separate table so they are not discarded.
 from __future__ import annotations
 
 import argparse
+import sys
 import gzip
 import re
 from collections import defaultdict
@@ -19,6 +20,9 @@ import pandas as pd
 
 from plot_utils import first_existing, normalize_svtype, read_tsv
 
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from sv_evidence_common import same_breakend
 
 def parse_args():
     p = argparse.ArgumentParser(description="Integrate orthogonal evidence with master SVs.")
@@ -179,6 +183,9 @@ def load_longphase(path: str) -> list[dict]:
             ps = sample_data.get("PS", ".")
             records.append(
                 {
+                    "CHROM": fields[0], "START": fields[1], "ALT": fields[4],
+                    "CHR2": info.get("CHR2", "."), "POS2": info.get("POS2", info.get("END", ".")),
+                    "INFO_CT": info.get("CT", "."),
                     "id": fields[2],
                     "chrom": normalize_chrom(fields[0]),
                     "start": pos,
@@ -186,7 +193,7 @@ def load_longphase(path: str) -> list[dict]:
                     "svtype": svtype.upper(),
                     "gt": gt,
                     "ps": ps,
-                    "phased": "YES" if "|" in gt else "NO",
+                    "phased": "YES" if "|" in gt and len(set(gt.split("|"))) == 2 and "." not in gt and ps not in {"", "."} else "NO",
                 }
             )
     return records
@@ -221,6 +228,8 @@ def find_longphase_match(row, svtype, chrom, start, end, id_columns, by_id, by_b
         if candidate_id in by_id:
             rec = by_id[candidate_id]
             if rec["chrom"] == chrom and (not svtype or rec["svtype"] == svtype):
+                if svtype == "BND" and same_breakend(row.to_dict(), rec, tol) is None:
+                    continue
                 return rec, 0
 
     if svtype not in {"DEL", "INS", "DUP", "INV"} or start is None:
@@ -231,6 +240,7 @@ def find_longphase_match(row, svtype, chrom, start, end, id_columns, by_id, by_b
     for b in [center - 1, center, center + 1]:
         candidates.extend(by_bin.get((chrom, svtype, b), []))
 
+    valid_candidates = []
     best = None
     best_distance = None
     for rec in candidates:
@@ -246,11 +256,13 @@ def find_longphase_match(row, svtype, chrom, start, end, id_columns, by_id, by_b
             distance = max(start_dist, end_dist)
             valid = start_dist <= tol and end_dist <= tol
 
+        if valid:
+            valid_candidates.append(rec)
         if valid and (best_distance is None or distance < best_distance):
             best = rec
             best_distance = distance
 
-    return best, best_distance
+    return (best, best_distance) if len(valid_candidates) == 1 else (None, None)
 
 
 def main():
@@ -313,8 +325,8 @@ def main():
             start = to_int(row[start_col])
             end = to_int(row[end_col]) if end_col else start
             svtype = svtypes.loc[idx]
-            if end is None:
-                end = start
+            if end is None or svtype == "BND":
+                end = start  # Remote breakpoint is not a local interval endpoint.
 
             smatches, sgenes, scn, ssupport = [], [], [], []
             if start is not None:
@@ -365,6 +377,7 @@ def main():
                 )
 
             evidence = {
+                "COMPLEMENTARY_MATCH_SCOPE": "FIRST_BREAKPOINT_CONTEXT" if svtype == "BND" else "LOCAL_INTERVAL_OR_BREAKPOINT_CONTEXT",
                 "STRAGLR_MATCH": "YES" if smatches else "NO",
                 "STRAGLR_LOCI": ";".join(sorted(set(smatches))) if smatches else ".",
                 "STRAGLR_GENES": ";".join(sorted(set(sgenes))) if sgenes else ".",
@@ -452,3 +465,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

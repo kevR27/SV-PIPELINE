@@ -44,7 +44,7 @@ def main():
     work["_anchor"] = numeric(work[anchor_col]).fillna(0) if anchor_col else 0
     if panel_col:
         ptxt = work[panel_col].fillna("").astype(str).str.upper()
-        work["_panel"] = ptxt.str.contains("YES|PANEL_GENE", regex=True)
+        work["_panel"] = ptxt.str.strip().isin(["PANEL_GENE", "YES"])
     else:
         work["_panel"] = False
 
@@ -108,3 +108,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

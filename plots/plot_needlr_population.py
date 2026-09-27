@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -11,6 +12,9 @@ import numpy as np
 import pandas as pd
 
 from plot_utils import add_panel_label, first_existing, numeric, read_tsv, save_figure, set_thesis_style, style_axis
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from sv_evidence_common import population_frequency
 
 ANCESTRIES = ["AFR", "AMR", "EAS", "EUR", "SAS", "ALL"]
 
@@ -38,27 +42,11 @@ def infer_frequency_column(df: pd.DataFrame, ancestry: str) -> str | None:
 
 
 def infer_overall_af(df: pd.DataFrame) -> tuple[str, pd.Series]:
-    # Current needLR 4.1 output in this pipeline provides both the query-control
-    # frequency and population-frequency fields. Prefer the explicit control AF.
-    col = first_existing(
-        df,
-        [
-            "Allele_Freq_ALL_Control",
-            "Pop_Freq_ALL",
-            "Allele_Freq_ALL",
-            "AlleleFreqAll",
-            "AF_ALL",
-            "AF",
-            "MAX_AF",
-            "AF_MAX",
-            "SV_AF",
-            "AF_1KGP",
-            "1KGP_AF",
-        ],
-    )
-    if col is None:
-        raise ValueError("Could not identify an overall needLR population-frequency column.")
-    return col, numeric(df[col])
+    parsed = [population_frequency(row) for row in df.to_dict("records")]
+    fields = sorted({field for _, field, _ in parsed if field != "."})
+    values = pd.Series([float(value) if status == "REPORTED" else np.nan
+                        for value, _, status in parsed], index=df.index)
+    return ";".join(fields) or "unavailable", values
 
 
 def main():
@@ -191,3 +179,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

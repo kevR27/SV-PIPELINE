@@ -85,7 +85,7 @@ def main():
     work["_caller_count"] = numeric(work[caller_count_col]).fillna(0) if caller_count_col else 0
     work["_af"] = numeric(work[af_col]) if af_col else np.nan
     work["_phenotype"] = numeric(work[pheno_col]).fillna(0) if pheno_col else 0
-    work["_panel"] = (work[panel_col].fillna("").astype(str).str.upper().str.contains("PANEL_GENE|^YES$", regex=True)) if panel_col else False
+    work["_panel"] = (work[panel_col].fillna("").astype(str).str.upper().str.strip().isin(["PANEL_GENE", "YES"])) if panel_col else False
 
     for label, col in sv_db_flag_cols.items():
         work[f"_svdb_{label}"] = yes(work[col]) if col else False
@@ -153,6 +153,17 @@ def main():
                 "candidate_class": join_values(group[candidate_col]) if candidate_col else ".",
             }
         )
+
+        # These counts describe reporting status, not database installation or
+        # an assessed benign result. Preserve uncertainty at gene level.
+        for label, col in sv_db_flag_cols.items():
+            status = unique[col].fillna("UNKNOWN").astype(str).str.upper() if col else pd.Series("UNKNOWN", index=unique.index)
+            for state in ["YES", "NOT_REPORTED", "UNKNOWN", "NOT_APPLICABLE"]:
+                rows[-1][f"{label}_SV_{state.lower()}_count"] = int(status.eq(state).sum())
+            rows[-1][f"{label}_SV_unrecognized_status_count"] = int((~status.isin(["YES", "NOT_REPORTED", "UNKNOWN", "NOT_APPLICABLE"])).sum())
+        if "ALLELE_RESEARCH_SCORE" in unique:
+            rows[-1]["max_allele_research_score"] = pd.to_numeric(unique["ALLELE_RESEARCH_SCORE"], errors="coerce").max()
+            rows[-1]["alleles_with_review_flags"] = int(unique["ALLELE_REVIEW_FLAGS"].fillna(".").ne(".").sum())
 
     summary = pd.DataFrame(rows)
 
@@ -233,3 +244,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

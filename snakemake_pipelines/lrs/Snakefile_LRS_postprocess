@@ -1,4 +1,5 @@
 import os
+import shlex
 
 configfile: "config_lrs.yaml"
 
@@ -18,6 +19,7 @@ SAMPLES = list(config["samples"].keys())
 PATH = config["path"].rstrip("/") + "/"
 CONDAENV = config["condaenv"]
 
+SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
 PLOTS = os.path.abspath(os.path.join(workflow.basedir, "../../plots"))
 
 ORTHOGONAL_STRAGLR_BP_TOL = config.get(
@@ -78,15 +80,14 @@ def first_existing_path(paths):
 
 def longphase_path(sample):
     return first_existing_path([
-        PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase_SV.vcf.gz",
         PATH + f"{sample}/phasing_longphase/{sample}.longphase_SV.vcf",
-        PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf",
     ])
 
 
 def longphase_arg(sample):
     path = longphase_path(sample)
-    return f"--longphase-vcf {path}" if path else ""
+    return f"--longphase-vcf {shlex.quote(path)}" if path else ""
 
 
 def whatshap_path(sample):
@@ -182,7 +183,9 @@ rule all:
 
 rule integrate_orthogonal_sv_evidence:
     input:
-        integrated=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
+        integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
+        longphase=lambda wc: [longphase_path(wc.sample)] if longphase_path(wc.sample) else [],
+        common=SCRIPTS + "/sv_evidence_common.py",
         straglr=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
         tldr=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",
         script=PLOTS + "/intersect_orthogonal_sv_evidence.py"
@@ -220,10 +223,14 @@ rule integrate_orthogonal_sv_evidence:
 rule integrate_candidate_context:
     input:
         integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
-        script=PLOTS + "/integrate_candidate_context.py"
+        script=PLOTS + "/integrate_candidate_context.py",
+        methylation=lambda wc: [methylation_path(wc.sample)] if methylation_path(wc.sample) else [],
+        whatshap=lambda wc: [whatshap_path(wc.sample)] if whatshap_path(wc.sample) else [],
+        methylation_index=lambda wc: [x for x in [str(methylation_path(wc.sample)) + ".tbi", str(methylation_path(wc.sample)) + ".csi"] if os.path.exists(x)]
     output:
         tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv"
     params:
+        methylation_units=config.get("methylation_units", "percent"),
         methylation_arg=lambda wc: (
             f"--methylation-bed {methylation_path(wc.sample)}"
             if methylation_path(wc.sample)
@@ -244,6 +251,7 @@ rule integrate_candidate_context:
             --integrated {input.integrated} \
             {params.methylation_arg} \
             {params.whatshap_arg} \
+            --methylation-units {params.methylation_units} \
             --output {output.tsv}
 
         test -s {output.tsv}
@@ -291,7 +299,7 @@ def existing_plot_inputs(wc):
         PATH + f"{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
         PATH + f"{sample}/mei/tldr/{sample}.tldr.table.txt",
         PATH + f"{sample}/phasing/{sample}.phased.vcf.gz",
-        PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase_SV.vcf.gz",
         PATH + f"{sample}/phasing_longphase/{sample}.longphase_SV.vcf",
         PATH + f"{sample}/methylation/{sample}.cpg.bedmethyl.gz",
         PATH + f"{sample}/methylation/{sample}.bedmethyl.gz",
@@ -330,6 +338,7 @@ rule thesis_plots_sample:
     output:
         marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
     params:
+        methylation_units=config.get("methylation_units", "percent"),
         methylation_arg=lambda wc: (
             f"--methylation-region {THESIS_METHYLATION_REGION}"
             if THESIS_METHYLATION_REGION
@@ -345,6 +354,7 @@ rule thesis_plots_sample:
             --root {PATH} \
             --sample {wildcards.sample} \
             --platform lrs \
+            --methylation-units {params.methylation_units} \
             {params.methylation_arg}
 
         touch {output.marker}
@@ -358,3 +368,6 @@ rule all_thesis_plots:
             PATH + "{sample}/plots/.thesis_plots.done",
             sample=POSTPROCESS_SAMPLES,
         )
+
+
+include: "../common/allele_assessment.smk"

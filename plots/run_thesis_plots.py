@@ -22,6 +22,7 @@ def parse_args():
     p.add_argument("--platform", choices=["lrs", "srs"], default="lrs")
     p.add_argument("--out-dir", default=None, help="Default: <root>/<sample>/plots")
     p.add_argument("--methylation-region", default=None, help="Optional chr:start-end for methylation plot")
+    p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
     p.add_argument("--dry-run", action="store_true")
     return p.parse_args()
 
@@ -114,17 +115,10 @@ def main():
             "phasing/**/*phased*.vcf.gz",
         ],
     )
-    longphase = first_glob(
-        sample_root,
-        [
-            "phasing_longphase/*.longphase.vcf.gz",
-            "phasing_longphase/*.longphase*.vcf",
-            "phasing/**/*longphase*.vcf.gz",
-            "phasing/**/*longphase*.vcf",
-            "**/*.longphase_SV.vcf",
-            "**/*.longphase*.vcf.gz",
-        ],
-    )
+    longphase = first_glob(sample_root, [
+        "phasing_longphase/*.longphase_SV.vcf.gz",
+        "phasing_longphase/*.longphase_SV.vcf",
+    ])
 
     methylation = first_glob(
         sample_root,
@@ -264,6 +258,7 @@ def main():
         methylation_cmd = [
             py,
             str(HERE / "plot_methylation.py"),
+            "--methylation-units", args.methylation_units,
             "--input",
             str(methylation),
             "--out-prefix",
@@ -283,3 +278,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

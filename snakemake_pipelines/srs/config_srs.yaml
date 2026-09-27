@@ -107,3 +107,15 @@ melt_transposons:
   LINE1: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/LINE1_MELT.zip"
   SVA: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/SVA_MELT.zip"
   HERVK: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/HERVK_MELT.zip"
+
+
+# Allele-level research assessment. Does not filter the master SV universe.
+# Optional TSV paths (or mappings from sample ID to path); see docs/ALLELE_ASSESSMENT.md.
+allele_patient_context: null
+allele_disease_models: null
+allele_evidence: null
+allele_family_genotypes: null
+allele_rare_af: 0.01
+allele_min_support: 5
+allele_min_gq: 20
+allele_min_dp: 5
