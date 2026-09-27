@@ -11,12 +11,16 @@ import csv
 import hashlib
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 from sv_evidence_common import MISSING, number
 
-VERSION = "sv-allele-evidence-v1"
+# INFO/read-name and transcript JSON fields can exceed the csv default of 128 KiB.
+csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
+
+VERSION = "sv-allele-evidence-v1.1"
 DOMAINS = ("POPULATION", "TECHNICAL", "DISRUPTION", "INHERITANCE", "PHENOTYPE", "DISEASE_MECHANISM")
 EFFECTS = {"LOF", "COPY_GAIN", "GOF", "DOMINANT_NEGATIVE", "NO_DISRUPTION", "OTHER", "UNKNOWN"}
 MOIS = {"AD", "AR", "XLD", "XLR", "MT", "UNKNOWN"}
@@ -101,11 +105,15 @@ def technical(row, min_support):
     support = [number(r.get("CALLER_SUPPORT")) for r in data]
     support = [x for x in support if x is not None and x >= 0]
     count = number(row.get("CALLER_COUNT"))
-    flagged = [r.get("EVIDENCE_FLAGS") for r in data
-               if known(r.get("EVIDENCE_FLAGS")) and r.get("EVIDENCE_FLAGS") not in {"PASS", "NONE"}]
+    all_flags = {flag.strip().upper() for r in data if known(r.get("EVIDENCE_FLAGS"))
+                 for flag in re.split(r"[;,|]", r["EVIDENCE_FLAGS"])} - {"PASS", "NONE", ""}
+    # A translocation/breakend has no meaningful single SV length. Its absence
+    # is descriptive, not a technical failure. Other flags still require review.
+    informational = {"NO_SVLEN"} if row.get("SVTYPE", "").upper() in {"BND", "TRA"} else set()
+    flagged = sorted(all_flags - informational)
     filt = row.get("FILTER", ".")
     method = row.get("CALLER_EVIDENCE_MATCH", "NO_MATCH")
-    detail = f"callers={count};max_support={max(support) if support else '.'};match={method};flags={';'.join(flagged) or '.'};FILTER={filt}"
+    detail = f"callers={count};max_support={max(support) if support else '.'};match={method};flags={';'.join(sorted(all_flags)) or '.'};FILTER={filt}"
     if "AMBIGUOUS" in method or flagged or filt not in {"PASS", ".", ""}:
         return domain("REVIEW_REQUIRED", 0, detail)
     if not support:

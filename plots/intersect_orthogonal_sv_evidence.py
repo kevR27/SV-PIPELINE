@@ -287,21 +287,21 @@ def main():
 
     out = df.copy()
     for column, default in [
-        ("STRAGLR_MATCH", "NO"),
+        ("STRAGLR_MATCH", "NO" if args.straglr else "NOT_AVAILABLE"),
         ("STRAGLR_LOCI", "."),
         ("STRAGLR_GENES", "."),
         ("STRAGLR_COPY_NUMBER", "."),
         ("STRAGLR_SUPPORTING_READS", "."),
-        ("TLDR_MATCH", "NO"),
+        ("TLDR_MATCH", "NO" if args.tldr else "NOT_AVAILABLE"),
         ("TLDR_INSERTIONS", "."),
         ("TLDR_UUID", "."),
         ("TLDR_USED_READS", "."),
         ("TLDR_SPAN_READS", "."),
-        ("LONGPHASE_MATCH", "NO"),
+        ("LONGPHASE_MATCH", "NO" if args.longphase_vcf else "NOT_AVAILABLE"),
         ("LONGPHASE_ID", "."),
         ("LONGPHASE_GT", "."),
         ("LONGPHASE_PS", "."),
-        ("LONGPHASE_PHASED", "NO"),
+        ("LONGPHASE_PHASED", "NO" if args.longphase_vcf else "NOT_AVAILABLE"),
         ("LONGPHASE_MATCH_DISTANCE", "."),
     ]:
         out[column] = default
@@ -378,21 +378,21 @@ def main():
 
             evidence = {
                 "COMPLEMENTARY_MATCH_SCOPE": "FIRST_BREAKPOINT_CONTEXT" if svtype == "BND" else "LOCAL_INTERVAL_OR_BREAKPOINT_CONTEXT",
-                "STRAGLR_MATCH": "YES" if smatches else "NO",
+                "STRAGLR_MATCH": "YES" if smatches else ("NO" if args.straglr else "NOT_AVAILABLE"),
                 "STRAGLR_LOCI": ";".join(sorted(set(smatches))) if smatches else ".",
                 "STRAGLR_GENES": ";".join(sorted(set(sgenes))) if sgenes else ".",
                 "STRAGLR_COPY_NUMBER": ";".join(sorted(set(scn))) if scn else ".",
                 "STRAGLR_SUPPORTING_READS": ";".join(sorted(set(ssupport))) if ssupport else ".",
-                "TLDR_MATCH": "YES" if tmatches else "NO",
+                "TLDR_MATCH": "YES" if tmatches else ("NO" if args.tldr else "NOT_AVAILABLE"),
                 "TLDR_INSERTIONS": ";".join(sorted(set(tmatches))) if tmatches else ".",
                 "TLDR_UUID": ";".join(sorted(set(tuuids))) if tuuids else ".",
                 "TLDR_USED_READS": ";".join(sorted(set(tused))) if tused else ".",
                 "TLDR_SPAN_READS": ";".join(sorted(set(tspan))) if tspan else ".",
-                "LONGPHASE_MATCH": "YES" if lp_rec else "NO",
+                "LONGPHASE_MATCH": "YES" if lp_rec else ("NO" if args.longphase_vcf else "NOT_AVAILABLE"),
                 "LONGPHASE_ID": lp_rec["id"] if lp_rec else ".",
                 "LONGPHASE_GT": lp_rec["gt"] if lp_rec else ".",
                 "LONGPHASE_PS": lp_rec["ps"] if lp_rec else ".",
-                "LONGPHASE_PHASED": lp_rec["phased"] if lp_rec else "NO",
+                "LONGPHASE_PHASED": lp_rec["phased"] if lp_rec else ("NO" if args.longphase_vcf else "NOT_AVAILABLE"),
                 "LONGPHASE_MATCH_DISTANCE": str(lp_dist) if lp_dist is not None else ".",
             }
             cache[master_id] = evidence
@@ -465,4 +465,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

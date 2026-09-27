@@ -9,6 +9,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 
@@ -35,7 +36,8 @@ def caller_present(series: pd.Series, caller: str) -> pd.Series:
 
 
 def yes_flag(series: pd.Series) -> pd.Series:
-    return series.fillna("").astype(str).str.upper().isin(["YES", "TRUE", "1"])
+    values = series.fillna("").astype(str).str.upper().str.strip()
+    return values.map({"YES": 1.0, "TRUE": 1.0, "1": 1.0, "NO": 0.0, "FALSE": 0.0, "0": 0.0})
 
 
 def main():
@@ -81,12 +83,13 @@ def main():
         caller_text = work[callers_col]
         work["Sniffles2"] = caller_present(caller_text, "Sniffles2").astype(int)
         work["cuteSV"] = caller_present(caller_text, "cuteSV").astype(int)
+        work["Manta"] = caller_present(caller_text, "Manta").astype(int)
         work["Delly"] = caller_present(caller_text, "Delly").astype(int)
     else:
-        work[["Sniffles2", "cuteSV", "Delly"]] = 0
+        work[["Sniffles2", "cuteSV", "Manta", "Delly"]] = np.nan
 
     caller_count = numeric(work[caller_count_col]) if caller_count_col else pd.Series(np.nan, index=work.index)
-    work["Multi-caller"] = (caller_count >= 2).astype(int)
+    work["Multi-caller"] = (caller_count >= 2).astype(float).where(caller_count.notna())
 
     if af_col:
         af = numeric(work[af_col])
@@ -119,7 +122,7 @@ def main():
     ]:
         col = first_existing(work, [source_col])
         if col:
-            work[display] = yes_flag(work[col]).astype(int)
+            work[display] = yes_flag(work[col])
             optional_flags.append(display)
 
     whatshap_count_col = first_existing(work, ["WHATSHAP_PHASED_HET_COUNT"])
@@ -134,34 +137,34 @@ def main():
         ).astype(int)
         optional_flags.append("Methylation context")
 
-    work["_plot_priority"] = (
-        work["Multi-caller"] * 2
-        + work[f"needLR AF ≤ {args.rare_af:g}"] * 2
-        + work["Panel gene"] * 2
-        + work["OMIM evidence"]
-        + work["GenCC evidence"]
-        + work["Phenotype overlap"] * 2
-        + sum(work[x] for x in optional_flags)
-        + pheno.rank(pct=True).fillna(0)
+    score_col = first_existing(work, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score"])
+    # Match the documented gene-discovery ranking. Database presence, panel
+    # membership and optional analyses must not silently create another score.
+    work["PLOT_ORDER_BASIS"] = score_col or (pheno_col or "UNRANKED")
+    work["PLOT_ORDER_SCORE"] = numeric(work[score_col]) if score_col else (
+        numeric(work[pheno_col]) if pheno_col else np.nan
     )
+    work["_caller_count"] = caller_count
     work["_pheno"] = pheno
     work["_af"] = af
     work = (
-        work.sort_values(["_plot_priority", "_pheno"], ascending=False)
-        .drop_duplicates(subset=["_label"], keep="first")
+        work.sort_values(["PLOT_ORDER_SCORE", "_pheno", "_caller_count", id_col, gene_col],
+                         ascending=[False, False, False, True, True], na_position="last")
+        .drop_duplicates(subset=[id_col, gene_col], keep="first")
         .head(args.top_n)
         .copy()
     )
+    work["_label"] = work["_label"] + " [" + work[id_col].astype(str) + "]"
 
     evidence_cols = [
-        "Sniffles2", "cuteSV", "Delly", "Multi-caller",
+        "Sniffles2", "cuteSV", "Manta", "Delly", "Multi-caller",
         "needLR evaluable", f"needLR AF ≤ {args.rare_af:g}", "needLR AF = 0",
         "Panel gene", "AnnotSV class", "OMIM evidence", "GenCC evidence", "Phenotype overlap",
     ] + optional_flags
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    work[[id_col, gene_col] + evidence_cols].to_csv(
+    work[[id_col, gene_col, "PLOT_ORDER_BASIS", "PLOT_ORDER_SCORE"] + evidence_cols].to_csv(
         prefix.with_name(prefix.name + "_matrix.tsv"), sep="\t", index=False
     )
 
@@ -170,6 +173,7 @@ def main():
     fig_h = max(7.2, 0.42 * n + 2.6)
     fig, ax = plt.subplots(figsize=(15.5, fig_h))
     cmap = ListedColormap(["#F3F4F4", "#0B6E69"])
+    cmap.set_bad("#AAB2BA")
     ax.imshow(matrix, aspect="auto", interpolation="nearest", cmap=cmap, vmin=0, vmax=1)
 
     ax.set_xticks(np.arange(len(evidence_cols)))
@@ -178,6 +182,10 @@ def main():
     ax.set_yticklabels(work["_label"], fontsize=9)
     ax.set_xlabel("Evidence layer")
     ax.set_ylabel("SV | overlapping gene")
+    ax.legend(handles=[Patch(facecolor="#0B6E69", label="Reported"),
+                       Patch(facecolor="#F3F4F4", edgecolor="#BBBBBB", label="Not reported"),
+                       Patch(facecolor="#AAB2BA", label="Unavailable/unknown")],
+              loc="upper left", bbox_to_anchor=(0, 1.08), ncol=3, fontsize=8)
     ax.set_xticks(np.arange(-0.5, len(evidence_cols), 1), minor=True)
     ax.set_yticks(np.arange(-0.5, n, 1), minor=True)
     ax.grid(which="minor", color="white", linewidth=1.0)
@@ -201,7 +209,7 @@ def main():
     fig.text(
         0.5,
         0.008,
-        "Dark teal indicates evidence/context presence. WhatsHap and methylation are local context layers, not SV confirmations. Ordering is a review aid, not a pathogenicity classification.",
+        "Order follows the available gene-discovery score (legacy fallback: phenotype score). Context presence is not SV confirmation or a pathogenicity classification.",
         ha="center",
         fontsize=9,
     )
@@ -213,4 +221,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

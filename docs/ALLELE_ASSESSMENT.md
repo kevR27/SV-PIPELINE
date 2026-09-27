@@ -1,5 +1,8 @@
 # Allele assessment: configuration, interpretation and migration
 
+For output-only studies and the distinction between gene ranking, AnnotSV CNV
+classification and the additional allele score, see [Score interpretation](SCORE_INTERPRETATION.md).
+
 The original question, ONT/SRS comparison, genome-wide SV discovery, human-only
 phenotype evidence and optic-neuropathy panel remain intact. This addition
 assesses an SV–gene hypothesis rather than replacing the master callset or

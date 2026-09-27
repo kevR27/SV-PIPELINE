@@ -38,7 +38,7 @@ GENCC_SCORES = {
     "MODERATE": 2.5,
     "SUPPORTIVE": 1.5,
     "LIMITED": 0.5,
-    "ANIMAL MODEL ONLY": 0.25,
+    "ANIMAL MODEL ONLY": 0.0,
     "DISPUTED": 0.0,
     "REFUTED": 0.0,
     "NO KNOWN DISEASE RELATIONSHIP": 0.0,
@@ -58,6 +58,12 @@ CONTRADICTORY_GENCC = {
     "NO KNOWN DISEASE RELATIONSHIP",
 }
 
+MISSING_VALUES = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
+
+
+def known(value) -> bool:
+    return value is not None and str(value).strip().upper() not in MISSING_VALUES
+
 
 def read_list(path: str) -> set[str]:
     out: set[str] = set()
@@ -72,23 +78,23 @@ def read_list(path: str) -> set[str]:
 def first(row: dict, names: list[str]) -> str:
     for name in names:
         value = row.get(name, "")
-        if value not in ("", ".", None):
+        if known(value):
             return str(value)
     lower = {str(k).lower(): v for k, v in row.items()}
     for name in names:
         value = lower.get(name.lower(), "")
-        if value not in ("", ".", None):
+        if known(value):
             return str(value)
     return ""
 
 
 def split_values(value: str) -> list[str]:
-    if value in ("", ".", None):
+    if not known(value):
         return []
     return [
         x.strip()
         for x in re.split(r"[;|]", str(value))
-        if x.strip()
+        if known(x)
     ]
 
 
@@ -260,14 +266,22 @@ def main() -> int:
                 if sv_id:
                     data["sv_ids"].add(sv_id)
 
+                # These describe overlapping SV records, including the full
+                # event row. They do not assert pathogenicity of each gene.
+                for key, aliases in {
+                    "ranking_score": ["AnnotSV_ranking_score", "AnnotSV ranking score"],
+                    "ranking_criteria": ["AnnotSV_ranking_criteria", "AnnotSV ranking criteria"],
+                    "acmg_class": ["ACMG_class", "ACMG class"],
+                }.items():
+                    value = first(row, aliases)
+                    if value:
+                        data[key].append(value)
+
                 if str(row.get("Annotation_mode", "")).lower() == "full" or len(row_genes) != 1:
                     continue
 
                 for key, aliases in {
                     "rank": ["AnnotSV ranking", "AnnotSV_rank", "ACMG_class"],
-                    "ranking_score": ["AnnotSV_ranking_score", "AnnotSV ranking score"],
-                    "ranking_criteria": ["AnnotSV_ranking_criteria", "AnnotSV ranking criteria"],
-                    "acmg_class": ["ACMG_class", "ACMG class"],
                     "omim": [
                         "OMIM_phenotype",
                         "OMIM",
@@ -365,6 +379,7 @@ def main() -> int:
                 "AnnotSV_ranking_scores": ";".join(sorted(set(a["ranking_score"]))),
                 "AnnotSV_ranking_criteria": ";".join(sorted(set(a["ranking_criteria"]))),
                 "AnnotSV_ACMG_classes": ";".join(sorted(set(a["acmg_class"]))),
+                "AnnotSV_classification_scope": "OVERLAPPING_SV_RECORDS_NOT_GENE_PATHOGENICITY",
                 "AnnotSV_OMIM_evidence": ";".join(sorted(set(a["omim"]))),
                 "AnnotSV_GENCC_evidence": ";".join(sorted(set(a["gencc_classification"]))),
                 "AnnotSV_ClinVar_evidence": ";".join(sorted(set(a["clinvar"]))),
@@ -382,7 +397,7 @@ def main() -> int:
                 ),
                 "candidate_group": candidate_group,
                 "classification": candidate_group,
-                "ranking_model": "phenotype13_geneDisease4_sv2_v2",
+                "ranking_model": "phenotype13_geneDisease4_sv2_v2.1",
                 "interpretation": (
                     "Research-priority score only. The gene-disease component "
                     "summarizes curated evidence and is not a gene pathogenicity "
@@ -424,4 +439,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

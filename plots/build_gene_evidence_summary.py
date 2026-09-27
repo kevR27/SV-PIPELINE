@@ -161,11 +161,17 @@ def main():
             for state in ["YES", "NOT_REPORTED", "UNKNOWN", "NOT_APPLICABLE"]:
                 rows[-1][f"{label}_SV_{state.lower()}_count"] = int(status.eq(state).sum())
             rows[-1][f"{label}_SV_unrecognized_status_count"] = int((~status.isin(["YES", "NOT_REPORTED", "UNKNOWN", "NOT_APPLICABLE"])).sum())
+        for source in ["STRAGLR_MATCH", "TLDR_MATCH", "LONGPHASE_MATCH", "LONGPHASE_PHASED"]:
+            status = unique[source].fillna("NOT_AVAILABLE").astype(str).str.upper() if source in unique else pd.Series("NOT_AVAILABLE", index=unique.index)
+            rows[-1][f"{source.lower()}_unavailable_SV_count"] = int(status.isin(["NOT_AVAILABLE", "UNKNOWN", ".", ""]).sum())
         if "ALLELE_RESEARCH_SCORE" in unique:
             rows[-1]["max_allele_research_score"] = pd.to_numeric(unique["ALLELE_RESEARCH_SCORE"], errors="coerce").max()
             rows[-1]["alleles_with_review_flags"] = int(unique["ALLELE_REVIEW_FLAGS"].fillna(".").ne(".").sum())
 
-    summary = pd.DataFrame(rows)
+    # Retain join keys for a valid empty/all-intergenic callset.
+    summary = pd.DataFrame(rows) if rows else pd.DataFrame(
+        columns=["gene", "master_SV_count", "panel_gene"]
+    )
 
     if args.ranking:
         rank = read_tsv(args.ranking)
@@ -183,6 +189,7 @@ def main():
                     "SV_evidence_score", "integrated_discovery_score",
                     "AnnotSV_ranking_scores", "AnnotSV_ranking_criteria",
                     "AnnotSV_ACMG_classes",
+                    "AnnotSV_classification_scope",
                     "AnnotSV_OMIM_evidence", "AnnotSV_GENCC_evidence",
                     "AnnotSV_ClinVar_evidence", "AnnotSV_constraint_evidence",
                     "PANEL_STATUS", "CANDIDATE_CLASS", "OMIM", "GENCC",
@@ -244,4 +251,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

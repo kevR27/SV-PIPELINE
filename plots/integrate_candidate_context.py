@@ -210,9 +210,6 @@ def summarize_methylation(records):
 def main():
     args = parse_args()
     df = read_tsv(args.integrated)
-    if df.empty:
-        raise ValueError("Integrated table is empty.")
-
     id_col = first_existing(df, ["SV_ID", "ID"])
     chrom_col = first_existing(df, ["CHROM", "chrom"])
     start_col = first_existing(df, ["START", "POS"])
@@ -340,4 +337,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
