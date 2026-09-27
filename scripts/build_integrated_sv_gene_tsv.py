@@ -35,6 +35,7 @@ import sys
 from collections import OrderedDict, defaultdict
 from pathlib import Path
 from sv_evidence_common import breakend, same_breakend, population_frequency
+from audit_annotsv_evidence import DATABASES, FIELDS as SOURCE_FIELDS, evidence_availability, load_audit
 
 try:
     csv.field_size_limit(sys.maxsize)
@@ -662,7 +663,9 @@ def annotsv_row_for_gene(matches: list[dict], gene: str):
     for key in {k for r in matches for k in r}:
         source = full if event(key) and full else specific
         values = sorted({str(r[key]) for r in source if r.get(key) not in (None, "", MISSING)})
-        out[key] = values[0] if len(values) == 1 else MISSING
+        # Source mentions can be unioned within the same event without choosing
+        # a gene/transcript or asserting coordinate/allele equivalence.
+        out[key] = ";".join(values) if key in SOURCE_FIELDS and values else (values[0] if len(values) == 1 else MISSING)
     out["_GENE_ROWS"] = json.dumps(specific, separators=(",", ":"))
     out["_GENE_STATUS"] = "GENE_SPECIFIC" if specific else "NO_GENE_SPECIFIC_ROW"
     return out
@@ -672,6 +675,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Create integrated SV/gene evidence TSV")
     parser.add_argument("--vcf", required=True, help="Merged master SV VCF")
     parser.add_argument("--annotsv", required=True, help="Genome-wide AnnotSV TSV")
+    parser.add_argument("--annotsv-audit", help="Automatically generated AnnotSV availability JSON")
     parser.add_argument("--needlr", help="needLR RESULTS TSV")
     parser.add_argument("--ranking", help="Genome-wide candidate ranking TSV")
     parser.add_argument("--panel", help="Candidate gene panel list")
@@ -689,6 +693,7 @@ def main() -> int:
 
     sv_rows, _ = read_vcf(args.vcf)
     annotsv_rows = read_tsv(args.annotsv)
+    availability_audit = load_audit(args.annotsv_audit, args.annotsv)
     needlr_enabled = bool(args.needlr)
     needlr_rows = read_tsv(args.needlr)
     ranking = load_ranking(read_tsv(args.ranking))
@@ -1048,6 +1053,7 @@ def main() -> int:
                 ]
             )
 
+            row.update(evidence_availability(ann_row, sv["SVTYPE"], availability_audit, bool(ann_matches)))
             row["ANNOTSV_GENE_STATUS"] = ann_row.get("_GENE_STATUS", "NO_GENE_SPECIFIC_ROW")
             row["ANNOTSV_GENE_ROWS_JSON"] = ann_row.get("_GENE_ROWS", "[]")
             caller_rows, _ = caller_matches_for_sv(sv, caller_by_id, caller_spatial_index)
@@ -1166,6 +1172,8 @@ def main() -> int:
     extra_columns = ["NEEDLR_AF_SOURCE_FIELD", "NEEDLR_AF_VALUE_STATUS", "NEEDLR_MATCH_SCOPE",
                      "NEEDLR_SOURCE_ID", "ANNOTSV_GENE_STATUS", "ANNOTSV_GENE_ROWS_JSON",
                      "CALLER_EVIDENCE_JSON", "BND_ORIENTATION"]
+    extra_columns += ["SV_PATHOGENIC_DB_STATUS", "SV_BENIGN_DB_STATUS"]
+    extra_columns += [f"SV_DB_{db}_AVAILABILITY" for db in DATABASES]
     columns = fixed_columns + extra_columns + info_columns
 
     output_path = Path(args.output)
