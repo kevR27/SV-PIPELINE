@@ -116,6 +116,11 @@ def atomic_json(path, data):
 
 
 def bundle_inventory(root, build, cache=None):
+    if not root:
+        return {"key": {"version": VERSION, "build": build, "mode": "OUTPUT_ONLY"},
+                "channels": {field: {"path": ".", "sha256": ".", "status": "BUNDLE_NOT_INSPECTED",
+                    "records": None, "nonempty_source_records": None,
+                    "database_records": {db: None for db in DATABASES}} for field in FIELDS}}
     paths = resource_paths(root, build)
     key = {"version": VERSION, "build": build, "files": fingerprint(paths)}
     if cache and Path(cache).is_file():
@@ -222,7 +227,7 @@ def load_audit(path, annotsv):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--annotations-dir", required=True)
+    p.add_argument("--annotations-dir", help="Installed annotation directory; omit to inspect saved output only")
     p.add_argument("--genome-build", choices=["GRCh37", "GRCh38", "CHM13"], default="GRCh38")
     p.add_argument("--annotsv", required=True)
     p.add_argument("--cache")

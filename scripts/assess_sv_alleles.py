@@ -20,7 +20,7 @@ from sv_evidence_common import MISSING, number
 # INFO/read-name and transcript JSON fields can exceed the csv default of 128 KiB.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
-VERSION = "sv-allele-evidence-v1.1"
+VERSION = "sv-allele-evidence-v1.2"
 DOMAINS = ("POPULATION", "TECHNICAL", "DISRUPTION", "INHERITANCE", "PHENOTYPE", "DISEASE_MECHANISM")
 EFFECTS = {"LOF", "COPY_GAIN", "GOF", "DOMINANT_NEGATIVE", "NO_DISRUPTION", "OTHER", "UNKNOWN"}
 MOIS = {"AD", "AR", "XLD", "XLR", "MT", "UNKNOWN"}
@@ -111,9 +111,12 @@ def technical(row, min_support):
     # is descriptive, not a technical failure. Other flags still require review.
     informational = {"NO_SVLEN"} if row.get("SVTYPE", "").upper() in {"BND", "TRA"} else set()
     flagged = sorted(all_flags - informational)
+    if any(r.get("EVIDENCE_STATUS") == "FAIL" for r in data):
+        flagged.append("CALLER_RECORD_FAILS_CURRENT_FILTER")
     filt = row.get("FILTER", ".")
     method = row.get("CALLER_EVIDENCE_MATCH", "NO_MATCH")
-    detail = f"callers={count};max_support={max(support) if support else '.'};match={method};flags={';'.join(sorted(all_flags)) or '.'};FILTER={filt}"
+    failures = sorted({r.get("EVIDENCE_FAIL_REASONS", "UNSPECIFIED") for r in data if r.get("EVIDENCE_STATUS") == "FAIL"})
+    detail = f"callers={count};max_support={max(support) if support else '.'};match={method};flags={';'.join(sorted(all_flags)) or '.'};FILTER={filt};current_filter_failures={';'.join(failures) or '.'}"
     if "AMBIGUOUS" in method or flagged or filt not in {"PASS", ".", ""}:
         return domain("REVIEW_REQUIRED", 0, detail)
     if not support:
@@ -123,6 +126,48 @@ def technical(row, min_support):
     if count is not None and count >= 2:
         return domain("MULTICALLER_READ_SUPPORTED", 2, detail + ";shared reads are not independent validation")
     return domain("SINGLE_CALLER_READ_SUPPORTED", 1, detail)
+
+
+def transcript_breakpoints(row, ann):
+    """Use the correct local or remote chromosome for a BND transcript."""
+    start, end = number(row.get("START")), number(row.get("END"))
+    if row.get("SVTYPE") in {"BND", "TRA"}:
+        contig = str(ann.get("SV_chrom", row.get("CHROM", "."))).removeprefix("chr")
+        points = [number(row.get(key)) for c, key in (("CHROM", "START"), ("CHR2", "POS2"))
+                  if str(row.get(c, ".")).removeprefix("chr") == contig]
+    elif row.get("SVTYPE") == "INS":
+        points = [start]
+    else:
+        points = [start, end]
+    lo, hi = number(ann.get("Tx_start")), number(ann.get("Tx_end"))
+    return [p for p in points if p is not None and lo is not None and hi is not None and lo < p < hi]
+
+
+def functional_context(row):
+    """Describe the predicted effect without turning overlap into disease proof."""
+    annotations = json.loads(row.get("ANNOTSV_GENE_ROWS_JSON", "[]"))
+    if not annotations:
+        return "NO_GENE_SPECIFIC_ANNOTATION"
+    kind = row.get("SVTYPE")
+    effects = set()
+    for ann in annotations:
+        cds = number(ann.get("Overlapped_CDS_percent"))
+        start, end = number(row.get("START")), number(row.get("END"))
+        lo, hi = number(ann.get("Tx_start")), number(ann.get("Tx_end"))
+        contains = None not in (start, end, lo, hi) and start <= lo and end >= hi
+        if kind == "DEL" and cds is not None and 0 < cds <= 100:
+            effects.add("DELETION_OVERLAPS_CDS")
+        elif kind == "DUP" and contains:
+            effects.add("WHOLE_TRANSCRIPT_COPY_GAIN_PREDICTED")
+        elif kind == "INV" and contains:
+            effects.add("TRANSCRIPT_INSIDE_INVERSION_NO_INTRAGENIC_BREAKPOINT_SHOWN")
+        elif transcript_breakpoints(row, ann):
+            location = str(ann.get("Location", "")).lower()
+            effects.add("EXONIC_BREAKPOINT_POSSIBLE" if "exon" in location else
+                        "INTRONIC_BREAKPOINT_POSSIBLE" if "intron" in location else "TRANSCRIPT_BREAKPOINT_POSSIBLE")
+        else:
+            effects.add("OVERLAP_WITHOUT_RESOLVED_FUNCTIONAL_EFFECT")
+    return ";".join(sorted(effects))
 
 
 def disruption(row, evidence):
@@ -141,7 +186,7 @@ def disruption(row, evidence):
     candidates = set()
     for ann in annotations:
         cds = number(ann.get("Overlapped_CDS_percent"))
-        if svtype == "DEL" and cds is not None and cds > 0:
+        if svtype == "DEL" and cds is not None and 0 < cds <= 100:
             candidates.add("CDS_LOSS_PREDICTED")
         start, end = number(row.get("START")), number(row.get("END"))
         txstart, txend = number(ann.get("Tx_start")), number(ann.get("Tx_end"))
@@ -150,11 +195,9 @@ def disruption(row, evidence):
         location = str(ann.get("Location", "")).lower()
         if svtype in {"INS", "INV", "BND"} and "exon" in location:
             # Location alone is insufficient for inversions encompassing a gene.
-            if None not in (start, txstart, txend) and txstart <= start <= txend:
+            if transcript_breakpoints(row, ann):
                 candidates.add("EXONIC_BREAKPOINT_POSSIBLE")
-            elif svtype == "INV" and None not in (end, txstart, txend) and txstart <= end <= txend:
-                candidates.add("EXONIC_BREAKPOINT_POSSIBLE")
-    detail = ";".join(sorted(candidates)) or "Gene overlap alone does not establish molecular disruption"
+    detail = ";".join(sorted(candidates)) or functional_context(row)
     if "CDS_LOSS_PREDICTED" in candidates:
         return domain("CDS_LOSS_PREDICTED", 1, detail + ";LOF not established"), "POSSIBLE_LOF"
     if "TRANSCRIPT_COPY_GAIN_PREDICTED" in candidates:
@@ -317,7 +360,8 @@ def assess(row, model, patient, evidence, family, gene_hpo, args):
     disruption_result, effect = disruption(row, evidence)
     result = {"ALLELE_ASSESSMENT_VERSION": VERSION, "ALLELE_DISEASE_ID": model.get("disease_id", "."),
               "ALLELE_DISEASE_SOURCE": model.get("source", "."), "ALLELE_GENOTYPE": gt,
-              "ALLELE_GENOTYPE_SOURCE": gt_source, "ALLELE_EFFECT": effect}
+              "ALLELE_GENOTYPE_SOURCE": gt_source, "ALLELE_EFFECT": effect,
+              "ALLELE_FUNCTIONAL_CONTEXT": functional_context(row)}
     components = [population(row, evidence, args.rare_af), technical(row, args.min_support), disruption_result,
                   inheritance(row, model, patient, gt, family, args.min_gq, args.min_dp),
                   phenotype(gene, model, patient, gene_hpo), disease_mechanism(row, model, effect)]

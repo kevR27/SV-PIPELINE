@@ -36,7 +36,8 @@ Generic optic-neuropathy anchors are never substituted for patient phenotypes.
 ## Corrected reporting behavior
 
 - Allele assessment accepts long VCF INFO/read-name and transcript JSON fields.
-  Its model identifier is now `sv-allele-evidence-v1.1`.
+  Its model identifier is now `sv-allele-evidence-v1.2`. This version also checks
+  the correct BND endpoint for a gene and reports functional context separately.
 - Missing OMIM tokens (`NA`, `N/A`, `None`, `NaN`, `null`, `.` and empty cells,
   case-insensitive) cannot provide positive disease-evidence points.
 - `Animal Model Only` GenCC records remain visible but receive no human
@@ -64,6 +65,10 @@ Generic optic-neuropathy anchors are never substituted for patient phenotypes.
   empty dataset.
 
 ## Applying corrections to existing results
+
+The [saved-output rebuild command](SAVED_OUTPUT_REANALYSIS.md) runs these steps
+in order and writes to a new folder. It accepts the old raw tool outputs and
+does not require the four clinical TSVs.
 
 Updating repository code does not rewrite TSVs already produced on a server.
 Regenerate the gene ranking, integrated table, allele assessment, downstream

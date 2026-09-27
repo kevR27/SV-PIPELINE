@@ -19,7 +19,7 @@ import argparse
 import csv
 import gzip
 from pathlib import Path
-from sv_evidence_common import breakend
+from sv_evidence_common import breakend, sv_length
 
 MISSING = "."
 
@@ -282,6 +282,8 @@ def main() -> int:
             }
             row.update(fmt)
             row.update(caller_evidence(args.caller, info, fmt))
+            row["SVLEN_REPORTED"] = row["SVLEN"]
+            row["SVLEN"], row["SVLEN_SOURCE"] = sv_length(row)
             if row["SVTYPE"] in {"BND", "TRA"}:
                 _, _, chr2, pos2, orientation = breakend(row)
                 row.update(CHR2=chr2, POS2=str(int(pos2)) if pos2 is not None else MISSING,
@@ -290,7 +292,7 @@ def main() -> int:
 
     columns = [
         "CALLER", "SV_ID", "CHROM", "START", "END", "CHR2", "POS2",
-        "SVTYPE", "SVLEN", "QUAL", "FILTER", "REF", "ALT", "INFO_RAW",
+        "SVTYPE", "SVLEN", "SVLEN_REPORTED", "SVLEN_SOURCE", "QUAL", "FILTER", "REF", "ALT", "INFO_RAW",
         "CALLER_SUPPORT", "CALLER_RNAMES", "CALLER_STRANDS",
         "CALLER_IMPRECISE", "CALLER_MOSAIC", "CALLER_PE", "CALLER_SR",
         "CALLER_PR", "CALLER_PRECISE", "CALLER_SUPPORT_VECTOR",
@@ -317,4 +319,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

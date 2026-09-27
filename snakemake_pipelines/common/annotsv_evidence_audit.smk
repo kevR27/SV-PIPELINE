@@ -7,6 +7,28 @@ from audit_annotsv_evidence import resource_paths as audit_resource_paths
 from audit_annotsv_evidence import fingerprint as audit_fingerprint
 
 
+rule annotsv_output_reconciliation:
+    input:
+        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz",
+        annotsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",
+        unannotated=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.unannotated.tsv",
+        script=SCRIPTS + "/audit_sv_outputs.py",
+        reconciliation=SCRIPTS + "/annotsv_reconciliation.py",
+        integration=SCRIPTS + "/build_integrated_sv_gene_tsv.py",
+        availability=SCRIPTS + "/audit_annotsv_evidence.py",
+        common=SCRIPTS + "/sv_evidence_common.py"
+    output:
+        tsv=PATH + "{sample}/sv/annotsv/{sample}_annotation_records.tsv",
+        json=PATH + "{sample}/sv/annotsv/{sample}_annotation_records.json"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        python {input.script:q} --vcf {input.vcf:q} --annotsv {input.annotsv:q} \
+            --unannotated {input.unannotated:q} --output-tsv {output.tsv:q} --output-json {output.json:q}
+        """
+
+
 def annotsv_audit_resources(wc):
     return [str(path) for path in audit_resource_paths(ANNOTSV_ANNOTATIONS_DIR).values() if path.is_file()]
 

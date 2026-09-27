@@ -21,6 +21,7 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+from sv_evidence_common import INVALID_GENE_LABELS, gene_symbols
 
 try:
     csv.field_size_limit(sys.maxsize)
@@ -193,7 +194,7 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
-    genes = read_list(args.genes)
+    genes = read_list(args.genes) - INVALID_GENE_LABELS
     panel = read_list(args.panel)
 
     pheno = defaultdict(
@@ -251,12 +252,9 @@ def main() -> int:
             if not gene_field:
                 continue
 
-            row_genes = {
-                x.strip().upper()
-                for x in re.split(r"[;,|]", gene_field)
-                if x.strip()
-            }
-            sv_id = first(row, ["SV_ID", "AnnotSV_ID", "ID"])
+            row_genes = set(gene_symbols(gene_field))
+            # A BND may have two AnnotSV endpoint IDs for one master record.
+            sv_id = first(row, ["SV_ID", "ID", "AnnotSV_ID"])
 
             for gene in row_genes:
                 if gene not in genes:
