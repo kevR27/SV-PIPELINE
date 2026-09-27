@@ -1,0 +1,18 @@
+name: SV evidence regression
+on: [push, pull_request]
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install numpy pandas matplotlib pyyaml snakemake==8.30.0
+      - run: python -m unittest discover -s tests -v
+      - run: snakemake -s Snakefile_LRS_update --list-rules
+        working-directory: snakemake_pipelines/lrs
+      - run: snakemake -s Snakefile_LRS_postprocess --list-rules
+        working-directory: snakemake_pipelines/lrs
+      - run: snakemake -s Snakefile_SRS --list-rules
+        working-directory: snakemake_pipelines/srs

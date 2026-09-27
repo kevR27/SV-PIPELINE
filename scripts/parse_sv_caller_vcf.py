@@ -19,6 +19,7 @@ import argparse
 import csv
 import gzip
 from pathlib import Path
+from sv_evidence_common import breakend
 
 MISSING = "."
 
@@ -139,7 +140,9 @@ def parse_format(fmt_raw: str, sample_raw: str) -> dict[str, str]:
             numeric(out["CALLER_RV"]),
         ]
         parts = [v for v in parts if v is not None]
-        if parts:
+        has_ref = any(numeric(out[k]) is not None for k in ("CALLER_DR", "CALLER_RR"))
+        has_alt = any(numeric(out[k]) is not None for k in ("CALLER_DV", "CALLER_RV"))
+        if parts and has_ref and has_alt:
             total = sum(parts)
             out["CALLER_DP"] = str(int(total)) if float(total).is_integer() else str(total)
 
@@ -255,6 +258,8 @@ def main() -> int:
             seen_ids.add(sv_id)
 
             info = parse_info(info_raw)
+            if len(fields) > 10:
+                raise ValueError("Per-caller parser expects one sample; subset a multisample VCF explicitly")
             fmt_raw = fields[8] if len(fields) > 8 else MISSING
             sample_raw = fields[9] if len(fields) > 9 else MISSING
             fmt = parse_format(fmt_raw, sample_raw)
@@ -277,6 +282,10 @@ def main() -> int:
             }
             row.update(fmt)
             row.update(caller_evidence(args.caller, info, fmt))
+            if row["SVTYPE"] in {"BND", "TRA"}:
+                _, _, chr2, pos2, orientation = breakend(row)
+                row.update(CHR2=chr2, POS2=str(int(pos2)) if pos2 is not None else MISSING,
+                           BND_ORIENTATION=orientation)
             rows.append(row)
 
     columns = [
@@ -286,7 +295,7 @@ def main() -> int:
         "CALLER_IMPRECISE", "CALLER_MOSAIC", "CALLER_PE", "CALLER_SR",
         "CALLER_PR", "CALLER_PRECISE", "CALLER_SUPPORT_VECTOR",
         "CALLER_GT", "CALLER_GQ", "CALLER_DP", "CALLER_DR", "CALLER_DV",
-        "CALLER_RR", "CALLER_RV",
+        "CALLER_RR", "CALLER_RV", "BND_ORIENTATION",
     ]
 
     output_path = Path(args.output)
@@ -308,3 +317,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

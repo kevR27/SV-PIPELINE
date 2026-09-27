@@ -28,11 +28,13 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import json
 import math
 import re
 import sys
 from collections import OrderedDict, defaultdict
 from pathlib import Path
+from sv_evidence_common import breakend, same_breakend, population_frequency
 
 try:
     csv.field_size_limit(sys.maxsize)
@@ -339,7 +341,14 @@ def read_vcf(path: str):
             for key, value in info.items():
                 clean = re.sub(r"[^A-Za-z0-9_.-]+", "_", key)
                 row[f"INFO_{clean}"] = value
+            if svtype == "BND":
+                _, _, chr2, pos2, orientation = breakend(row)
+                row.update(CHR2=chr2, POS2=str(int(pos2)) if pos2 is not None else MISSING,
+                           END=str(int(pos2)) if pos2 is not None else MISSING, BND_ORIENTATION=orientation)
             rows.append(row)
+    ids = [r["SV_ID"] for r in rows]
+    if any(x in {"", MISSING} for x in ids) or len(set(ids)) != len(ids):
+        raise ValueError("Master VCF requires unique nonmissing SV IDs")
     return rows, info_keys
 
 
@@ -394,7 +403,6 @@ def genes_from_annot(row: dict) -> list[str]:
         "Genes",
         "gene",
         "SYMBOL",
-        "GeneID",
         "AnnotSV_Gene",
     ]:
         genes.extend(split_genes(first(row, [column])))
@@ -419,15 +427,17 @@ def load_caller_summary(rows: list[dict]) -> dict[str, dict]:
     return out
 
 
-def load_caller_evidence(paths: list[str]):
-    by_id: dict[str, dict] = {}
+def load_caller_evidence(paths: list[str], jasmine_prefixes=False):
+    by_id = defaultdict(list)
     rows: list[dict] = []
-    for path in paths:
+    for input_index, path in enumerate(paths):
         for row in read_tsv(path):
             rows.append(row)
             sv_id = first(row, ["SV_ID", "ID"])
             if sv_id != MISSING:
-                by_id[sv_id] = row
+                by_id[sv_id].append(row)
+                if jasmine_prefixes:
+                    by_id[f"{input_index}_{sv_id}"].append(row)
     return by_id, build_spatial_index(rows)
 
 
@@ -509,6 +519,8 @@ def spatial_candidates_for_sv(sv: dict, spatial_index) -> list[dict]:
     # bucket so the positional prefilter cannot exclude a valid match.
     padding = max(500, int(0.20 * max(svlen, max_candidate_len, 1)))
 
+    if svtype == "BND":
+        padding = 500
     if svtype in {"INS", "BND"} or end is None:
         lo = max(0, start - padding)
         hi = start + padding
@@ -556,8 +568,7 @@ def evidence_match_score(sv: dict, row: dict):
         return float(dist)
 
     if svtype == "BND":
-        dist = abs(start1 - start2)
-        return float(dist) if dist <= tolerance else None
+        return same_breakend(sv, row, tolerance=500)
 
     if end1 is None or end2 is None:
         dist = abs(start1 - start2)
@@ -572,44 +583,40 @@ def evidence_match_score(sv: dict, row: dict):
     return None
 
 
-def caller_evidence_for_sv(sv: dict, by_id, spatial_index):
+def caller_matches_for_sv(sv, by_id, spatial_index):
     ids = split_values(sv.get("INFO_IDLIST", MISSING))
-    matches = [by_id[x] for x in ids if x in by_id]
-    method = "IDLIST" if matches else MISSING
+    exact = [r for identifier in ids for r in by_id.get(identifier, [])]
+    # Colliding caller IDs are not sufficient to transfer genotype evidence.
+    if exact and all(len(by_id.get(identifier, [])) <= 1 for identifier in ids):
+        return exact, "IDLIST"
+    grouped = defaultdict(list)
+    for row in spatial_candidates_for_sv(sv, spatial_index):
+        score = evidence_match_score(sv, row)
+        if score is not None:
+            grouped[first(row, ["CALLER"])].append((score, row))
+    matches = []
+    ambiguous = False
+    for caller, candidates in grouped.items():
+        if caller == MISSING:
+            continue
+        if len(candidates) != 1:
+            ambiguous = True
+            continue
+        matches.append(candidates[0][1])
+    method = "AMBIGUOUS_COORDINATE" if ambiguous else ("COORDINATE_FALLBACK" if matches else "NO_MATCH")
+    return matches, method
 
-    if not matches:
-        candidates = spatial_candidates_for_sv(sv, spatial_index)
-        scored = []
-        for row in candidates:
-            score = evidence_match_score(sv, row)
-            if score is not None:
-                scored.append((score, row))
-        # Keep the best coordinate match per caller.
-        best_by_caller: dict[str, tuple[float, dict]] = {}
-        for score, row in scored:
-            caller = first(row, ["CALLER"])
-            if caller == MISSING:
-                continue
-            if caller not in best_by_caller or score < best_by_caller[caller][0]:
-                best_by_caller[caller] = (score, row)
-        matches = [item[1] for item in best_by_caller.values()]
-        if matches:
-            method = "COORDINATE_FALLBACK"
 
-    details = []
-    flags = []
+def caller_evidence_for_sv(sv, by_id, spatial_index):
+    matches, method = caller_matches_for_sv(sv, by_id, spatial_index)
+    details, flags = [], []
     for row in sorted(matches, key=lambda r: first(r, ["CALLER"])):
         caller = first(row, ["CALLER"])
-        support = first(row, ["CALLER_SUPPORT"])
-        details.append(f"{caller}:{support}")
+        details.append(f"{caller}:{first(row, ['CALLER_SUPPORT'])}")
         flag = first(row, ["EVIDENCE_FLAGS"])
         if flag != MISSING:
             flags.append(f"{caller}:{flag}")
-    return (
-        ";".join(details) if details else MISSING,
-        ";".join(flags) if flags else MISSING,
-        method,
-    )
+    return ";".join(details) or MISSING, ";".join(flags) or MISSING, method
 
 
 def build_needlr_index(rows: list[dict]):
@@ -632,20 +639,33 @@ def match_needlr(sv: dict, needlr_index):
             scored.append((score, row))
     if not scored:
         return None, "NO_MATCH", MISSING
+    if len(scored) > 1:
+        return None, "AMBIGUOUS_MATCH", MISSING
     scored.sort(key=lambda x: x[0])
     best_score, best_row = scored[0]
     return best_row, "MATCHED", str(int(best_score))
 
 
 def annotsv_row_for_gene(matches: list[dict], gene: str):
-    if not matches:
-        return {}
-    if gene == MISSING:
-        return matches[0]
-    for row in matches:
-        if gene in genes_from_annot(row):
-            return row
-    return matches[0]
+    """Only full rows supply event fields; exact single-gene rows supply gene fields.
+
+    Preserve all transcript rows as JSON; a disagreement between transcript rows
+    stays missing in the scalar view rather than selecting an arbitrary transcript.
+    """
+    full = [r for r in matches if first(r, ["Annotation_mode"]).lower() == "full"]
+    specific = [r for r in matches if genes_from_annot(r) == [gene]
+                and first(r, ["Annotation_mode"]).lower() != "full"]
+    event_fields = {"ACMG_class", "ACMG class", "AnnotSV_ranking_score", "AnnotSV_ranking_criteria"}
+    def event(key):
+        return key.startswith(("P_", "B_", "po_P_", "po_B_", "SV_")) or key in event_fields
+    out = {}
+    for key in {k for r in matches for k in r}:
+        source = full if event(key) and full else specific
+        values = sorted({str(r[key]) for r in source if r.get(key) not in (None, "", MISSING)})
+        out[key] = values[0] if len(values) == 1 else MISSING
+    out["_GENE_ROWS"] = json.dumps(specific, separators=(",", ":"))
+    out["_GENE_STATUS"] = "GENE_SPECIFIC" if specific else "NO_GENE_SPECIFIC_ROW"
+    return out
 
 
 def main() -> int:
@@ -662,6 +682,8 @@ def main() -> int:
         default=[],
         help="Filtered per-caller evidence TSV; repeat once per caller",
     )
+    parser.add_argument("--jasmine-id-prefixes", action="store_true",
+                        help="Resolve zero-based inputIndex_ID using --caller-tsv order, which must match the Jasmine file list")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -672,7 +694,7 @@ def main() -> int:
     ranking = load_ranking(read_tsv(args.ranking))
     panel = read_panel(args.panel)
     caller_summary = load_caller_summary(read_tsv(args.caller_summary))
-    caller_by_id, caller_spatial_index = load_caller_evidence(args.caller_tsv)
+    caller_by_id, caller_spatial_index = load_caller_evidence(args.caller_tsv, args.jasmine_id_prefixes)
 
     annotsv_by_id, annotsv_by_coord = build_annotsv_indexes(annotsv_rows)
     needlr_index = build_needlr_index(needlr_rows)
@@ -758,22 +780,11 @@ def main() -> int:
                     ("CALLER_EVIDENCE_MATCH", evidence_match_method),
                     ("GENES", gene),
                     ("ANNOTSV_MATCH", ann_match_method),
-                    (
-                        "NEEDLR_AF",
-                        first(
-                            needlr_row,
-                            [
-                                "Allele_Freq_ALL",
-                                "AlleleFreqAll",
-                                "AF",
-                                "MAX_AF",
-                                "AF_MAX",
-                                "SV_AF",
-                                "AF_1KGP",
-                                "1KGP_AF",
-                            ],
-                        ),
-                    ),
+                    ("NEEDLR_AF", population_frequency(needlr_row)[0]),
+                    ("NEEDLR_AF_SOURCE_FIELD", population_frequency(needlr_row)[1]),
+                    ("NEEDLR_AF_VALUE_STATUS", population_frequency(needlr_row)[2]),
+                    ("NEEDLR_MATCH_SCOPE", "COORDINATE_ONLY_NOT_ALLELE_VALIDATED" if needlr_row else MISSING),
+                    ("NEEDLR_SOURCE_ID", first(needlr_row, ["SV_ID", "ID", "Variant_ID"])),
                     ("NEEDLR_STATUS", needlr_status),
                     ("NEEDLR_MATCH_DISTANCE", needlr_distance),
                     ("NEEDLR_GENES", first(needlr_row, ["Genes", "Gene", "GENE"])),
@@ -1037,6 +1048,11 @@ def main() -> int:
                 ]
             )
 
+            row["ANNOTSV_GENE_STATUS"] = ann_row.get("_GENE_STATUS", "NO_GENE_SPECIFIC_ROW")
+            row["ANNOTSV_GENE_ROWS_JSON"] = ann_row.get("_GENE_ROWS", "[]")
+            caller_rows, _ = caller_matches_for_sv(sv, caller_by_id, caller_spatial_index)
+            row["CALLER_EVIDENCE_JSON"] = json.dumps(caller_rows, separators=(",", ":"))
+            row["BND_ORIENTATION"] = sv.get("BND_ORIENTATION", MISSING)
             for key, value in sv.items():
                 if key.startswith("INFO_"):
                     row[key] = value
@@ -1147,7 +1163,10 @@ def main() -> int:
     info_columns = sorted(
         {key for row in output_rows for key in row if key.startswith("INFO_")}
     )
-    columns = fixed_columns + info_columns
+    extra_columns = ["NEEDLR_AF_SOURCE_FIELD", "NEEDLR_AF_VALUE_STATUS", "NEEDLR_MATCH_SCOPE",
+                     "NEEDLR_SOURCE_ID", "ANNOTSV_GENE_STATUS", "ANNOTSV_GENE_ROWS_JSON",
+                     "CALLER_EVIDENCE_JSON", "BND_ORIENTATION"]
+    columns = fixed_columns + extra_columns + info_columns
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1169,3 +1188,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

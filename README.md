@@ -6,7 +6,7 @@ The main question behind the pipeline is:
 
 > **Can whole-genome sequencing identify clinically relevant genomic changes that may be missed by analyses focused mainly on SNVs, small indels, or conventional CNVs?**
 
-The long-read workflow uses Oxford Nanopore whole-genome sequencing and combines several independent SV callers with gene annotation, phenotype information, population-frequency data, and additional long-read evidence.
+The long-read workflow uses Oxford Nanopore whole-genome sequencing and combines several SV callers with gene annotation, phenotype information, population-frequency data, and additional long-read evidence.
 
 The optic-neuropathy gene panel is used during interpretation, but it is **not used to restrict genome-wide SV discovery**. This keeps the analysis open to both known disease genes and new or unexpected candidate genes.
 
@@ -22,7 +22,30 @@ A separate downstream workflow,
 snakemake_pipelines/lrs/Snakefile_LRS_postprocess
 ```
 
-adds orthogonal evidence and generates integrated interpretation tables and plots without rerunning the main variant-calling steps.
+adds complementary computational evidence and generates integrated interpretation tables and plots without rerunning the main variant-calling steps.
+
+## Allele-level assessment and correctness update
+
+Both LRS and SRS now preserve the genome-wide master callset and add a six-domain,
+source-traceable SV–gene–disease research assessment. See
+[configuration, scoring and input templates](docs/ALLELE_ASSESSMENT.md).
+The original gene-discovery score remains available separately.
+
+- Outputs: `<sample>_allele_assessment.tsv`, `<sample>_allele_disease_hypotheses.tsv`
+  and `<sample>_allele_assessment.manifest.json` in `gene_discovery/`.
+- Assessment domains: population rarity, technical support, predicted/reviewed
+  disruption, genotype/inheritance, patient phenotype, and disease mechanism.
+- Optional patient, disease-model, allele-evidence and family-genotype files are
+  declared workflow inputs. Missing inputs remain unknown; no patient or family
+  evidence is invented. Header-only templates are in `reference/allele_assessment/`.
+- The score is an uncalibrated research aid (0–12), not ACMG classification,
+  diagnostic probability, or a filter. Read statuses, provenance and review flags.
+- Corrected exact panel labels, AnnotSV full/split scope, BND partner matching,
+  ambiguous matches, AF parsing, HPO duplication and explicit methylation units.
+- SV phasing now uses `.longphase_SV.vcf.gz`; `.longphase.vcf.gz` remains the SNP
+  output. The older `Snakefile_LRS` delegates to the canonical update workflow.
+- needLR reruns use fresh native directories rather than unverified cached results.
+  Existing results are retained on disk. Normal Snakemake up-to-date jobs still skip.
 
 ---
 
@@ -681,7 +704,8 @@ LongPhase combines the small variants, filtered Sniffles SVs, the BAM file, and 
 Main output:
 
 ```text
-<sample>/phasing_longphase/<sample>.longphase.vcf.gz
+<sample>/phasing_longphase/<sample>.longphase.vcf.gz     # phased SNPs
+<sample>/phasing_longphase/<sample>.longphase_SV.vcf.gz  # phased SVs
 ```
 
 **Question answered:** Can a candidate SV be placed on the same haplotype as nearby sequence variants?
@@ -721,7 +745,7 @@ It creates:
 
 ### Integrated orthogonal-evidence table
 
-Adds coordinate-aware Straglr, TLDR, and optional LongPhase evidence to the master SVs.
+Adds coordinate-aware Straglr, TLDR, and optional LongPhase evidence to the allele-assessed master SVs. Historical output filenames retain `orthogonal`; these same-read computational overlaps are not independent experimental confirmation.
 
 ### Independent orthogonal findings
 
@@ -1020,3 +1044,4 @@ and orthogonal confirmation?
 ```
 
 The main purpose of the pipeline is to move from a large genome-wide SV callset to a smaller and more informative set of candidates, while keeping the analysis transparent and without discarding potentially relevant variants simply because one caller or one annotation resource cannot evaluate them.
+

@@ -186,6 +186,9 @@ def main() -> int:
         if end is None:
             end = start
         svtype = normalize_svtype(row[type_col])
+        if svtype == "BND":
+            end = start  # Remote breakpoint must not become an interval on this chromosome.
+        row["COMPLEMENTARY_MATCH_SCOPE"] = "FIRST_BREAKPOINT_CONTEXT" if svtype == "BND" else "LOCAL_INTERVAL_OR_BREAKPOINT_CONTEXT"
 
         melt_matches: list[str] = []
         if args.melt and start is not None and svtype in {"INS", "BND"}:
@@ -223,6 +226,7 @@ def main() -> int:
         )
 
     output_columns = input_columns + [
+        "COMPLEMENTARY_MATCH_SCOPE",
         "MELT_MATCH",
         "MELT_INSERTIONS",
         "EXPANSIONHUNTER_LOCUS_OVERLAP",
@@ -254,3 +258,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

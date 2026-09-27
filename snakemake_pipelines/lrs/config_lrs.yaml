@@ -168,3 +168,17 @@ evidence_max_svlen: null
 # Companion evidence set only.  The complete Jasmine callset remains the
 # source of truth even for single-caller calls.
 high_confidence_min_supp: 2
+
+
+# Allele-level research assessment. Does not filter the master SV universe.
+# Optional TSV paths (or mappings from sample ID to path); see docs/ALLELE_ASSESSMENT.md.
+allele_patient_context: null
+allele_disease_models: null
+allele_evidence: null
+allele_family_genotypes: null
+allele_rare_af: 0.01
+allele_min_support: 5
+allele_min_gq: 20
+allele_min_dp: 5
+methylation_units: "percent"  # modkit bedMethyl column 11
+needlr_backend_version: "UNSPECIFIED"  # Set the installed release identifier

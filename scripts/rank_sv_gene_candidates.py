@@ -195,6 +195,7 @@ def main() -> int:
             "hpo_count": 0,
             "anchor_count": 0,
             "hpos": set(),
+            "anchors": set(),
             "sources": set(),
         }
     )
@@ -206,10 +207,11 @@ def main() -> int:
                 continue
             hpo_id = row.get("hpo_id", "")
             if hpo_id.startswith("HP:"):
-                pheno[gene]["hpo_count"] += 1
                 pheno[gene]["hpos"].add(hpo_id)
-            if row.get("optic_neuropathy_anchor", "0") == "1":
-                pheno[gene]["anchor_count"] += 1
+                pheno[gene]["hpo_count"] = len(pheno[gene]["hpos"])
+            if hpo_id.startswith("HP:") and row.get("optic_neuropathy_anchor", "0") == "1":
+                pheno[gene]["anchors"].add(hpo_id)
+                pheno[gene]["anchor_count"] = len(pheno[gene]["anchors"])
             source = row.get("source", "")
             if source:
                 pheno[gene]["sources"].add(source)
@@ -257,6 +259,9 @@ def main() -> int:
                 data = annotsv[gene]
                 if sv_id:
                     data["sv_ids"].add(sv_id)
+
+                if str(row.get("Annotation_mode", "")).lower() == "full" or len(row_genes) != 1:
+                    continue
 
                 for key, aliases in {
                     "rank": ["AnnotSV ranking", "AnnotSV_rank", "ACMG_class"],
@@ -419,3 +424,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

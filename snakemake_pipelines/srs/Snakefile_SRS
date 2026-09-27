@@ -154,6 +154,9 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_disease_hypotheses.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.manifest.json", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv", sample=SAMPLES),
 
         # Independent SRS-specific branches
@@ -259,6 +262,8 @@ rule delly_sv:
 
 rule manta_caller_parse:
     input:
+        parser_script=SCRIPTS + "/parse_sv_caller_vcf.py",
+        parser_common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.manta_sv.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.manta.caller.tsv"
@@ -275,6 +280,8 @@ rule manta_caller_parse:
 
 rule delly_caller_parse:
     input:
+        parser_script=SCRIPTS + "/parse_sv_caller_vcf.py",
+        parser_common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.delly_sv.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.delly.caller.tsv"
@@ -566,6 +573,8 @@ rule human_gene_phenotypes:
 
 rule rank_genomewide_candidates:
     input:
+        script=SCRIPTS + "/rank_sv_gene_candidates.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
         annotsv=rules.annotsv_annotation.output.tsv,
         genes=rules.extract_nonpanel_genes.output.genes,
         phenotypes=rules.human_gene_phenotypes.output.tsv,
@@ -592,6 +601,8 @@ rule rank_genomewide_candidates:
 
 rule integrated_sv_gene_table:
     input:
+        script=SCRIPTS + "/build_integrated_sv_gene_tsv.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.survivor_merge.output.vcf,
         annotsv=rules.annotsv_annotation.output.tsv,
         ranking=rules.rank_genomewide_candidates.output.tsv,
@@ -851,7 +862,8 @@ rule whatshap_phasing:
 
 rule intersect_srs_orthogonal_evidence:
     input:
-        integrated=rules.integrated_sv_gene_table.output.tsv,
+        integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
+        script=SCRIPTS + "/intersect_srs_orthogonal_evidence.py",
         expansionhunter=rules.expansionhunter_str.output.vcf,
         melt=melt_orthogonal_input
     output:
@@ -875,3 +887,6 @@ rule intersect_srs_orthogonal_evidence:
             --breakpoint-tolerance {params.tolerance} \
             --output {output.tsv}
         """
+
+
+include: "../common/allele_assessment.smk"
