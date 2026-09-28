@@ -70,6 +70,14 @@ def main():
     pheno_col = first_existing(work, ["PHENOTYPE_SCORE"])
     panel_col = first_existing(work, ["PANEL_STATUS"])
     candidate_col = first_existing(work, ["CANDIDATE_CLASS"])
+    pathogenic_db_source_col = first_existing(work, ["SV_PATHOGENIC_DB_SOURCE"])
+    benign_db_source_col = first_existing(work, ["SV_BENIGN_DB_SOURCE"])
+    sv_db_scope_col = first_existing(work, ["SV_DATABASE_EVIDENCE_SCOPE"])
+    acmg_cnv_class_col = first_existing(work, ["ACMG_CNV_CLASS"])
+    annotsv_general_class_col = first_existing(
+        work,
+        ["ANNOTSV_GENERAL_CLASSIFICATION", "ANNotsv_Classification"],
+    )
 
     sv_db_flag_cols = {
         "clinvar": first_existing(work, ["SV_DB_CLINVAR_OVERLAP"]),
@@ -151,6 +159,29 @@ def main():
                 "max_phenotype_score": float(unique["_phenotype"].max()) if len(unique) else 0.0,
                 "panel_gene": "YES" if bool(unique["_panel"].any()) else "NO",
                 "candidate_class": join_values(group[candidate_col]) if candidate_col else ".",
+                "sv_database_evidence_scope": (
+                    join_values(group[sv_db_scope_col]) if sv_db_scope_col else "."
+                ),
+                "sv_pathogenic_db_sources": (
+                    join_values(group[pathogenic_db_source_col])
+                    if pathogenic_db_source_col
+                    else "."
+                ),
+                "sv_benign_db_sources": (
+                    join_values(group[benign_db_source_col])
+                    if benign_db_source_col
+                    else "."
+                ),
+                "acmg_cnv_classes": (
+                    join_values(group[acmg_cnv_class_col])
+                    if acmg_cnv_class_col
+                    else "."
+                ),
+                "annotsv_general_classifications": (
+                    join_values(group[annotsv_general_class_col])
+                    if annotsv_general_class_col
+                    else "."
+                ),
             }
         )
 
