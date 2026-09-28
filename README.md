@@ -1,14 +1,16 @@
 # SV-PIPELINE
 
-This repository contains long- and short-read whole-genome sequencing workflows for structural-variant (SV) discovery and interpretation in rare neurological disease, with a particular focus on optic neuropathies and mitochondrial/neuromuscular disorders.
+This repository contains long- and short-read whole-genome sequencing workflows for studying structural variants (SVs) in patients with clinically assessed optic neuropathy.
 
 The main question behind the pipeline is:
 
-> **Can whole-genome sequencing identify clinically relevant genomic changes that may be missed by analyses focused mainly on SNVs, small indels, or conventional CNVs?**
+> **Do these patients carry SVs that could contribute to optic neuropathy, either through known panel genes or through other candidate genes? What do the breakpoints and gene annotations suggest about their functional effects?**
 
 The long-read workflow uses Oxford Nanopore whole-genome sequencing and combines several SV callers with gene annotation, phenotype information, population-frequency data, and additional long-read evidence.
 
-The optic-neuropathy gene panel is used during interpretation, but it is **not used to restrict genome-wide SV discovery**. This keeps the analysis open to both known disease genes and new or unexpected candidate genes.
+The optic-neuropathy panel helps organize the results after genome-wide discovery. Genes outside the panel remain available for investigation. A nonpanel gene is a candidate for further study; this label does not establish a new gene–disease relationship. Mitochondrial biology helps guide interpretation, but panel membership alone does not demonstrate a mitochondrial functional effect.
+
+Gene overlap is the starting point. The evidence tables distinguish coding-sequence loss, predicted transcript copy gain, possible breakpoint effects and genes contained inside an inversion. These predictions need review alongside read support and population evidence. They do not establish that gene function changed in the patient.
 
 The active long-read workflow is:
 
@@ -25,6 +27,17 @@ snakemake_pipelines/lrs/Snakefile_LRS_postprocess
 adds complementary computational evidence and generates integrated interpretation tables and plots without rerunning the main variant-calling steps.
 
 ## Analysis without patient phenotype or trio data
+
+To recheck an earlier run, use [the saved-output guide](docs/SAVED_OUTPUT_REANALYSIS.md).
+If the installed AnnotSV BED contains `cmpl` or `incmpl` as gene names, use
+[the gene-reference repair guide](docs/ANNOTSV_GENE_REFERENCE_REPAIR.md).
+The rebuild writes to a new folder and does not rerun the callers. Running the
+plotting postprocess alone does not repair an old integrated table.
+
+The new checks explain why AnnotSV skipped a record, catch missing-length calls
+that bypassed the size filter, and flag invalid gene names such as `cmpl` and
+`incmpl`. If these names occur, the installed gene annotation needs checking
+before the affected records can support a complete gene search.
 
 Genome-wide SV discovery, panel/nonpanel views, caller support and AnnotSV/needLR
 annotations work without the four optional allele-evidence input files. Keep their
@@ -1053,4 +1066,3 @@ and orthogonal confirmation?
 ```
 
 The main purpose of the pipeline is to move from a large genome-wide SV callset to a smaller and more informative set of candidates, while keeping the analysis transparent and without discarding potentially relevant variants simply because one caller or one annotation resource cannot evaluate them.
-

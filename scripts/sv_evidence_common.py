@@ -3,6 +3,43 @@ import math
 import re
 
 MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
+# These are genePred CDS completeness labels, not human gene symbols. Do not
+# reject UNK: unlike these two labels, UNK is also a real human gene symbol.
+INVALID_GENE_LABELS = {"CMPL", "INCMPL"}
+
+
+def gene_symbols(value):
+    return sorted({x.strip().upper() for x in re.split(r"[,;/|]", str(value or ""))
+                   if x.strip().upper() not in MISSING | INVALID_GENE_LABELS})
+
+
+def invalid_gene_labels(value):
+    return sorted({x.strip().upper() for x in re.split(r"[,;/|]", str(value or ""))
+                   if x.strip().upper() in INVALID_GENE_LABELS})
+
+
+def sv_length(row):
+    """Return signed length and its source; a breakend has no interval length.
+
+    Keep a reported SVLEN. If absent, use literal alleles for DEL/INS, then
+    END-POS for interval variants. An insertion's END does not give its length.
+    """
+    kind = str(row.get("SVTYPE", "")).upper()
+    if kind in {"BND", "TRA"}:
+        return ".", "NOT_APPLICABLE_BREAKEND"
+    reported = number(row.get("SVLEN"))
+    if reported is not None and reported.is_integer():
+        return str(int(reported)), "INFO_SVLEN"
+    ref, alt = str(row.get("REF", "")), str(row.get("ALT", ""))
+    if kind in {"DEL", "INS"} and re.fullmatch(r"[ACGTNacgtn]+", ref) and re.fullmatch(r"[ACGTNacgtn]+", alt):
+        delta = len(alt) - len(ref)
+        if (kind == "DEL" and delta < 0) or (kind == "INS" and delta > 0):
+            return str(delta), "REF_ALT_LENGTH"
+    start, end = number(row.get("START", row.get("POS"))), number(row.get("END"))
+    if kind in {"DEL", "DUP", "INV", "CNV"} and start is not None and end is not None and end > start:
+        length = int(end - start)
+        return str(-length if kind == "DEL" else length), "END_MINUS_POS"
+    return ".", "UNKNOWN"
 AF_FIELDS = (
     "Allele_Freq_ALL_Control", "Pop_Freq_ALL", "Allele_Freq_ALL",
     "AlleleFreqAll", "AF_ALL", "AF", "MAX_AF", "AF_MAX", "SV_AF",

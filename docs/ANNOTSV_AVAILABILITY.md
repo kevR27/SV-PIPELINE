@@ -1,5 +1,10 @@
 # Automatic AnnotSV evidence availability
 
+When only saved results are available, omit `--annotations-dir` to inspect the
+TSV itself. This checks source columns and observed database mentions without
+claiming that the installed resources were inspected. See the
+[saved-output guide](SAVED_OUTPUT_REANALYSIS.md) for the complete rebuild command.
+
 This report requires no trio data, patient HPO terms or manually filled TSVs. It
 helps interpret database overlap evidence for the existing genome-wide SV study.
 It does not add pathogenic inversion records or classify an SV clinically.

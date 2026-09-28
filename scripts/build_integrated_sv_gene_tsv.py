@@ -34,8 +34,9 @@ import re
 import sys
 from collections import OrderedDict, defaultdict
 from pathlib import Path
-from sv_evidence_common import breakend, same_breakend, population_frequency
+from sv_evidence_common import breakend, same_breakend, population_frequency, gene_symbols, invalid_gene_labels
 from audit_annotsv_evidence import DATABASES, FIELDS as SOURCE_FIELDS, evidence_availability, load_audit
+from annotsv_reconciliation import read_skip_log, record_evidence
 
 try:
     csv.field_size_limit(sys.maxsize)
@@ -267,7 +268,7 @@ def split_values(value) -> list[str]:
 
 
 def split_genes(value) -> list[str]:
-    return sorted({x.upper() for x in split_values(value) if x not in {".", "NA"}})
+    return gene_symbols(value)
 
 
 def read_tsv(path: str | None) -> list[dict]:
@@ -292,7 +293,7 @@ def read_vcf(path: str):
     rows: list[dict] = []
     info_keys: OrderedDict[str, None] = OrderedDict()
     with open_text(path) as fh:
-        for line in fh:
+        for line_number, line in enumerate(fh, 1):
             if line.startswith("##INFO=<"):
                 match = re.search(r"ID=([^,>]+)", line)
                 if match:
@@ -346,6 +347,7 @@ def read_vcf(path: str):
                 _, _, chr2, pos2, orientation = breakend(row)
                 row.update(CHR2=chr2, POS2=str(int(pos2)) if pos2 is not None else MISSING,
                            END=str(int(pos2)) if pos2 is not None else MISSING, BND_ORIENTATION=orientation)
+            row["_VCF_LINE"] = line_number
             rows.append(row)
     ids = [r["SV_ID"] for r in rows]
     if any(x in {"", MISSING} for x in ids) or len(set(ids)) != len(ids):
@@ -647,20 +649,32 @@ def match_needlr(sv: dict, needlr_index):
     return best_row, "MATCHED", str(int(best_score))
 
 
-def annotsv_row_for_gene(matches: list[dict], gene: str):
+def prepare_annotsv_gene_views(matches):
+    full, specific, keys = [], defaultdict(list), set()
+    for row in matches:
+        keys.update(row)
+        if first(row, ["Annotation_mode"]).lower() == "full":
+            full.append(row)
+        else:
+            genes = genes_from_annot(row)
+            if len(genes) == 1:
+                specific[genes[0]].append(row)
+    return full, specific, keys
+
+
+def annotsv_row_for_gene(matches: list[dict], gene: str, prepared=None):
     """Only full rows supply event fields; exact single-gene rows supply gene fields.
 
     Preserve all transcript rows as JSON; a disagreement between transcript rows
     stays missing in the scalar view rather than selecting an arbitrary transcript.
     """
-    full = [r for r in matches if first(r, ["Annotation_mode"]).lower() == "full"]
-    specific = [r for r in matches if genes_from_annot(r) == [gene]
-                and first(r, ["Annotation_mode"]).lower() != "full"]
+    full, by_gene, keys = prepared if prepared is not None else prepare_annotsv_gene_views(matches)
+    specific = by_gene.get(gene, [])
     event_fields = {"ACMG_class", "ACMG class", "AnnotSV_ranking_score", "AnnotSV_ranking_criteria"}
     def event(key):
         return key.startswith(("P_", "B_", "po_P_", "po_B_", "SV_")) or key in event_fields
     out = {}
-    for key in {k for r in matches for k in r}:
+    for key in keys:
         source = full if event(key) and full else specific
         values = sorted({str(r[key]) for r in source if r.get(key) not in (None, "", MISSING)})
         # Source mentions can be unioned within the same event without choosing
@@ -676,7 +690,9 @@ def main() -> int:
     parser.add_argument("--vcf", required=True, help="Merged master SV VCF")
     parser.add_argument("--annotsv", required=True, help="Genome-wide AnnotSV TSV")
     parser.add_argument("--annotsv-audit", help="Automatically generated AnnotSV availability JSON")
+    parser.add_argument("--annotsv-unannotated", help="Skip log from the same, unchanged master VCF")
     parser.add_argument("--needlr", help="needLR RESULTS TSV")
+    parser.add_argument("--sequencing-type", choices=["LRS", "SRS", "UNKNOWN"], default="UNKNOWN")
     parser.add_argument("--ranking", help="Genome-wide candidate ranking TSV")
     parser.add_argument("--panel", help="Candidate gene panel list")
     parser.add_argument("--caller-summary", help="Summary produced from the same merged VCF")
@@ -693,6 +709,7 @@ def main() -> int:
 
     sv_rows, _ = read_vcf(args.vcf)
     annotsv_rows = read_tsv(args.annotsv)
+    skip_notes = read_skip_log(args.annotsv_unannotated, sv_rows)
     availability_audit = load_audit(args.annotsv_audit, args.annotsv)
     needlr_enabled = bool(args.needlr)
     needlr_rows = read_tsv(args.needlr)
@@ -731,8 +748,16 @@ def main() -> int:
         genes = sorted(
             {gene for match in ann_matches for gene in genes_from_annot(match)}
         )
+        unresolved_rows = [r for r in ann_matches if invalid_gene_labels(r.get("Gene_name"))
+                           and first(r, ["Annotation_mode"]).lower() != "full"]
+        invalid_labels = any(invalid_gene_labels(r.get("Gene_name")) for r in ann_matches)
+        if invalid_labels:
+            genes.append(MISSING)
         if not genes:
             genes = [MISSING]
+        prepared_gene_views = prepare_annotsv_gene_views(ann_matches)
+        record_info = record_evidence(sv, ann_matches, skip_notes, bool(args.annotsv_unannotated))
+        unresolved_json = json.dumps(unresolved_rows, separators=(",", ":"))
 
         summary = caller_summary.get(sv_id, {})
         callers = first(summary, ["CALLERS"])
@@ -744,6 +769,8 @@ def main() -> int:
         support_detail, evidence_flags, evidence_match_method = caller_evidence_for_sv(
             sv, caller_by_id, caller_spatial_index
         )
+        caller_rows, _ = caller_matches_for_sv(sv, caller_by_id, caller_spatial_index)
+        caller_json = json.dumps(caller_rows, separators=(",", ":"))
 
         if needlr_enabled:
             needlr_row, needlr_status, needlr_distance = match_needlr(
@@ -755,11 +782,11 @@ def main() -> int:
                 needlr_row = {}
         else:
             needlr_row = {}
-            needlr_status = "NOT_APPLICABLE_SRS"
+            needlr_status = "NOT_APPLICABLE_SRS" if args.sequencing_type == "SRS" else "NOT_SUPPLIED"
             needlr_distance = MISSING
 
         for gene in genes:
-            ann_row = annotsv_row_for_gene(ann_matches, gene)
+            ann_row = annotsv_row_for_gene(ann_matches, gene, prepared_gene_views)
             ranking_row = ranking.get(gene, {}) if gene != MISSING else {}
             sv_db = sv_database_evidence(ann_row, sv["SVTYPE"])
 
@@ -1054,10 +1081,11 @@ def main() -> int:
             )
 
             row.update(evidence_availability(ann_row, sv["SVTYPE"], availability_audit, bool(ann_matches)))
+            row.update(record_info)
+            row["ANNOTSV_UNRESOLVED_GENE_ROWS_JSON"] = unresolved_json if gene == MISSING else "[]"
             row["ANNOTSV_GENE_STATUS"] = ann_row.get("_GENE_STATUS", "NO_GENE_SPECIFIC_ROW")
             row["ANNOTSV_GENE_ROWS_JSON"] = ann_row.get("_GENE_ROWS", "[]")
-            caller_rows, _ = caller_matches_for_sv(sv, caller_by_id, caller_spatial_index)
-            row["CALLER_EVIDENCE_JSON"] = json.dumps(caller_rows, separators=(",", ":"))
+            row["CALLER_EVIDENCE_JSON"] = caller_json
             row["BND_ORIENTATION"] = sv.get("BND_ORIENTATION", MISSING)
             for key, value in sv.items():
                 if key.startswith("INFO_"):
@@ -1092,7 +1120,7 @@ def main() -> int:
         )
     else:
         print(
-            "[INFO] needLR not supplied; marked NOT_APPLICABLE_SRS.",
+            f"[INFO] needLR not supplied; sequencing type={args.sequencing_type}.",
             file=sys.stderr,
         )
 
@@ -1174,6 +1202,9 @@ def main() -> int:
                      "CALLER_EVIDENCE_JSON", "BND_ORIENTATION"]
     extra_columns += ["SV_PATHOGENIC_DB_STATUS", "SV_BENIGN_DB_STATUS"]
     extra_columns += [f"SV_DB_{db}_AVAILABILITY" for db in DATABASES]
+    extra_columns += ["SV_SIZE_SCOPE", "ANNOTSV_RECORD_STATUS", "ANNOTSV_UNANNOTATED_REASON",
+                      "ANNOTSV_GENE_MAPPING_STATUS", "ANNOTSV_INVALID_GENE_LABELS",
+                      "ANNOTSV_UNRESOLVED_GENE_ROWS_JSON"]
     columns = fixed_columns + extra_columns + info_columns
 
     output_path = Path(args.output)
@@ -1196,4 +1227,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

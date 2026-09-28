@@ -8,6 +8,7 @@ import csv
 import re
 import sys
 from pathlib import Path
+from sv_evidence_common import gene_symbols, invalid_gene_labels
 
 try:
     csv.field_size_limit(sys.maxsize)
@@ -45,6 +46,7 @@ def main() -> int:
     args = parser.parse_args()
 
     genes: set[str] = set()
+    invalid_rows = 0
     with open(args.annotsv, newline="", encoding="utf-8", errors="replace") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
         fieldnames = list(reader.fieldnames or [])
@@ -59,10 +61,8 @@ def main() -> int:
             value = row.get(gene_col, "")
             if not value or value == ".":
                 continue
-            for gene in re.split(r"[,;/|]", value):
-                gene = gene.strip().upper()
-                if gene and gene not in {".", "NA", "N/A", "NONE"}:
-                    genes.add(gene)
+            invalid_rows += bool(invalid_gene_labels(value))
+            genes.update(gene_symbols(value))
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +71,10 @@ def main() -> int:
             out.write(gene + "\n")
 
     print(f"[OK] gene_column={gene_col} genes={len(genes)} output={output}")
+    if invalid_rows:
+        print(f"[WARN] {invalid_rows} AnnotSV rows contain cmpl/incmpl as gene names. "
+              "These labels were excluded from the gene list. Check the AnnotSV gene resource; "
+              "the corresponding gene names are unresolved.", file=sys.stderr)
     return 0
 
 

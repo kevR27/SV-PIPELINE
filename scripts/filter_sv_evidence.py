@@ -24,6 +24,7 @@ import argparse
 import csv
 import sys
 from pathlib import Path
+from sv_evidence_common import breakend, number, sv_length
 
 
 def set_csv_field_size_limit() -> None:
@@ -46,7 +47,7 @@ def to_float(v):
     if v in (None, "", MISSING):
         return None
     try:
-        return float(v)
+        return number(v)
     except ValueError:
         return None
 
@@ -75,13 +76,13 @@ def overlaps_blacklist(intervals, chrom, pos, end):
     if not ivs:
         return False
     pos, end = int(pos), int(end)
-    lo, hi = min(pos, end), max(pos, end)
+    lo, hi = min(pos, end) - 1, max(pos, end)
     # linear scan is fine at panel/sample scale; swap for bisect if this
     # becomes a bottleneck on genome-wide callsets with a large blacklist
     for s, e in ivs:
-        if s > hi:
+        if s >= hi:
             break
-        if e >= lo:
+        if e > lo:
             return True
     return False
 
@@ -153,7 +154,7 @@ def main() -> int:
         ):
             reader = csv.DictReader(in_fh, delimiter="\t")
             fieldnames = list(reader.fieldnames or [])
-            out_cols = fieldnames + [
+            out_cols = list(dict.fromkeys(fieldnames + ["SVLEN_REPORTED", "SVLEN_SOURCE"])) + [
                 "EVIDENCE_STATUS",
                 "EVIDENCE_FAIL_REASONS",
                 "EVIDENCE_FLAGS",
@@ -175,7 +176,12 @@ def main() -> int:
                 filt = row.get("FILTER", MISSING)
                 support = to_float(row.get("CALLER_SUPPORT"))
                 svtype = (row.get("SVTYPE", MISSING) or MISSING).upper()
-                svlen = to_float(row.get("SVLEN"))
+                row.setdefault("SVLEN_REPORTED", row.get("SVLEN", MISSING))
+                length, source = sv_length(row)
+                row["SVLEN"] = length
+                if row.get("SVLEN_SOURCE", MISSING) in (MISSING, ""):
+                    row["SVLEN_SOURCE"] = source
+                svlen = to_float(length)
                 svlen_abs = abs(svlen) if svlen is not None else None
 
                 rescued_cov_var = (
@@ -199,7 +205,9 @@ def main() -> int:
                 if support is None or support < a.min_support:
                     fail_reasons.append("LOW_SUPPORT")
 
-                if svlen_abs is None:
+                if svtype in {"BND", "TRA"}:
+                    flags.append("NO_SVLEN")
+                elif svlen_abs is None:
                     # BND / TRA and similar records often have no SVLEN; do
                     # not fail them on size, just record the missing length.
                     flags.append("NO_SVLEN")
@@ -232,12 +240,14 @@ def main() -> int:
                         and start not in (MISSING, "")
                     ):
                         try:
-                            if overlaps_blacklist(
-                                blacklist,
-                                chrom,
-                                start,
-                                end_pos,
-                            ):
+                            if svtype in {"BND", "TRA"}:
+                                c1, p1, c2, p2, _ = breakend(row)
+                                hit = any(c not in ("", MISSING) and p is not None and
+                                          overlaps_blacklist(blacklist, c, p, p)
+                                          for c, p in ((c1, p1), (c2, p2)))
+                            else:
+                                hit = overlaps_blacklist(blacklist, chrom, start, end_pos)
+                            if hit:
                                 flags.append("BLACKLIST_REGION")
                         except ValueError:
                             pass

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 
 configfile: "config_srs.yaml"
@@ -298,6 +299,8 @@ rule delly_caller_parse:
 
 rule filter_manta_sv:
     input:
+        filter_script=FILTER_SV_EVIDENCE_SCRIPT,
+        filter_common=SCRIPTS + "/sv_evidence_common.py",
         caller_vcf=rules.manta_sv.output.vcf,
         caller_tsv=rules.manta_caller_parse.output.tsv
     output:
@@ -329,6 +332,8 @@ rule filter_manta_sv:
 
 rule filter_delly_sv:
     input:
+        filter_script=FILTER_SV_EVIDENCE_SCRIPT,
+        filter_common=SCRIPTS + "/sv_evidence_common.py",
         caller_vcf=rules.delly_sv.output.vcf,
         caller_tsv=rules.delly_caller_parse.output.tsv
     output:
@@ -447,6 +452,10 @@ rule summarize_caller_support:
 ###############################################################
 
 rule annotsv_annotations_check:
+    input:
+        script=SCRIPTS + "/check_annotsv_gene_resource.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
+        genes=lambda wc: [str(p) for p in (Path(ANNOTSV_ANNOTATIONS_DIR) / "Annotations_Human" / "Genes" / "GRCh38").glob("genes.ENSEMBL.sorted*.bed")]
     output:
         marker=PATH + "reference_checks/annotsv_annotations.ok"
     params:
@@ -456,6 +465,7 @@ rule annotsv_annotations_check:
         set -euo pipefail
         test -d {params.annotations}/Annotations_Human
         test -d {params.annotations}/Annotations_Exomiser
+        python {input.script:q} --annotations-dir {params.annotations:q}
         mkdir -p $(dirname {output.marker})
         touch {output.marker}
         """
@@ -466,7 +476,8 @@ rule annotsv_annotation:
         vcf=rules.survivor_merge.output.vcf,
         annotations=rules.annotsv_annotations_check.output.marker
     output:
-        tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv"
+        tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",
+        unannotated=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.unannotated.tsv"
     params:
         outdir=PATH + "{sample}/sv/annotsv",
         hpo_flag=lambda wc: f"-hpo {HPO_TERMS}" if HPO_TERMS else ""
@@ -476,6 +487,7 @@ rule annotsv_annotation:
         """
         set -euo pipefail
         mkdir -p {params.outdir}
+        : > {output.unannotated:q}
         AnnotSV \
             -SVinputFile {input.vcf} \
             -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
@@ -516,6 +528,8 @@ rule annotsv_annotation_panel_only:
 
 rule extract_sv_genes:
     input:
+        script=SCRIPTS + "/extract_annotsv_genes.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
         annotsv=rules.annotsv_annotation.output.tsv
     output:
         genes=PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt"
@@ -601,6 +615,9 @@ rule rank_genomewide_candidates:
 
 rule integrated_sv_gene_table:
     input:
+        record_audit=PATH + "{sample}/sv/annotsv/{sample}_annotation_records.tsv",
+        reconciliation=SCRIPTS + "/annotsv_reconciliation.py",
+        unannotated=rules.annotsv_annotation.output.unannotated,
         audit=PATH + "{sample}/sv/annotsv/{sample}_annotation_availability.json",
         audit_script=SCRIPTS + "/audit_annotsv_evidence.py",
         script=SCRIPTS + "/build_integrated_sv_gene_tsv.py",
@@ -620,6 +637,8 @@ rule integrated_sv_gene_table:
         """
         set -euo pipefail
         python {SCRIPTS}/build_integrated_sv_gene_tsv.py \
+            --sequencing-type SRS \
+            --annotsv-unannotated {input.unannotated:q} \
             --vcf {input.vcf} \
             --annotsv {input.annotsv} \
             --annotsv-audit {input.audit:q} \
