@@ -675,7 +675,7 @@ rule needlr_annotation:
             -print -quit)
 
         if [ -n "$results_tsv" ]; then
-            results_vcf="${results_tsv%_RESULTS.tsv}.vcf.gz"
+            results_vcf="${{results_tsv%_RESULTS.tsv}}.vcf.gz"
         else
             results_vcf=""
         fi
@@ -700,7 +700,7 @@ rule needlr_annotation:
 
             test -n "$results_tsv"
 
-            results_vcf="${results_tsv%_RESULTS.tsv}.vcf.gz"
+            results_vcf="${{results_tsv%_RESULTS.tsv}}.vcf.gz"
 
             test -s "$results_tsv"
             test -s "$results_vcf"
