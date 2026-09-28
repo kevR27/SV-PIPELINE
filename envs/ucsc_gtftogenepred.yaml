@@ -1,0 +1,8 @@
+name: ucsc-gtftogenepred
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - ucsc-gtftogenepred
