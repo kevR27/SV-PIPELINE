@@ -29,6 +29,8 @@ adds complementary computational evidence and generates integrated interpretatio
 ## Analysis without patient phenotype or trio data
 
 To recheck an earlier run, use [the saved-output guide](docs/SAVED_OUTPUT_REANALYSIS.md).
+If the installed AnnotSV BED contains `cmpl` or `incmpl` as gene names, use
+[the gene-reference repair guide](docs/ANNOTSV_GENE_REFERENCE_REPAIR.md).
 The rebuild writes to a new folder and does not rerun the callers. Running the
 plotting postprocess alone does not repair an old integrated table.
 

@@ -124,6 +124,12 @@ The saved TSV cannot reliably tell us all the intended gene names. Once the
 resource is repaired, rerun AnnotSV on the existing master VCF and rebuild the
 downstream tables. Keep the resource version with the thesis methods.
 
+Use [the gene-reference repair guide](ANNOTSV_GENE_REFERENCE_REPAIR.md) to
+rebuild from the source GTF, compare transcript identities and coordinates,
+and install the replacement with a backup. The repair preserves an Ensembl
+gene ID when the source supplies no symbol and refreshes derived promoter
+annotations. The large GTF can remain on the server.
+
 ## How this fits the optic-neuropathy study
 
 Use the panel to examine known ON genes, then investigate nonpanel candidates
