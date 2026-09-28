@@ -181,4 +181,3 @@ allele_min_support: 5
 allele_min_gq: 20
 allele_min_dp: 5
 methylation_units: "percent"  # modkit bedMethyl column 11
-needlr_backend_version: "UNSPECIFIED"  # Set the installed release identifier
