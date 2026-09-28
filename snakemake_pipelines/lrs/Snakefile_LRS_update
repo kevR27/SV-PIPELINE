@@ -646,40 +646,73 @@ rule sniffles2_needlr_query:
         """
 
 
-# Track backend files as inputs; record a release label in the run manifest.
-def needlr_backend_inputs(wc):
-    if os.path.isdir(NEEDLR_BACKEND):
-        return [os.path.join(root, name) for root, _, names in os.walk(NEEDLR_BACKEND)
-                for name in sorted(names)] or [NEEDLR_BACKEND]
-    return [NEEDLR_BACKEND]
-
-
 rule needlr_annotation:
     input:
-        vcf=rules.sniffles2_needlr_query.output.vcf,
-        backend=needlr_backend_inputs,
-        script=SCRIPTS + "/run_needlr_fresh.py"
+        vcf=rules.sniffles2_needlr_query.output.vcf
     output:
         tsv=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
-        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz",
-        manifest=PATH + "{sample}/sv/needlr/{sample}_needLR.manifest.json"
+        vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
     log:
         PATH + "{sample}/logs/needlr/{sample}.needlr.log"
     params:
-        outdir=PATH + "{sample}/sv/needlr/annotate_out",
-        backend=NEEDLR_BACKEND,
-        version=config.get("needlr_backend_version", "UNSPECIFIED")
+        outdir=PATH + "{sample}/sv/needlr/annotate_out"
     threads: THREADS
     conda:
         CONDAENV + "needlr.yaml"
     shell:
         """
-        mkdir -p $(dirname {log:q})
-        python {input.script:q} --vcf {input.vcf:q} --backend {params.backend:q} \
-            --backend-version {params.version:q} --outdir {params.outdir:q} \
-            --threads {threads} --tsv {output.tsv:q} --output-vcf {output.vcf:q} \
-            --manifest {output.manifest:q} > {log:q} 2>&1
+        set -eu
+
+        mkdir -p {params.outdir}
+        mkdir -p $(dirname {log})
+
+        # Reuse a completed native needLR result when it already exists.
+        # This protects expensive whole-genome annotations from being repeated
+        # when Snakemake only needs to rebuild downstream standardized outputs.
+        results_tsv=$(find {params.outdir} \
+            -type f \
+            -name '*_RESULTS.tsv' \
+            -print -quit)
+
+        if [ -n "$results_tsv" ]; then
+            results_vcf="${results_tsv%_RESULTS.tsv}.vcf.gz"
+        else
+            results_vcf=""
+        fi
+
+        if [ -s "$results_tsv" ] && [ -s "$results_vcf" ]; then
+            echo "[needLR] Completed native results already exist; reusing them." > {log}
+        else
+            echo "[needLR] No complete native result found; running annotation." > {log}
+
+            needLR annotate \
+                -O {params.outdir} \
+                -T {threads} \
+                -B {NEEDLR_BACKEND} \
+                --all \
+                {input.vcf} \
+                >> {log} 2>&1
+
+            results_tsv=$(find {params.outdir} \
+                -type f \
+                -name '*_RESULTS.tsv' \
+                -print -quit)
+
+            test -n "$results_tsv"
+
+            results_vcf="${results_tsv%_RESULTS.tsv}.vcf.gz"
+
+            test -s "$results_tsv"
+            test -s "$results_vcf"
+        fi
+
+        cp "$results_tsv" {output.tsv}
+        cp "$results_vcf" {output.vcf}
+
+        test -s {output.tsv}
+        test -s {output.vcf}
         """
+
 
 ##################################################
 # Tandem-repeat expansion discovery / annotation #
