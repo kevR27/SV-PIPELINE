@@ -14,6 +14,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 import numpy as np
 import pandas as pd
 
@@ -263,6 +264,17 @@ def chrom_sort_key(chrom):
     return {"X": 23, "Y": 24, "M": 25, "MT": 25}.get(x, 99)
 
 
+def compact_count(value, _pos=None):
+    value = float(value)
+    if abs(value) >= 1e9:
+        return f"{value / 1e9:.1f}B"
+    if abs(value) >= 1e6:
+        return f"{value / 1e6:.1f}M"
+    if abs(value) >= 1e3:
+        return f"{value / 1e3:.0f}k"
+    return f"{value:.0f}"
+
+
 def plot_genome(summary, stats, prefix, title, min_cov):
     if summary.empty:
         raise ValueError("No canonical-chromosome methylation records remain after coverage filtering.")
@@ -298,21 +310,36 @@ def plot_genome(summary, stats, prefix, title, min_cov):
         ax2.plot(centers, total, marker="o", linewidth=1.5, markersize=3, label=mod)
     ax2.set_xlabel("Modified calls (%)")
     ax2.set_ylabel("CpG records")
+    ax2.yaxis.set_major_formatter(FuncFormatter(compact_count))
     ax2.legend(frameon=False)
     style_axis(ax2, "both")
 
     coverage = summary.groupby("chrom", as_index=False)["mean_coverage"].mean()
     coverage = coverage.sort_values("chrom", key=lambda s: s.map(chrom_sort_key))
-    ax3.bar(coverage["chrom"], coverage["mean_coverage"])
+    mt_mask = coverage["chrom"].astype(str).str.upper().isin(["CHRM", "CHRMT"])
+    nuclear_coverage = coverage[~mt_mask].copy()
+    mt_coverage = coverage.loc[mt_mask, "mean_coverage"]
+    ax3.bar(nuclear_coverage["chrom"], nuclear_coverage["mean_coverage"])
     ax3.tick_params(axis="x", rotation=45)
-    ax3.set_xlabel("Canonical chromosome")
+    ax3.set_xlabel("Nuclear chromosome")
     ax3.set_ylabel("Mean CpG coverage")
+    if not mt_coverage.empty:
+        ax3.text(
+            0.99,
+            0.96,
+            f"chrM mean coverage: {mt_coverage.iloc[0]:.1f}×",
+            transform=ax3.transAxes,
+            ha="right",
+            va="top",
+            fontsize=9,
+        )
     style_axis(ax3, "y")
 
     counts = summary.groupby("mod_code", as_index=False)["n_records"].sum().sort_values("n_records", ascending=False)
     ax4.bar(counts["mod_code"], counts["n_records"])
     ax4.set_xlabel("Modification class")
     ax4.set_ylabel("CpG records")
+    ax4.yaxis.set_major_formatter(FuncFormatter(compact_count))
     style_axis(ax4, "y")
 
     fig.suptitle(title, fontsize=16, fontweight="bold", y=0.995)
