@@ -289,7 +289,7 @@ rule integrate_candidate_context:
 
 rule annotate_mitocarta_context:
     input:
-        integrated=rules.rank_sv_gene_events.output.tsv,
+        integrated=rules.integrate_candidate_context.output.tsv,
         mitocarta=MITOCARTA_FILE,
         pathways=MITOCARTA_PATHWAYS_FILE,
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
@@ -463,10 +463,10 @@ rule thesis_plots_sample:
 
 rule samplot_candidate_breakpoints:
     input:
-        # Samplot selection needs the prioritized SV evidence table, not
-        # MitoCarta. Keep read-level breakpoint rendering independent from
-        # mitochondrial annotation updates.
-        integrated=rules.integrate_candidate_context.output.tsv,
+        # Use the mechanism-aware event ranking so read-level review includes
+        # small, large and breakpoint-defined candidates rather than only the
+        # highest generic gene scores.
+        integrated=rules.rank_sv_gene_events.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         script=PLOTS + "/run_samplot_candidates.py"
     output:
