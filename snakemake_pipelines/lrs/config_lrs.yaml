@@ -132,6 +132,7 @@ thesis_methylation_region: null
 # Official Human MitoCarta3.0 workbook. Download from the Broad Institute
 # MitoCarta3.0 resource into this local path before running the annotation.
 mitocarta_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/mitocarta/Human.MitoCarta3.0.xls"
+mitocarta_pathways_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/mitocarta/Human.MitoPathways3.0.gmx"
 
 # ============================================================
 # SAMPLOT READ-LEVEL BREAKPOINT EVIDENCE
