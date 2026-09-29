@@ -72,19 +72,22 @@ def choose(df, buckets, n):
             sub["EVENT_RANK_WITHIN_BUCKET"]
         ).fillna(np.inf)
 
-        panel = sub[
-            sub.get("PANEL_STATUS", "")
-            .fillna("")
-            .astype(str)
-            .eq("PANEL_GENE")
-        ].sort_values(
+        if "PANEL_STATUS" in sub.columns:
+            panel_mask = (
+                sub["PANEL_STATUS"]
+                .fillna("")
+                .astype(str)
+                .eq("PANEL_GENE")
+            )
+        else:
+            panel_mask = pd.Series(False, index=sub.index)
+
+        panel = sub[panel_mask].sort_values(
             ["_rank", "_score"],
             ascending=[True, False],
         )
 
-        nonpanel = sub[
-            ~sub.index.isin(panel.index)
-        ].sort_values(
+        nonpanel = sub[~panel_mask].sort_values(
             ["_rank", "_score"],
             ascending=[True, False],
         )
