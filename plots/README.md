@@ -25,6 +25,8 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_sv_gene_associations.py`: quantitative relationship between technical SV support, phenotype relevance, gene-disease evidence and each explicit SV-gene pair.
 - `plot_sv_gene_network.py`: bipartite map showing which master SV overlaps which gene, including multi-gene SVs and genes affected by multiple prioritized SVs.
 - `plot_candidate_locus.py`: one detailed locus figure per prioritized SV-gene pair, including nearby genes, principal evidence fields and optional indexed modkit methylation.
+- `run_samplot_candidates.py`: read-level ONT breakpoint/alignment evidence for the highest-priority master SVs; large events are breakpoint-zoomed and BNDs are shown as breakpoint-context views.
+- `plot_mitocarta_sv_genes.py`: MitoCarta3.0 view of nuclear-encoded mitochondrial genes intersected by master SVs, including mitochondrial pathways and existing optic-neuropathy phenotype context.
 - `plot_cohort_sv_comparison.py`: deduplicated comparison of completed samples by SV type and evidence-defined subsets.
 - `plot_straglr.py`: tandem-repeat locus size/copy-number/support overview.
 - `plot_mei.py`: TLDR mobile-element insertion summary.
@@ -168,7 +170,9 @@ The sample-level runner now writes figures and their source TSVs into thematic f
 ├── 09_methylation/
 ├── 10_integrated_evidence/
 ├── 11_sv_gene_associations/
-└── 12_candidate_loci/
+├── 12_candidate_loci/
+├── 13_breakpoint_evidence/
+└── 14_mitochondrial_context/
 ```
 
 The post-processing workflow also creates three interpretation tables in
@@ -255,3 +259,56 @@ When at least two completed post-processing samples are available,
 
 The comparison deduplicates by `SV_ID` before calculating SV burden and does
 not interpret the evidence-defined subsets as sequential filters.
+
+
+## Samplot read-level breakpoint evidence
+
+`all_thesis_plots` now also generates Samplot images for the highest-priority
+master SVs using the original sample BAM. These figures display the long-read
+alignment/depth evidence underlying the candidate call. They are visual
+technical evidence and are not treated as an independent caller or orthogonal
+molecular validation.
+
+For DEL/DUP/INV/INS, the SV interval/type is passed directly to Samplot. Events
+at least 1 Mb are breakpoint-zoomed using the configured `samplot_zoom_bp`.
+For BND/TRA records, each available breakpoint is plotted as local alignment
+context because a single-interval Samplot view cannot by itself represent the
+full interchromosomal adjacency.
+
+Outputs:
+
+```text
+<sample>/plots/13_breakpoint_evidence/
+├── *.png
+├── samplot_manifest.tsv
+└── .samplot.done
+```
+
+## MitoCarta3.0 gene context
+
+The post-processing workflow now creates:
+
+```text
+<sample>_integrated_SV_gene_with_mitocarta.tsv
+```
+
+The table retains the complete SV-gene evidence schema and adds:
+
+```text
+MITOCARTA_STATUS
+MITOCARTA_ENCODING
+MITOCARTA_DESCRIPTION
+MITOCARTA_MAESTRO_SCORE
+MITOCARTA_EVIDENCE
+MITOCARTA_SUBCOMPARTMENT
+MITOCARTA_MITOPATHWAYS
+MITOCARTA_TOP_LEVEL_PATHWAYS
+MITO_ON_CONTEXT
+MITO_ON_ASSOCIATION_CLASS
+```
+
+`MITOCARTA_ENCODING=NUCLEAR_MITOCHONDRIAL_GENE` explicitly distinguishes
+nuclear-encoded mitochondrial proteins from the 13 mtDNA-encoded proteins.
+`MITO_ON_CONTEXT=YES` means that the same gene also has positive
+optic-neuropathy phenotype evidence under the current pipeline's phenotype
+model. This is co-annotation, not a causality or pathogenicity statement.
