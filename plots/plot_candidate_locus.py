@@ -124,6 +124,8 @@ def main():
     chrom_col = first_existing(df, ["CHROM", "chrom"])
     start_col = first_existing(df, ["START", "POS"])
     end_col = first_existing(df, ["END"])
+    chr2_col = first_existing(df, ["CHR2"])
+    pos2_col = first_existing(df, ["POS2"])
     type_col = first_existing(df, ["SVTYPE", "SV_type"])
     score_col = first_existing(df, ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
@@ -236,12 +238,62 @@ def main():
     for rank, (_, row) in enumerate(work.iterrows(), 1):
         sv_id = str(row[id_col])
         gene = str(row["_gene"])
+        svtype = str(row["_svtype"])
+
         chrom = normalize_chrom(row[chrom_col])
         start = int(row["_start"])
         end = int(row["_end"])
-        if end < start:
+
+        target_gene_all = genes[
+            genes["gene"].astype(str).eq(gene)
+        ].copy()
+
+        if svtype == "BND" and not target_gene_all.empty:
+            target_chrom = str(target_gene_all.iloc[0]["chrom"])
+            chrom2 = (
+                normalize_chrom(row[chr2_col])
+                if chr2_col and pd.notna(row.get(chr2_col))
+                else None
+            )
+            pos2 = (
+                numeric(pd.Series([row[pos2_col]])).iloc[0]
+                if pos2_col
+                else np.nan
+            )
+
+            if target_chrom == chrom:
+                breakpoint_pos = start
+            elif chrom2 and target_chrom == chrom2 and pd.notna(pos2):
+                breakpoint_pos = int(pos2)
+            else:
+                gene_mid = float(
+                    (
+                        target_gene_all["start"].min()
+                        + target_gene_all["end"].max()
+                    )
+                    / 2
+                )
+                candidates = [(chrom, start)]
+                if chrom2 and pd.notna(pos2):
+                    candidates.append((chrom2, int(pos2)))
+                same_chrom = [
+                    (c, p)
+                    for c, p in candidates
+                    if c == target_chrom
+                ]
+                breakpoint_pos = (
+                    min(same_chrom, key=lambda x: abs(x[1] - gene_mid))[1]
+                    if same_chrom
+                    else start
+                )
+
+            chrom = target_chrom
+            start = int(breakpoint_pos)
+            end = start
+
+        elif end < start:
             start, end = end, start
-        svtype = str(row["_svtype"])
+
         is_breakpoint = svtype in {"INS", "BND"} or end == start
 
         event_span_col = first_existing(work, ["SV_EVENT_SPAN_BP"])
