@@ -145,6 +145,11 @@ samplot_zoom_bp: 20000
 samplot_window_bp: 5000
 samplot_large_sv_threshold: 1000000
 
+# Distance used by the mechanism-aware SV-gene event ranking to distinguish
+# a breakpoint-proximal gene from a gene that is only inside a large
+# inversion/BND interval.
+sv_gene_breakpoint_tolerance: 10000
+
 # ============================================================
 # MONARCH / HPO DISCOVERY
 # ============================================================
