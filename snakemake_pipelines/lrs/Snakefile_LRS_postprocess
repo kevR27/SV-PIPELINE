@@ -389,6 +389,8 @@ rule thesis_plots_sample:
         ]
     output:
         marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
+    log:
+        PATH + "{sample}/logs/plots/{sample}.thesis_plots.log"
     params:
         methylation_units=config.get("methylation_units", "percent"),
         methylation_arg=lambda wc: (
@@ -406,6 +408,7 @@ rule thesis_plots_sample:
     shell:
         """
         set -euo pipefail
+        mkdir -p $(dirname {log})
 
         python {PLOTS}/run_thesis_plots.py \
             --root {PATH} \
@@ -413,7 +416,8 @@ rule thesis_plots_sample:
             --platform lrs \
             --methylation-units {params.methylation_units} \
             {params.gene_bed_arg} \
-            {params.methylation_arg}
+            {params.methylation_arg} \
+            2>&1 | tee {log}
 
         touch {output.marker}
         """
