@@ -101,6 +101,18 @@ def evidence_value(row, candidates):
     return "."
 
 
+def compact_text(value, max_chars=72, max_tokens=4):
+    text = str(value)
+    if text in {"", ".", "NA", "N/A", "nan", "None"}:
+        return "."
+    tokens = [x.strip() for x in text.split(";") if x.strip()]
+    if len(tokens) > max_tokens:
+        text = ";".join(tokens[:max_tokens]) + f";(+{len(tokens) - max_tokens} more)"
+    if len(text) > max_chars:
+        text = text[: max_chars - 3] + "..."
+    return text
+
+
 def main():
     args = parse_args()
     set_thesis_style()
@@ -113,8 +125,9 @@ def main():
     start_col = first_existing(df, ["START", "POS"])
     end_col = first_existing(df, ["END"])
     type_col = first_existing(df, ["SVTYPE", "SV_type"])
-    score_col = first_existing(df, ["ALLELE_RESEARCH_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE"])
+    score_col = first_existing(df, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
+    af_col = first_existing(df, ["NEEDLR_AF"])
 
     if None in (id_col, gene_col, chrom_col, start_col):
         raise ValueError("Input needs SV_ID, gene, chromosome and start columns.")
@@ -127,10 +140,19 @@ def main():
     work["_priority"] = numeric(work[score_col]).fillna(0) if score_col else 0
     work["_caller_count"] = numeric(work[caller_col]).fillna(0) if caller_col else 0
     work["_svtype"] = normalize_svtype(work[type_col]) if type_col else "OTHER"
+    work["_af"] = numeric(work[af_col]) if af_col else np.nan
+    work["_population_rank"] = np.select(
+        [work["_af"].notna() & work["_af"].le(0.01), work["_af"].isna()],
+        [2, 1],
+        default=0,
+    )
 
     work = work[~work["_gene"].isin(["", ".", "NA", "N/A", "nan", "None"])].copy()
     work = (
-        work.sort_values(["_priority", "_caller_count", id_col, "_gene"], ascending=[False, False, True, True])
+        work.sort_values(
+            ["_priority", "_population_rank", "_caller_count", id_col, "_gene"],
+            ascending=[False, False, False, True, True],
+        )
         .drop_duplicates([id_col, gene_col], keep="first")
         .head(args.top_n)
         .copy()
