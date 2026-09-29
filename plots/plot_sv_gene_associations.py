@@ -168,7 +168,10 @@ def main():
         )
     ax1.legend(frameon=False, fontsize=7.5, loc="best")
     label_rows = (
-        work.sort_values(["_priority", "_phenotype", "_disease", "_caller_count"], ascending=False)
+        work.sort_values(
+            ["_interval_context_only", "_priority", "_phenotype", "_disease", "_caller_count"],
+            ascending=[True, False, False, False, False],
+        )
         .drop_duplicates("_gene")
         .head(min(8, len(work)))
     )
