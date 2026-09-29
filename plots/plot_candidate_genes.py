@@ -73,18 +73,17 @@ def main():
     x_sv = work["_sv_count"].values
     x_anchor = work["_anchor"].values
     ax2.scatter(x_sv, x_anchor, s=sizes, c=colors, edgecolor="white", linewidth=0.5)
-    label_mask = work["_panel"].copy()
-    top_label_idx = work.sort_values(["_score", "_anchor"], ascending=False).head(8).index
-    label_mask.loc[top_label_idx] = True
-    for i, gene in enumerate(work[gene_col]):
-        if bool(label_mask.iloc[i]):
-            ax2.annotate(
-                str(gene),
-                (x_sv[i], x_anchor[i]),
-                xytext=(5, 5),
-                textcoords="offset points",
-                fontsize=8.5,
-            )
+    panel_indices = [i for i in range(len(work)) if bool(work["_panel"].iloc[i])]
+    panel_offsets = [(7, 7), (7, -14), (12, 16), (12, -22), (18, 8), (18, -18)]
+    for j, i in enumerate(panel_indices):
+        ax2.annotate(
+            str(work[gene_col].iloc[i]),
+            (x_sv[i], x_anchor[i]),
+            xytext=panel_offsets[j % len(panel_offsets)],
+            textcoords="offset points",
+            fontsize=8.5,
+            arrowprops={"arrowstyle": "-", "linewidth": 0.5, "alpha": 0.55},
+        )
     ax2.set_xlabel("SV count")
     ax2.set_ylabel("Optic-neuropathy anchor HPO count")
     style_axis(ax2, "both")
