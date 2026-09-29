@@ -330,6 +330,7 @@ rule thesis_plots_sample:
             PLOTS + "/plot_candidate_genes.py",
             PLOTS + "/plot_panel_nonpanel_discovery.py",
             PLOTS + "/plot_sv_gene_associations.py",
+            PLOTS + "/plot_sv_gene_network.py",
             PLOTS + "/plot_candidate_locus.py",
             PLOTS + "/plot_gene_hpo_heatmap.py",
             PLOTS + "/plot_straglr.py",
