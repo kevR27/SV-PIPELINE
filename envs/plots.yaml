@@ -10,3 +10,5 @@ dependencies:
   - scipy>=1.11
   - pysam>=0.22
   - pyyaml>=6.0
+  - xlrd>=2.0
+  - openpyxl>=3.1
