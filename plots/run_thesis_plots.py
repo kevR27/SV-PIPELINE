@@ -20,6 +20,7 @@ def parse_args():
     p.add_argument("--root", required=True, help="Pipeline output root from config")
     p.add_argument("--sample", required=True)
     p.add_argument("--platform", choices=["lrs", "srs"], default="lrs")
+    p.add_argument("--candidate-table", default=None, help="Optional mechanism-aware *_ranked_SV_gene_events.tsv")
     p.add_argument("--out-dir", default=None, help="Default: <root>/<sample>/plots")
     p.add_argument("--methylation-region", default=None, help="Optional chr:start-end for methylation plot")
     p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
@@ -123,6 +124,13 @@ def main():
         integrated = integrated_extended
     else:
         integrated = integrated_base
+    if args.candidate_table:
+        candidate_events = Path(args.candidate_table).expanduser().resolve()
+    else:
+        candidate_events = sample_root / "gene_discovery" / f"{s}_ranked_SV_gene_events.tsv"
+
+    candidate_source = candidate_events if candidate_events.exists() else integrated
+
     needlr = sample_root / "sv" / "needlr" / f"{s}_needLR_RESULTS.tsv"
     ranked = sample_root / "gene_discovery" / f"{s}_ranked_candidates.tsv"
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
@@ -201,6 +209,14 @@ def main():
             ),
             (
                 [
+                    py, str(HERE / "plot_large_complex_candidates.py"),
+                    "--input", str(candidate_source),
+                    "--out-prefix", str(folders["large_sv"] / f"{s}_large_complex_candidates"),
+                ],
+                [candidate_source],
+            ),
+            (
+                [
                     py, str(HERE / "plot_candidate_evidence_matrix.py"),
                     "--input", str(integrated),
                     "--out-prefix", str(folders["candidates"] / f"{s}_candidate_evidence"),
@@ -226,18 +242,18 @@ def main():
             (
                 [
                     py, str(HERE / "plot_sv_gene_associations.py"),
-                    "--input", str(integrated),
+                    "--input", str(candidate_source),
                     "--out-prefix", str(folders["associations"] / f"{s}_sv_gene_associations"),
                 ],
-                [integrated],
+                [candidate_source],
             ),
             (
                 [
                     py, str(HERE / "plot_sv_gene_network.py"),
-                    "--input", str(integrated),
+                    "--input", str(candidate_source),
                     "--out-prefix", str(folders["associations"] / f"{s}_sv_gene_network"),
                 ],
-                [integrated],
+                [candidate_source],
             ),
             (
                 [
@@ -338,13 +354,13 @@ def main():
             py,
             str(HERE / "plot_candidate_locus.py"),
             "--input",
-            str(integrated),
+            str(candidate_source),
             "--gene-bed",
             str(gene_bed),
             "--out-dir",
             str(folders["loci"]),
         ]
-        locus_required = [integrated, gene_bed]
+        locus_required = [candidate_source, gene_bed]
         if args.platform == "lrs" and methylation:
             locus_cmd += ["--methylation-bed", str(methylation)]
             locus_required.append(methylation)
