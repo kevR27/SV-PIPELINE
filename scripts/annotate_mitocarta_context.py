@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Annotate SV-overlapping genes with MitoCarta3.0 mitochondrial context.
+"""Annotate SV-overlapping genes with MitoCarta3.0 context.
 
-This is a gene-context annotation layer. It does not infer that a structural
-variant is pathogenic merely because the affected gene is mitochondrial or
-phenotype-associated.
+MitoCarta membership/localization and optic-neuropathy phenotype context remain
+separate evidence layers. Optional Human.MitoPathways3.0.gmx is used as a
+pathway fallback when the Excel inventory does not expose populated pathway
+columns under the detected header.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 
@@ -19,6 +20,7 @@ MTDNA_PROTEIN_GENES = {
     "MT-ATP6", "MT-ATP8", "MT-CO1", "MT-CO2", "MT-CO3", "MT-CYB",
     "MT-ND1", "MT-ND2", "MT-ND3", "MT-ND4", "MT-ND4L", "MT-ND5", "MT-ND6",
 }
+MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
 
 
 def first_existing(df, names):
@@ -32,40 +34,91 @@ def first_existing(df, names):
     return None
 
 
+def nonempty_count(series):
+    text = series.fillna("").astype(str).str.strip().str.upper()
+    return int((~text.isin(MISSING)).sum())
+
+
+def select_excel_inventory(path):
+    """Select the curated ~1,136-gene MitoCarta inventory sheet/header."""
+    book = pd.ExcelFile(path)
+    candidates = []
+
+    for sheet_name in book.sheet_names:
+        for header in range(0, 16):
+            try:
+                df = pd.read_excel(
+                    book,
+                    sheet_name=sheet_name,
+                    header=header,
+                    dtype=str,
+                )
+            except Exception:
+                continue
+
+            symbol_col = first_existing(df, ["Symbol", "Gene Symbol", "GeneSymbol"])
+            if symbol_col is None:
+                continue
+
+            symbols = (
+                df[symbol_col]
+                .fillna("")
+                .astype(str)
+                .str.upper()
+                .str.strip()
+            )
+            inventory_n = int(symbols.ne("").sum())
+            pathway_col = first_existing(df, ["MitoPathways", "MitoPathway"])
+            compartment_col = first_existing(
+                df,
+                ["Sub-compartment", "Subcompartment", "SubMitoLocalization"],
+            )
+            pathway_n = nonempty_count(df[pathway_col]) if pathway_col else 0
+            compartment_n = nonempty_count(df[compartment_col]) if compartment_col else 0
+
+            # Prefer: curated-size inventory, populated pathway/localization
+            # columns, and then closeness to the official 1,136-gene inventory.
+            curated_size = int(1000 <= inventory_n <= 1300)
+            score = (
+                curated_size,
+                int(pathway_n > 0),
+                int(compartment_n > 0),
+                pathway_n + compartment_n,
+                -abs(inventory_n - 1136),
+            )
+            candidates.append(
+                (score, sheet_name, header, df, inventory_n, pathway_n, compartment_n)
+            )
+
+    if not candidates:
+        raise ValueError("No MitoCarta Excel sheet with a Symbol column was found.")
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    _, sheet_name, header, df, inventory_n, pathway_n, compartment_n = candidates[0]
+
+    if not 1000 <= inventory_n <= 1300:
+        raise ValueError(
+            f"Selected MitoCarta sheet has {inventory_n} symbols; expected the "
+            "curated human inventory (~1,136 genes), not an all-gene score sheet."
+        )
+
+    print(
+        f"[MitoCarta] sheet={sheet_name!r} header={header} "
+        f"inventory_symbols={inventory_n} pathway_nonempty={pathway_n} "
+        f"subcompartment_nonempty={compartment_n}"
+    )
+    return df, sheet_name, header
+
+
 def read_mitocarta(path):
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(path)
 
-    if path.suffix.lower() in {".xls", ".xlsx"}:
-        book = pd.ExcelFile(path)
-        candidates = []
-        for name in book.sheet_names:
-            for header in range(0, 11):
-                try:
-                    sheet = pd.read_excel(book, sheet_name=name, header=header, dtype=str)
-                except Exception:
-                    continue
-                symbol = first_existing(sheet, ["Symbol", "Gene Symbol", "GeneSymbol"])
-                if symbol is None:
-                    continue
-                pathway = first_existing(sheet, ["MitoPathways", "MitoPathway"])
-                compartment = first_existing(sheet, ["Sub-compartment", "Subcompartment", "SubMitoLocalization"])
-                score = int(pathway is not None) + int(compartment is not None)
-                # The curated human MitoCarta3.0 inventory contains 1,136 genes.
-                # Prefer that inventory sheet over auxiliary all-gene score sheets.
-                distance = abs(len(sheet) - 1136)
-                candidates.append((score, -distance, name, header, sheet))
-                break
-        if not candidates:
-            raise ValueError("No MitoCarta sheet with a Symbol column was found.")
-        candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        df = candidates[0][4].copy()
-        if not 1000 <= len(df) <= 1300:
-            raise ValueError(
-                f"Selected MitoCarta sheet has {len(df)} rows; expected the curated "
-                "human inventory (~1,136 genes), not an auxiliary all-gene score sheet."
-            )
+    source_sheet = "."
+    source_header = "."
+    if path.suffix.lower() in {".xls", ".xlsx", ".xlsm"}:
+        df, source_sheet, source_header = select_excel_inventory(path)
     else:
         sep = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
         df = pd.read_csv(path, sep=sep, dtype=str, low_memory=False)
@@ -75,26 +128,102 @@ def read_mitocarta(path):
         raise ValueError("MitoCarta input needs a Symbol column.")
 
     pathway_col = first_existing(df, ["MitoPathways", "MitoPathway"])
-    compartment_col = first_existing(df, ["Sub-compartment", "Subcompartment", "SubMitoLocalization"])
+    compartment_col = first_existing(
+        df,
+        ["Sub-compartment", "Subcompartment", "SubMitoLocalization"],
+    )
     maestro_col = first_existing(df, ["Maestro score", "Maestro Score", "MaestroScore"])
     evidence_col = first_existing(df, ["Evidence"])
     description_col = first_existing(df, ["Description"])
 
-    keep = pd.DataFrame({
-        "MITOCARTA_SYMBOL": df[symbol_col].fillna("").astype(str).str.upper().str.strip(),
-        "MITOCARTA_DESCRIPTION": df[description_col].fillna(".").astype(str) if description_col else ".",
-        "MITOCARTA_MAESTRO_SCORE": df[maestro_col].fillna(".").astype(str) if maestro_col else ".",
-        "MITOCARTA_EVIDENCE": df[evidence_col].fillna(".").astype(str) if evidence_col else ".",
-        "MITOCARTA_SUBCOMPARTMENT": df[compartment_col].fillna(".").astype(str) if compartment_col else ".",
-        "MITOCARTA_MITOPATHWAYS": df[pathway_col].fillna(".").astype(str) if pathway_col else ".",
-    })
-    keep = keep[keep["MITOCARTA_SYMBOL"].ne("")].drop_duplicates("MITOCARTA_SYMBOL")
-    return keep.set_index("MITOCARTA_SYMBOL")
+    keep = pd.DataFrame(
+        {
+            "MITOCARTA_SYMBOL": df[symbol_col]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip(),
+            "MITOCARTA_DESCRIPTION": (
+                df[description_col].fillna(".").astype(str)
+                if description_col
+                else "."
+            ),
+            "MITOCARTA_MAESTRO_SCORE": (
+                df[maestro_col].fillna(".").astype(str)
+                if maestro_col
+                else "."
+            ),
+            "MITOCARTA_EVIDENCE": (
+                df[evidence_col].fillna(".").astype(str)
+                if evidence_col
+                else "."
+            ),
+            "MITOCARTA_SUBCOMPARTMENT": (
+                df[compartment_col].fillna(".").astype(str)
+                if compartment_col
+                else "."
+            ),
+            "MITOCARTA_MITOPATHWAYS": (
+                df[pathway_col].fillna(".").astype(str)
+                if pathway_col
+                else "."
+            ),
+        }
+    )
+    keep = (
+        keep[keep["MITOCARTA_SYMBOL"].ne("")]
+        .drop_duplicates("MITOCARTA_SYMBOL")
+        .set_index("MITOCARTA_SYMBOL")
+    )
+
+    pathway_n = nonempty_count(keep["MITOCARTA_MITOPATHWAYS"])
+    compartment_n = nonempty_count(keep["MITOCARTA_SUBCOMPARTMENT"])
+    print(
+        f"[MitoCarta] retained_genes={len(keep)} "
+        f"pathway_genes={pathway_n} subcompartment_genes={compartment_n}"
+    )
+    return keep, str(source_sheet), str(source_header)
+
+
+def read_gmx(path):
+    """Return gene -> sorted pathway names from a standard GMX file."""
+    if not path:
+        return {}
+    path = Path(path)
+    if not path.exists():
+        print(f"[MitoCarta] pathway GMX not found; workbook pathways only: {path}")
+        return {}
+
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as fh:
+        rows = list(csv.reader(fh, delimiter="\t"))
+
+    if len(rows) < 3:
+        raise ValueError(f"MitoPathways GMX is unexpectedly short: {path}")
+
+    names = [str(x).strip() for x in rows[0]]
+    mapping = {}
+    for col, pathway in enumerate(names):
+        if not pathway:
+            continue
+        for row in rows[2:]:
+            if col >= len(row):
+                continue
+            gene = str(row[col]).strip().upper()
+            if gene in MISSING:
+                continue
+            mapping.setdefault(gene, set()).add(pathway)
+
+    result = {gene: sorted(paths) for gene, paths in mapping.items()}
+    print(
+        f"[MitoCarta] GMX pathways={sum(bool(x) for x in names)} "
+        f"genes_with_pathway={len(result)} source={path}"
+    )
+    return result
 
 
 def split_pathways(value):
     text = str(value or "").strip()
-    if text in {"", ".", "nan", "None"}:
+    if text.upper() in MISSING:
         return []
     return [x.strip() for x in text.replace("|", ";").split(";") if x.strip()]
 
@@ -103,7 +232,12 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--integrated", required=True)
     p.add_argument("--mitocarta", required=True)
-    p.add_argument("--ranking", required=True, help="*_ranked_candidates.tsv with ON-anchor HPO evidence")
+    p.add_argument("--pathways-gmx", default=None)
+    p.add_argument(
+        "--ranking",
+        required=True,
+        help="*_ranked_candidates.tsv with ON-anchor HPO evidence",
+    )
     p.add_argument("--output", required=True)
     args = p.parse_args()
 
@@ -132,7 +266,20 @@ def main():
                 count = 0
             anchor_by_gene[gene] = count
 
-    mito = read_mitocarta(args.mitocarta)
+    mito, source_sheet, source_header = read_mitocarta(args.mitocarta)
+    gmx = read_gmx(args.pathways_gmx)
+
+    # GMX is a fallback/augmentation. Preserve hierarchical workbook paths
+    # when present; otherwise retain the curated pathway names from the GMX.
+    if gmx:
+        for gene, pathways in gmx.items():
+            if gene not in mito.index:
+                continue
+            workbook_paths = split_pathways(mito.at[gene, "MITOCARTA_MITOPATHWAYS"])
+            combined = sorted(set(workbook_paths) | set(pathways))
+            mito.at[gene, "MITOCARTA_MITOPATHWAYS"] = (
+                ";".join(combined) if combined else "."
+            )
 
     out = sv.copy()
     genes = out[gene_col].fillna(".").astype(str).str.upper().str.strip()
@@ -151,6 +298,9 @@ def main():
         "MITOCARTA_SUBCOMPARTMENT": ".",
         "MITOCARTA_MITOPATHWAYS": ".",
         "MITOCARTA_TOP_LEVEL_PATHWAYS": ".",
+        "MITOCARTA_SOURCE_SHEET": source_sheet,
+        "MITOCARTA_SOURCE_HEADER": source_header,
+        "MITOCARTA_PATHWAY_SOURCE": "NONE",
         "MITO_ON_ANCHOR_HPO_COUNT": 0,
         "MITO_ON_CONTEXT": "NO",
         "MITO_ON_CONTEXT_SOURCE": "NONE",
@@ -165,17 +315,42 @@ def main():
         rec = mito.loc[gene]
         out.at[idx, "MITOCARTA_STATUS"] = "YES"
         out.at[idx, "MITOCARTA_ENCODING"] = (
-            "MTDNA_ENCODED_GENE" if gene in MTDNA_PROTEIN_GENES else "NUCLEAR_MITOCHONDRIAL_GENE"
+            "MTDNA_ENCODED_GENE"
+            if gene in MTDNA_PROTEIN_GENES
+            else "NUCLEAR_MITOCHONDRIAL_GENE"
         )
         for col in [
-            "MITOCARTA_DESCRIPTION", "MITOCARTA_MAESTRO_SCORE", "MITOCARTA_EVIDENCE",
-            "MITOCARTA_SUBCOMPARTMENT", "MITOCARTA_MITOPATHWAYS",
+            "MITOCARTA_DESCRIPTION",
+            "MITOCARTA_MAESTRO_SCORE",
+            "MITOCARTA_EVIDENCE",
+            "MITOCARTA_SUBCOMPARTMENT",
+            "MITOCARTA_MITOPATHWAYS",
         ]:
             out.at[idx, col] = rec[col]
 
         pathways = split_pathways(rec["MITOCARTA_MITOPATHWAYS"])
-        top = sorted({x.split(">", 1)[0].strip() for x in pathways if x})
-        out.at[idx, "MITOCARTA_TOP_LEVEL_PATHWAYS"] = ";".join(top) if top else "."
+        top = sorted(
+            {
+                x.split(">", 1)[0].strip()
+                for x in pathways
+                if ">" in x and x.split(">", 1)[0].strip()
+            }
+        )
+        out.at[idx, "MITOCARTA_TOP_LEVEL_PATHWAYS"] = (
+            ";".join(top) if top else "."
+        )
+
+        workbook_original = split_pathways(
+            read_mitocarta_path := rec["MITOCARTA_MITOPATHWAYS"]
+        )
+        # If the gene is in the GMX and pathways are present, the final value
+        # may be workbook, GMX, or a union of both.
+        if gene in gmx and workbook_original:
+            out.at[idx, "MITOCARTA_PATHWAY_SOURCE"] = "WORKBOOK_OR_GMX"
+        elif gene in gmx:
+            out.at[idx, "MITOCARTA_PATHWAY_SOURCE"] = "GMX"
+        elif pathways:
+            out.at[idx, "MITOCARTA_PATHWAY_SOURCE"] = "WORKBOOK"
 
         anchor_count = int(anchor_by_gene.get(gene, 0))
         is_panel = bool(panel_gene.loc[idx])
@@ -207,10 +382,12 @@ def main():
 
     nuclear = out["MITOCARTA_ENCODING"].eq("NUCLEAR_MITOCHONDRIAL_GENE")
     on = out["MITO_ON_CONTEXT"].eq("YES")
+    path_reported = ~out["MITOCARTA_MITOPATHWAYS"].fillna(".").isin([".", ""])
     print(
         f"[OK] rows={len(out)} mitocarta_rows={int(matched.sum())} "
-        f"nuclear_mito_rows={int(nuclear.sum())} nuclear_mito_on_rows={int((nuclear & on).sum())} "
-        f"output={output}"
+        f"nuclear_mito_rows={int(nuclear.sum())} "
+        f"nuclear_mito_on_rows={int((nuclear & on).sum())} "
+        f"rows_with_pathways={int(path_reported.sum())} output={output}"
     )
 
 
