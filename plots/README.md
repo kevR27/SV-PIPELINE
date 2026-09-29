@@ -21,6 +21,10 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_candidate_genes.py`: gene-prioritization plot from `*_ranked_candidates.tsv`.
 - `plot_gene_hpo_heatmap.py`: human gene-HPO association heatmap from the offline Monarch branch.
 - `plot_candidate_evidence_matrix.py`: integrated SV/gene evidence matrix from the master TSV.
+- `plot_panel_nonpanel_discovery.py`: explicit panel versus non-panel SV-gene categories, separating HPO and curated disease evidence.
+- `plot_sv_gene_associations.py`: quantitative relationship between technical SV support, phenotype relevance, gene-disease evidence and each explicit SV-gene pair.
+- `plot_candidate_locus.py`: one detailed locus figure per prioritized SV-gene pair, including nearby genes, principal evidence fields and optional indexed modkit methylation.
+- `plot_cohort_sv_comparison.py`: deduplicated comparison of completed samples by SV type and evidence-defined subsets.
 - `plot_straglr.py`: tandem-repeat locus size/copy-number/support overview.
 - `plot_mei.py`: TLDR mobile-element insertion summary.
 - `plot_methylation.py`: candidate-region modkit methylation track; bedMethyl from `modkit pileup` is preferred for final thesis figures.
@@ -32,9 +36,9 @@ This directory contains downstream visualization and conservative intersection s
 
 ## Current status
 
-These scripts are written against the output contracts currently defined in the repository. Real output files are not yet available, so column aliases are handled conservatively and clear errors are raised when a required field cannot be inferred. Once real pipeline outputs are available, adjust column mappings where required rather than changing the biological logic.
+The plotting layer is written against the current integrated LRS/SRS output contracts and is now being used with completed LRS sample outputs. Column aliases remain conservative so schema changes fail visibly rather than silently changing biological interpretation.
 
-The plotting layer is intentionally not added to `rule all` yet. It should remain downstream until the first real outputs have been inspected and the final column contracts confirmed.
+The plotting layer remains intentionally downstream and is not part of the biological pipeline `rule all`. Figures can therefore be regenerated or extended without rerunning SV calling or annotation.
 
 ## Environment
 
@@ -161,7 +165,9 @@ The sample-level runner now writes figures and their source TSVs into thematic f
 │   └── tldr/
 ├── 08_phasing/
 ├── 09_methylation/
-└── 10_integrated_evidence/
+├── 10_integrated_evidence/
+├── 11_sv_gene_associations/
+└── 12_candidate_loci/
 ```
 
 The post-processing workflow also creates three interpretation tables in
@@ -216,3 +222,35 @@ The downstream interpretation tables are also separated by biological meaning:
 The orthogonal table contains coordinate-/ID-compatible Straglr, TLDR and LongPhase evidence attached to the Jasmine-defined master SV universe. The multimodal-context table adds nearby WhatsHap-phased small variants and local modkit methylation context without treating either as SV confirmation.
 
 Modkit plotting now accepts standard bedMethyl content compressed under `.bedmethyl.gz` or generic `.bed.gz` names. With no configured candidate region it produces a genome-wide canonical-chromosome methylation summary; when `thesis_methylation_region` is set, it produces a detailed regional methylation/coverage track instead.
+
+
+## Detailed SV-gene interpretation
+
+The detailed plotting layer is deliberately keyed to the master `SV_ID`.
+
+`plot_sv_gene_associations.py` keeps one row per `(SV_ID, gene)` and displays
+technical support separately from biological prioritization. This makes it
+possible to see, for example, whether a highly phenotype-relevant non-panel gene
+is carried by a single-caller or multi-caller SV rather than losing the SV-gene
+relationship in a gene-only ranking.
+
+`plot_panel_nonpanel_discovery.py` separates panel genes from non-panel genes
+with both phenotype and curated disease evidence, phenotype evidence only,
+disease evidence only, and other non-panel overlaps. These are discovery
+categories, not pathogenicity classes.
+
+`plot_candidate_locus.py` generates separate candidate figures for the top
+SV-gene pairs. Each figure shows the master SV coordinates, nearby gene spans,
+the overlapping candidate gene, key caller/population/database/phenotype fields,
+and indexed modkit methylation points when available. WhatsHap and methylation
+remain contextual layers rather than SV confirmations.
+
+When at least two completed post-processing samples are available,
+`all_thesis_plots` also creates:
+
+```text
+<output_root>/cohort_plots/lrs_sample_comparison.*
+```
+
+The comparison deduplicates by `SV_ID` before calculating SV burden and does
+not interpret the evidence-defined subsets as sequential filters.
