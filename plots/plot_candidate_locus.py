@@ -365,9 +365,9 @@ def main():
         for col_x, block in [(0.01, left), (0.52, right)]:
             y = 0.96
             for label, value in block:
-                ax_ev.text(col_x, y, f"{label}:", fontweight="bold", fontsize=9.2, transform=ax_ev.transAxes, va="top")
-                ax_ev.text(col_x + 0.19, y, str(value), fontsize=9.2, transform=ax_ev.transAxes, va="top", wrap=True)
-                y -= 0.105
+                ax_ev.text(col_x, y, f"{label}:", fontweight="bold", fontsize=8.7, transform=ax_ev.transAxes, va="top")
+                ax_ev.text(col_x + 0.19, y, str(value), fontsize=8.7, transform=ax_ev.transAxes, va="top", wrap=True)
+                y -= 0.088
 
         formatter = FuncFormatter(lambda x, _: f"{x / 1e6:.3f}")
         ax_sv.xaxis.set_major_formatter(formatter)
