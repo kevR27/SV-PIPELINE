@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import textwrap
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -20,7 +21,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Plot integrated evidence for prioritized SV-gene pairs.")
     p.add_argument("--input", required=True, help="Integrated or extended SV-gene analysis TSV")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=20)
+    p.add_argument("--top-n", type=int, default=16)
     p.add_argument("--rare-af", type=float, default=0.01)
     p.add_argument("--title", default="Integrated evidence for prioritized SV-gene candidates")
     return p.parse_args()
@@ -58,17 +59,18 @@ def main():
     work = df.copy()
     work["_gene"] = work[gene_col].fillna(".").astype(str)
     if chrom_col and start_col and type_col:
+        start_mb = numeric(work[start_col]) / 1e6
         work["_label"] = (
-            work[chrom_col].astype(str)
-            + ":"
-            + work[start_col].astype(str)
-            + " "
-            + work[type_col].astype(str)
+            work["_gene"]
             + " | "
-            + work["_gene"]
+            + work[type_col].astype(str)
+            + " "
+            + work[chrom_col].astype(str)
+            + ":"
+            + start_mb.map(lambda x: f"{x:.2f} Mb" if pd.notna(x) else "?")
         )
     else:
-        work["_label"] = work[id_col].fillna(".").astype(str) + " | " + work["_gene"]
+        work["_label"] = work["_gene"] + " | " + work[id_col].fillna(".").astype(str)
 
     callers_col = first_existing(work, ["CALLERS"])
     caller_count_col = first_existing(work, ["CALLER_COUNT", "SUPP"])
@@ -172,7 +174,8 @@ def main():
         .head(args.top_n)
         .copy()
     )
-    work["_label"] = work["_label"] + " [" + work[id_col].astype(str) + "]"
+    # Keep the full SV_ID in the exported TSV; the figure uses a shorter label
+    # so candidate rows remain readable at thesis scale.
 
     evidence_cols = [
         "Sniffles2", "cuteSV", "Manta", "Delly", "Multi-caller",
@@ -195,7 +198,8 @@ def main():
     ax.imshow(matrix, aspect="auto", interpolation="nearest", cmap=cmap, vmin=0, vmax=1)
 
     ax.set_xticks(np.arange(len(evidence_cols)))
-    ax.set_xticklabels(evidence_cols, rotation=42, ha="right", fontsize=9)
+    wrapped_evidence = ["\n".join(textwrap.wrap(x, width=14)) for x in evidence_cols]
+    ax.set_xticklabels(wrapped_evidence, rotation=35, ha="right", fontsize=8.5)
     ax.set_yticks(np.arange(n))
     ax.set_yticklabels(work["_label"], fontsize=9)
     ax.set_xlabel("Evidence layer")
