@@ -23,6 +23,7 @@ def parse_args():
     p.add_argument("--out-dir", default=None, help="Default: <root>/<sample>/plots")
     p.add_argument("--methylation-region", default=None, help="Optional chr:start-end for methylation plot")
     p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
+    p.add_argument("--gene-bed", default=None, help="Optional gene BED for candidate-specific locus plots")
     p.add_argument("--dry-run", action="store_true")
     return p.parse_args()
 
@@ -71,6 +72,8 @@ def main():
         "phasing": out / "08_phasing",
         "methylation": out / "09_methylation",
         "integration": out / "10_integrated_evidence",
+        "associations": out / "11_sv_gene_associations",
+        "loci": out / "12_candidate_loci",
     }
     for folder in folders.values():
         folder.mkdir(parents=True, exist_ok=True)
@@ -187,6 +190,22 @@ def main():
             ),
             (
                 [
+                    py, str(HERE / "plot_panel_nonpanel_discovery.py"),
+                    "--input", str(integrated),
+                    "--out-prefix", str(folders["candidates"] / f"{s}_panel_nonpanel_discovery"),
+                ],
+                [integrated],
+            ),
+            (
+                [
+                    py, str(HERE / "plot_sv_gene_associations.py"),
+                    "--input", str(integrated),
+                    "--out-prefix", str(folders["associations"] / f"{s}_sv_gene_associations"),
+                ],
+                [integrated],
+            ),
+            (
+                [
                     py, str(HERE / "plot_gene_hpo_heatmap.py"),
                     "--input", str(phenotypes),
                     "--ranking", str(ranked),
@@ -269,6 +288,26 @@ def main():
         jobs.append((methylation_cmd, [methylation]))
     elif args.platform == "lrs":
         print("[SKIP] no modkit bedMethyl/.bed.gz file found")
+
+    if args.gene_bed:
+        gene_bed = Path(args.gene_bed).expanduser().resolve()
+        locus_cmd = [
+            py,
+            str(HERE / "plot_candidate_locus.py"),
+            "--input",
+            str(integrated),
+            "--gene-bed",
+            str(gene_bed),
+            "--out-dir",
+            str(folders["loci"]),
+        ]
+        locus_required = [integrated, gene_bed]
+        if args.platform == "lrs" and methylation:
+            locus_cmd += ["--methylation-bed", str(methylation)]
+            locus_required.append(methylation)
+        jobs.append((locus_cmd, locus_required))
+    else:
+        print("[SKIP] no gene BED supplied; candidate-specific locus plots skipped")
 
     for command, required in jobs:
         run(command, required, args.dry_run)
