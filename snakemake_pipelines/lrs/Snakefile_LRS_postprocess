@@ -36,6 +36,7 @@ ORTHOGONAL_LONGPHASE_BP_TOL = config.get(
 )
 
 THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
+GENE_BED = config.get("gene_bed")
 
 
 def integration_source_files(sample):
@@ -327,12 +328,16 @@ rule thesis_plots_sample:
             PLOTS + "/plot_needlr_population.py",
             PLOTS + "/plot_candidate_evidence_matrix.py",
             PLOTS + "/plot_candidate_genes.py",
+            PLOTS + "/plot_panel_nonpanel_discovery.py",
+            PLOTS + "/plot_sv_gene_associations.py",
+            PLOTS + "/plot_candidate_locus.py",
             PLOTS + "/plot_gene_hpo_heatmap.py",
             PLOTS + "/plot_straglr.py",
             PLOTS + "/plot_mei.py",
             PLOTS + "/plot_phasing_qc.py",
             PLOTS + "/plot_methylation.py",
             PLOTS + "/plot_gene_multimodal_summary.py",
+            PLOTS + "/plot_cohort_sv_comparison.py",
             PLOTS + "/integrate_candidate_context.py",
         ]
     output:
@@ -342,6 +347,11 @@ rule thesis_plots_sample:
         methylation_arg=lambda wc: (
             f"--methylation-region {THESIS_METHYLATION_REGION}"
             if THESIS_METHYLATION_REGION
+            else ""
+        ),
+        gene_bed_arg=lambda wc: (
+            f"--gene-bed {shlex.quote(GENE_BED)}"
+            if GENE_BED
             else ""
         )
     conda:
@@ -355,9 +365,71 @@ rule thesis_plots_sample:
             --sample {wildcards.sample} \
             --platform lrs \
             --methylation-units {params.methylation_units} \
+            {params.gene_bed_arg} \
             {params.methylation_arg}
 
         touch {output.marker}
+        """
+
+
+
+
+def cohort_sample_args():
+    return " ".join(
+        "--sample-input "
+        + shlex.quote(
+            sample
+            + "="
+            + multimodal_context_table(sample)
+        )
+        for sample in POSTPROCESS_SAMPLES
+    )
+
+
+COHORT_PLOT_OUTPUTS = (
+    [
+        PATH + "cohort_plots/lrs_sample_comparison.pdf",
+        PATH + "cohort_plots/lrs_sample_comparison.svg",
+        PATH + "cohort_plots/lrs_sample_comparison.png",
+        PATH + "cohort_plots/lrs_sample_comparison_summary.tsv",
+        PATH + "cohort_plots/lrs_sample_comparison_svtypes.tsv",
+    ]
+    if len(POSTPROCESS_SAMPLES) >= 2
+    else []
+)
+
+
+rule cohort_thesis_comparison:
+    input:
+        tables=expand(
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        script=PLOTS + "/plot_cohort_sv_comparison.py"
+    output:
+        pdf=PATH + "cohort_plots/lrs_sample_comparison.pdf",
+        svg=PATH + "cohort_plots/lrs_sample_comparison.svg",
+        png=PATH + "cohort_plots/lrs_sample_comparison.png",
+        summary=PATH + "cohort_plots/lrs_sample_comparison_summary.tsv",
+        svtypes=PATH + "cohort_plots/lrs_sample_comparison_svtypes.tsv"
+    params:
+        sample_args=lambda wc: cohort_sample_args()
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p {PATH}cohort_plots
+
+        python {input.script} \
+            {params.sample_args} \
+            --out-prefix {PATH}cohort_plots/lrs_sample_comparison
+
+        test -s {output.pdf}
+        test -s {output.svg}
+        test -s {output.png}
+        test -s {output.summary}
+        test -s {output.svtypes}
         """
 
 
@@ -367,7 +439,8 @@ rule all_thesis_plots:
         expand(
             PATH + "{sample}/plots/.thesis_plots.done",
             sample=POSTPROCESS_SAMPLES,
-        )
+        ),
+        COHORT_PLOT_OUTPUTS
 
 
 include: "../common/allele_assessment.smk"
