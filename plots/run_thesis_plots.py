@@ -206,6 +206,14 @@ def main():
             ),
             (
                 [
+                    py, str(HERE / "plot_sv_gene_network.py"),
+                    "--input", str(integrated),
+                    "--out-prefix", str(folders["associations"] / f"{s}_sv_gene_network"),
+                ],
+                [integrated],
+            ),
+            (
+                [
                     py, str(HERE / "plot_gene_hpo_heatmap.py"),
                     "--input", str(phenotypes),
                     "--ranking", str(ranked),
