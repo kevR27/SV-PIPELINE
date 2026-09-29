@@ -45,6 +45,7 @@ SAMPLOT_TOP_N = config.get("samplot_top_n", 8)
 SAMPLOT_MIN_MAPQ = config.get("samplot_min_mapq", 20)
 SAMPLOT_LONG_READ_MIN = config.get("samplot_long_read_min_length", 1000)
 SAMPLOT_ZOOM_BP = config.get("samplot_zoom_bp", 20000)
+SAMPLOT_WINDOW_BP = config.get("samplot_window_bp", 5000)
 SAMPLOT_LARGE_SV_THRESHOLD = config.get("samplot_large_sv_threshold", 1000000)
 
 
@@ -442,6 +443,7 @@ rule samplot_candidate_breakpoints:
         min_mapq=SAMPLOT_MIN_MAPQ,
         long_read_min=SAMPLOT_LONG_READ_MIN,
         zoom=SAMPLOT_ZOOM_BP,
+        window=SAMPLOT_WINDOW_BP,
         large_threshold=SAMPLOT_LARGE_SV_THRESHOLD
     conda:
         CONDAENV + "samplot.yaml"
@@ -460,6 +462,7 @@ rule samplot_candidate_breakpoints:
             --min-mapq {params.min_mapq} \
             --long-read-min {params.long_read_min} \
             --zoom {params.zoom} \
+            --window {params.window} \
             --large-sv-threshold {params.large_threshold}
 
         test -s {output.manifest}
