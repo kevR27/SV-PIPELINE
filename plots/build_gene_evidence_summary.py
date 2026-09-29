@@ -118,6 +118,11 @@ def main():
     methylation_context_col = first_existing(work, ["METHYLATION_CONTEXT"])
     m5_col = first_existing(work, ["METHYLATION_5MC_MEAN_PERCENT"])
     h5_col = first_existing(work, ["METHYLATION_5HMC_MEAN_PERCENT"])
+    mitocarta_encoding_col = first_existing(work, ["MITOCARTA_ENCODING"])
+    mitocarta_pathway_col = first_existing(work, ["MITOCARTA_MITOPATHWAYS"])
+    mitocarta_top_pathway_col = first_existing(work, ["MITOCARTA_TOP_LEVEL_PATHWAYS"])
+    mitocarta_compartment_col = first_existing(work, ["MITOCARTA_SUBCOMPARTMENT"])
+    mito_on_context_col = first_existing(work, ["MITO_ON_CONTEXT"])
 
     work["_whatshap_count"] = numeric(work[whatshap_count_col]).fillna(0) if whatshap_count_col else 0
     if methylation_context_col:
@@ -128,6 +133,18 @@ def main():
         work["_methylation_evaluated"] = False
     work["_methylation_5mc"] = numeric(work[m5_col]) if m5_col else np.nan
     work["_methylation_5hmc"] = numeric(work[h5_col]) if h5_col else np.nan
+    if mitocarta_encoding_col:
+        enc = work[mitocarta_encoding_col].fillna("").astype(str).str.upper()
+        work["_mitocarta_nuclear"] = enc.eq("NUCLEAR_MITOCHONDRIAL_GENE")
+        work["_mitocarta_mtdna"] = enc.eq("MTDNA_ENCODED_GENE")
+    else:
+        work["_mitocarta_nuclear"] = False
+        work["_mitocarta_mtdna"] = False
+    work["_mito_on_context"] = (
+        work[mito_on_context_col].fillna("").astype(str).str.upper().eq("YES")
+        if mito_on_context_col
+        else False
+    )
 
     rows = []
     for gene, group in work.groupby("gene", sort=False):
@@ -154,6 +171,12 @@ def main():
                 "longphase_phased_SV_count": int(unique["_longphase_phased"].sum()),
                 "whatshap_nearby_phased_SV_count": int((unique["_whatshap_count"] > 0).sum()),
                 "methylation_evaluated_SV_count": int(unique["_methylation_evaluated"].sum()),
+                "mitocarta_nuclear_SV_count": int(unique["_mitocarta_nuclear"].sum()),
+                "mitocarta_mtDNA_SV_count": int(unique["_mitocarta_mtdna"].sum()),
+                "mitocarta_ON_context_SV_count": int((unique["_mitocarta_nuclear"] & unique["_mito_on_context"]).sum()),
+                "mitocarta_pathways": join_values(group[mitocarta_pathway_col]) if mitocarta_pathway_col else ".",
+                "mitocarta_top_level_pathways": join_values(group[mitocarta_top_pathway_col]) if mitocarta_top_pathway_col else ".",
+                "mitocarta_subcompartments": join_values(group[mitocarta_compartment_col]) if mitocarta_compartment_col else ".",
                 "mean_breakpoint_5mC_percent": float(unique["_methylation_5mc"].mean()) if unique["_methylation_5mc"].notna().any() else np.nan,
                 "mean_breakpoint_5hmC_percent": float(unique["_methylation_5hmc"].mean()) if unique["_methylation_5hmc"].notna().any() else np.nan,
                 "max_phenotype_score": float(unique["_phenotype"].max()) if len(unique) else 0.0,
