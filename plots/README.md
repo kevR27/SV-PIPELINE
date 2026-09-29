@@ -23,6 +23,7 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_candidate_evidence_matrix.py`: integrated SV/gene evidence matrix from the master TSV.
 - `plot_panel_nonpanel_discovery.py`: explicit panel versus non-panel SV-gene categories, separating HPO and curated disease evidence.
 - `plot_sv_gene_associations.py`: quantitative relationship between technical SV support, phenotype relevance, gene-disease evidence and each explicit SV-gene pair.
+- `plot_sv_gene_network.py`: bipartite map showing which master SV overlaps which gene, including multi-gene SVs and genes affected by multiple prioritized SVs.
 - `plot_candidate_locus.py`: one detailed locus figure per prioritized SV-gene pair, including nearby genes, principal evidence fields and optional indexed modkit methylation.
 - `plot_cohort_sv_comparison.py`: deduplicated comparison of completed samples by SV type and evidence-defined subsets.
 - `plot_straglr.py`: tandem-repeat locus size/copy-number/support overview.
