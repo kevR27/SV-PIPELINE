@@ -137,6 +137,24 @@ def main():
         ).astype(int)
         optional_flags.append("Methylation context")
 
+    mitocarta_encoding_col = first_existing(work, ["MITOCARTA_ENCODING"])
+    if mitocarta_encoding_col:
+        work["Nuclear mitochondrial gene"] = (
+            work[mitocarta_encoding_col]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .eq("NUCLEAR_MITOCHONDRIAL_GENE")
+        ).astype(int)
+        optional_flags.append("Nuclear mitochondrial gene")
+
+    mito_on_col = first_existing(work, ["MITO_ON_CONTEXT"])
+    if mito_on_col:
+        work["Mito + ON context"] = (
+            work[mito_on_col].fillna("").astype(str).str.upper().eq("YES")
+        ).astype(int)
+        optional_flags.append("Mito + ON context")
+
     score_col = first_existing(work, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score"])
     # Match the documented gene-discovery ranking. Database presence, panel
     # membership and optional analyses must not silently create another score.
