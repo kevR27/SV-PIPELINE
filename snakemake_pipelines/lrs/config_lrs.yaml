@@ -138,7 +138,7 @@ mitocarta_pathways_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/mitoca
 # SAMPLOT READ-LEVEL BREAKPOINT EVIDENCE
 # ============================================================
 
-samplot_top_n: 8
+samplot_top_n: 12
 samplot_min_mapq: 20
 samplot_long_read_min_length: 1000
 samplot_zoom_bp: 20000
