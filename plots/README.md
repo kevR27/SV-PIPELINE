@@ -312,3 +312,78 @@ nuclear-encoded mitochondrial proteins from the 13 mtDNA-encoded proteins.
 `MITO_ON_CONTEXT=YES` means that the same gene also has positive
 optic-neuropathy phenotype evidence under the current pipeline's phenotype
 model. This is co-annotation, not a causality or pathogenicity statement.
+
+
+## Mechanism-aware SV-gene event ranking
+
+The post-processing workflow now creates:
+
+```text
+<sample>_ranked_SV_gene_events.tsv
+```
+
+This table preserves one row per master `(SV_ID, gene)` association and keeps
+event mechanism separate from gene relevance. It adds:
+
+```text
+SV_GENE_RELATIONSHIP
+BREAKPOINT_DISTANCE_TO_GENE_BP
+SV_EVENT_SIZE_CLASS
+SV_EVENT_SPAN_BP
+SV_GENE_COUNT
+SV_FOCALITY_CLASS
+EVENT_REVIEW_BUCKET
+EVENT_INTERPRETATION_SCOPE
+BREAKPOINT_DEFINED_EVENT
+VERY_LARGE_GE10MB
+EVENT_POPULATION_TIER
+EVENT_TECHNICAL_TIER
+EVENT_GENE_RELEVANCE_SCORE
+EVENT_RANK_WITHIN_BUCKET
+EVENT_RANK_WITHIN_BUCKET_PANEL_STATUS
+```
+
+The event-level gene relevance score is phenotype relevance plus curated
+gene-disease evidence. It deliberately excludes the gene-level SV-count
+component so an individual event is not rewarded because the same gene happens
+to contain several other SV calls.
+
+The principal event buckets are:
+
+```text
+SMALL_MEDIUM_CNV_GENE_CANDIDATE
+INSERTION_GENE_CANDIDATE
+LARGE_CNV_GENE_CANDIDATE
+VERY_LARGE_CNV_GENE_CONTEXT
+BREAKPOINT_GENE_CANDIDATE
+COMPLEX_INTERVAL_CONTEXT
+LARGE_COMPLEX_INTERVAL_CONTEXT
+BREAKPOINT_EVENT_UNRESOLVED
+```
+
+For DEL/DUP/CNV events, transcript overlap is treated as dosage/disruption
+context. For INV/BND events, breakpoint overlap is evaluated separately from
+genes that merely lie between the breakpoints. An internal gene within a large
+inversion is therefore retained as `INTERVAL_CONTEXT_ONLY` and is not treated
+as directly disrupted.
+
+The default breakpoint-proximity window is 10 kb and is configured with:
+
+```yaml
+sv_gene_breakpoint_tolerance: 10000
+```
+
+This threshold is a prioritization aid, not a clinical pathogenicity criterion.
+
+### Large/complex candidate figures
+
+`plot_large_complex_candidates.py` separates gene-directed large
+CNV/breakpoint candidates from inversion/BND interval-only context.
+
+`plot_gene_sv_spectrum.py` shows the size spectrum of unique master SVs
+contributing to each prioritized gene (<100 kb, 100 kb–1 Mb, 1–10 Mb, ≥10 Mb
+and breakends), plus the number of INV/BND events.
+
+Candidate locus and Samplot selection are now stratified across event classes
+so small SVs cannot crowd all large and breakpoint-defined events out of
+detailed review.
