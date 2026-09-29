@@ -427,7 +427,10 @@ rule thesis_plots_sample:
 
 rule samplot_candidate_breakpoints:
     input:
-        integrated=rules.annotate_mitocarta_context.output.tsv,
+        # Samplot selection needs the prioritized SV evidence table, not
+        # MitoCarta. Keep read-level breakpoint rendering independent from
+        # mitochondrial annotation updates.
+        integrated=rules.integrate_candidate_context.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         script=PLOTS + "/run_samplot_candidates.py"
     output:
