@@ -11,6 +11,10 @@ mkdir -p reference/mitocarta
 wget \
   https://personal.broadinstitute.org/scalvo/MitoCarta_Download/Human.MitoCarta3.0.xls \
   -O reference/mitocarta/Human.MitoCarta3.0.xls
+
+wget \
+  https://personal.broadinstitute.org/scalvo/MitoCarta_Download/Human.MitoPathways3.0.gmx \
+  -O reference/mitocarta/Human.MitoPathways3.0.gmx
 ```
 
 The LRS post-processing workflow reads the workbook from `mitocarta_file` in
@@ -27,3 +31,14 @@ context already computed by the pipeline. It is not a correlation coefficient,
 a pathogenicity probability, or proof that the SV causes the phenotype.
 
 Source: MitoCarta3.0, Broad Institute / Rath et al., Nucleic Acids Research.
+
+
+The GMX pathway file is deliberately kept as a second source even though the
+Excel workbook can contain a MitoPathways column. It provides a stable,
+machine-readable mapping to the curated 149 MitoPathways and prevents silent
+loss of pathway assignments when Excel sheet/header layouts change.
+
+The annotation script reports the selected workbook sheet/header and the number
+of populated pathway and sub-compartment entries at runtime. If the workbook
+pathway column is absent/empty, the GMX assignments are used as the pathway
+fallback.
