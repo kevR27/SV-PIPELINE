@@ -33,7 +33,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Plot detailed SV-gene evidence relationships.")
     p.add_argument("--input", required=True, help="Integrated/multimodal SV-gene TSV")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=40)
+    p.add_argument("--top-n", type=int, default=30)
     p.add_argument("--title", default="Detailed SV-gene evidence relationships")
     return p.parse_args()
 
@@ -56,7 +56,7 @@ def main():
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
     score_col = first_existing(
         df,
-        ["ALLELE_RESEARCH_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE"],
+        ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"],
     )
     pheno_col = first_existing(df, ["PHENOTYPE_SCORE", "phenotype_score"])
     disease_col = first_existing(df, ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"])
@@ -141,14 +141,20 @@ def main():
         linewidths=np.where(work["_orthogonal"], 1.3, 0.5),
         alpha=0.88,
     )
-    label_rows = work.sort_values(["_priority", "_phenotype", "_disease"], ascending=False).head(min(12, len(work)))
-    for _, row in label_rows.iterrows():
+    label_rows = (
+        work.sort_values(["_priority", "_phenotype", "_disease", "_caller_count"], ascending=False)
+        .drop_duplicates("_gene")
+        .head(min(8, len(work)))
+    )
+    offsets = [(7, 8), (7, -15), (12, 18), (12, -25), (18, 6), (18, -18), (24, 16), (24, -28)]
+    for j, (_, row) in enumerate(label_rows.iterrows()):
         ax1.annotate(
-            f"{row['_gene']}\n{row[id_col]}",
+            str(row["_gene"]),
             (row["_caller_count"], row["_priority"]),
-            xytext=(5, 5),
+            xytext=offsets[j % len(offsets)],
             textcoords="offset points",
-            fontsize=7.5,
+            fontsize=8,
+            arrowprops={"arrowstyle": "-", "linewidth": 0.5, "alpha": 0.55},
         )
     ax1.set_xlabel("Caller count")
     ax1.set_ylabel((score_col or "priority score").replace("_", " "))
@@ -164,13 +170,14 @@ def main():
         linewidths=np.where(work["_path_db"], 1.3, 0.5),
         alpha=0.88,
     )
-    for _, row in label_rows.iterrows():
+    for j, (_, row) in enumerate(label_rows.iterrows()):
         ax2.annotate(
-            f"{row['_gene']}\n{row[id_col]}",
+            str(row["_gene"]),
             (row["_phenotype"], row["_disease"]),
-            xytext=(5, 5),
+            xytext=offsets[j % len(offsets)],
             textcoords="offset points",
-            fontsize=7.5,
+            fontsize=8,
+            arrowprops={"arrowstyle": "-", "linewidth": 0.5, "alpha": 0.55},
         )
     ax2.set_xlabel("Phenotype relevance score")
     ax2.set_ylabel("Gene-disease evidence score")
