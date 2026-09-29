@@ -59,6 +59,8 @@ def main():
         ("longphase_phased_SV_count", "LongPhase phased"),
         ("whatshap_nearby_phased_SV_count", "Nearby WhatsHap phase"),
         ("methylation_evaluated_SV_count", "Methylation context"),
+        ("mitocarta_nuclear_SV_count", "Nuclear mitochondrial"),
+        ("mitocarta_ON_context_SV_count", "Mito + ON context"),
     ]
 
     matrix_cols = []
