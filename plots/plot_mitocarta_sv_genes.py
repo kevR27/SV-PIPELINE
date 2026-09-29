@@ -92,8 +92,18 @@ def main():
 
     pathway_rows = []
     for _, row in pairs.iterrows():
-        raw = str(row.get("MITOCARTA_TOP_LEVEL_PATHWAYS", "."))
-        for pathway in [x.strip() for x in raw.split(";") if x.strip() and x.strip() != "."]:
+        raw_top = str(row.get("MITOCARTA_TOP_LEVEL_PATHWAYS", "."))
+        top = [x.strip() for x in raw_top.split(";") if x.strip() and x.strip() != "."]
+        if top:
+            pathways = top
+        else:
+            raw_full = str(row.get("MITOCARTA_MITOPATHWAYS", "."))
+            pathways = [
+                x.strip()
+                for x in raw_full.split(";")
+                if x.strip() and x.strip() != "."
+            ]
+        for pathway in pathways:
             pathway_rows.append((pathway, row[id_col], row[gene_col]))
     pathway_df = pd.DataFrame(pathway_rows, columns=["pathway", "SV_ID", "gene"])
     if not pathway_df.empty:
@@ -128,12 +138,31 @@ def main():
     style_axis(ax1, "x")
 
     ps = pathway_summary.head(12).iloc[::-1]
-    ax2.barh(np.arange(len(ps)), ps["unique_genes"])
-    ax2.set_yticks(np.arange(len(ps)))
-    ax2.set_yticklabels(ps["pathway"], fontsize=9)
-    ax2.set_xlabel("Unique SV-overlapping nuclear mitochondrial genes")
-    ax2.set_title("MitoCarta top-level pathways")
-    style_axis(ax2, "x")
+    if ps.empty:
+        ax2.axis("off")
+        ax2.text(
+            0.5,
+            0.56,
+            "No MitoCarta pathway assignments were parsed",
+            transform=ax2.transAxes,
+            ha="center",
+            fontsize=12,
+        )
+        ax2.text(
+            0.5,
+            0.44,
+            "Check Human.MitoPathways3.0.gmx / workbook parsing.",
+            transform=ax2.transAxes,
+            ha="center",
+            fontsize=9,
+        )
+    else:
+        ax2.barh(np.arange(len(ps)), ps["unique_genes"])
+        ax2.set_yticks(np.arange(len(ps)))
+        ax2.set_yticklabels(ps["pathway"], fontsize=8.5)
+        ax2.set_xlabel("Unique SV-overlapping nuclear mitochondrial genes")
+        ax2.set_title("MitoCarta pathway context")
+        style_axis(ax2, "x")
 
     fig.suptitle("MitoCarta3.0 context for SV-overlapping genes", fontsize=16, fontweight="bold", y=0.995)
     fig.text(
