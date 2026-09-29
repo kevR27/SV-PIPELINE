@@ -233,6 +233,14 @@ def main():
             ),
             (
                 [
+                    py, str(HERE / "plot_gene_sv_spectrum.py"),
+                    "--input", str(candidate_source),
+                    "--out-prefix", str(folders["candidates"] / f"{s}_gene_sv_spectrum"),
+                ],
+                [candidate_source],
+            ),
+            (
+                [
                     py, str(HERE / "plot_panel_nonpanel_discovery.py"),
                     "--input", str(integrated),
                     "--out-prefix", str(folders["candidates"] / f"{s}_panel_nonpanel_discovery"),
