@@ -173,8 +173,21 @@ def main():
         svtype = str(row["_svtype"])
         is_breakpoint = svtype in {"INS", "BND"} or end == start
 
-        locus_start = max(0, start - args.flank)
-        locus_end = max(end, start) + args.flank
+        sv_span = abs(end - start)
+        target_gene = genes[
+            genes["chrom"].eq(chrom)
+            & genes["gene"].astype(str).eq(gene)
+        ].copy()
+        large_gene_centered = sv_span >= 1_000_000 and not target_gene.empty
+
+        if large_gene_centered:
+            gene_start = int(target_gene["start"].min())
+            gene_end = int(target_gene["end"].max())
+            locus_start = max(0, gene_start - args.flank)
+            locus_end = gene_end + args.flank
+        else:
+            locus_start = max(0, start - args.flank)
+            locus_end = max(end, start) + args.flank
 
         nearby = genes[
             genes["chrom"].eq(chrom)
@@ -202,7 +215,28 @@ def main():
         ax_sv, ax_gene, ax_ev = axes
 
         color = SVTYPE_COLORS.get(svtype, "#999999")
-        if is_breakpoint:
+        if large_gene_centered:
+            ax_sv.plot(
+                [locus_start, locus_end],
+                [0.5, 0.5],
+                color=color,
+                linewidth=9,
+                alpha=0.45,
+                solid_capstyle="butt",
+            )
+            if locus_start <= start <= locus_end:
+                ax_sv.axvline(start, color=color, linewidth=3)
+            if locus_start <= end <= locus_end:
+                ax_sv.axvline(end, color=color, linewidth=3)
+            scope_note = f"Gene-centered view within {sv_span / 1e6:.1f} Mb {svtype}"
+            if svtype == "INV":
+                scope_note += "; interval overlap does not imply breakpoint disruption"
+            ax_sv.text(
+                0.5, 0.78, scope_note,
+                transform=ax_sv.transAxes,
+                ha="center", va="center", fontsize=9,
+            )
+        elif is_breakpoint:
             ax_sv.axvline(start, color=color, linewidth=4)
             ax_sv.scatter([start], [0.5], s=90, color=color, zorder=3)
         else:
@@ -253,7 +287,7 @@ def main():
 
         evidence = [
             ("Overlapping gene", gene),
-            ("Priority score", f"{row['_priority']:.3g}" if pd.notna(row["_priority"]) else "."),
+            ("Gene-discovery score", f"{row['_priority']:.3g}" if pd.notna(row["_priority"]) else "."),
             ("Callers", evidence_value(row, ["CALLERS"])),
             ("Caller count", evidence_value(row, ["CALLER_COUNT", "SUPP"])),
             ("Read support", evidence_value(row, ["CALLER_READ_SUPPORT"])),
@@ -261,10 +295,10 @@ def main():
             ("needLR status", evidence_value(row, ["NEEDLR_STATUS"])),
             ("Panel status", evidence_value(row, ["PANEL_STATUS"])),
             ("Phenotype score", evidence_value(row, ["PHENOTYPE_SCORE"])),
-            ("Gene-disease evidence", evidence_value(row, ["GENE_DISEASE_EVIDENCE_LEVEL", "GENCC"])),
+            ("Gene-disease evidence", compact_text(evidence_value(row, ["GENE_DISEASE_EVIDENCE_LEVEL", "GENCC"]))),
             ("AnnotSV class", evidence_value(row, ["ANNOTSV_GENERAL_CLASSIFICATION", "ANNotsv_Classification"])),
-            ("Pathogenic SV DB", evidence_value(row, ["SV_PATHOGENIC_DB_SOURCE"])),
-            ("Benign SV DB / AF", evidence_value(row, ["SV_BENIGN_DB_SOURCE", "SV_BENIGN_DB_AFMAX"])),
+            ("Pathogenic SV DB", compact_text(evidence_value(row, ["SV_PATHOGENIC_DB_SOURCE"]))),
+            ("Benign SV DB / AF", compact_text(evidence_value(row, ["SV_BENIGN_DB_SOURCE", "SV_BENIGN_DB_AFMAX"]))),
             ("LongPhase", evidence_value(row, ["LONGPHASE_PHASED", "LONGPHASE_MATCH"])),
             ("Straglr / TLDR", evidence_value(row, ["STRAGLR_MATCH"]) + " / " + evidence_value(row, ["TLDR_MATCH"])),
             ("Nearby phased SNVs", evidence_value(row, ["WHATSHAP_PHASED_HET_COUNT"])),
@@ -281,8 +315,15 @@ def main():
                 y -= 0.105
 
         formatter = FuncFormatter(lambda x, _: f"{x / 1e6:.3f}")
+        ax_sv.xaxis.set_major_formatter(formatter)
         ax_gene.xaxis.set_major_formatter(formatter)
-        ax_gene.set_xlabel(f"{chrom} position (Mb)")
+        ax_sv.tick_params(axis="x", labelbottom=False)
+        if methyl:
+            inset.xaxis.set_major_formatter(formatter)
+            ax_gene.tick_params(axis="x", labelbottom=False)
+            inset.set_xlabel(f"{chrom} position (Mb)", fontsize=8)
+        else:
+            ax_gene.set_xlabel(f"{chrom} position (Mb)")
 
         fig.suptitle(f"{args.title_prefix} {rank}: {gene}", fontsize=16, fontweight="bold", y=0.995)
         fig.text(
@@ -308,6 +349,10 @@ def main():
                 "end": end,
                 "svtype": svtype,
                 "priority_score": row["_priority"],
+                "selection_score_field": score_col or ".",
+                "needLR_AF": row["_af"] if pd.notna(row["_af"]) else ".",
+                "large_gene_centered_view": "YES" if large_gene_centered else "NO",
+                "sv_span_bp": sv_span,
                 "figure_prefix": str(outdir / stem),
                 "methylation_records_plotted": len(methyl),
                 "nearby_genes_plotted": len(nearby),
