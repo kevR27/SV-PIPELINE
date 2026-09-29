@@ -48,6 +48,7 @@ SAMPLOT_LONG_READ_MIN = config.get("samplot_long_read_min_length", 1000)
 SAMPLOT_ZOOM_BP = config.get("samplot_zoom_bp", 20000)
 SAMPLOT_WINDOW_BP = config.get("samplot_window_bp", 5000)
 SAMPLOT_LARGE_SV_THRESHOLD = config.get("samplot_large_sv_threshold", 1000000)
+SV_GENE_BREAKPOINT_TOLERANCE = config.get("sv_gene_breakpoint_tolerance", 10000)
 
 
 def integration_source_files(sample):
@@ -198,6 +199,10 @@ rule all:
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
             sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.tsv",
+            sample=POSTPROCESS_SAMPLES,
         )
 
 
@@ -284,7 +289,7 @@ rule integrate_candidate_context:
 
 rule annotate_mitocarta_context:
     input:
-        integrated=rules.integrate_candidate_context.output.tsv,
+        integrated=rules.rank_sv_gene_events.output.tsv,
         mitocarta=MITOCARTA_FILE,
         pathways=MITOCARTA_PATHWAYS_FILE,
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
@@ -303,6 +308,29 @@ rule annotate_mitocarta_context:
             --pathways-gmx {input.pathways} \
             --ranking {input.ranking} \
             --output {output.tsv}
+
+        test -s {output.tsv}
+        """
+
+
+rule rank_sv_gene_events:
+    input:
+        integrated=rules.annotate_mitocarta_context.output.tsv,
+        script=SCRIPTS + "/rank_sv_gene_events.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.tsv"
+    params:
+        breakpoint_tolerance=SV_GENE_BREAKPOINT_TOLERANCE
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        python {input.script} \
+            --input {input.integrated} \
+            --output {output.tsv} \
+            --breakpoint-gene-tolerance {params.breakpoint_tolerance}
 
         test -s {output.tsv}
         """
@@ -366,6 +394,7 @@ def existing_plot_inputs(wc):
 rule thesis_plots_sample:
     input:
         integrated=rules.annotate_mitocarta_context.output.tsv,
+        candidate_events=rules.rank_sv_gene_events.output.tsv,
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
         available=existing_plot_inputs,
         plot_scripts=[
@@ -375,6 +404,7 @@ rule thesis_plots_sample:
             PLOTS + "/plot_caller_concordance.py",
             PLOTS + "/plot_sv_landscape.py",
             PLOTS + "/plot_large_sv_overview.py",
+            PLOTS + "/plot_large_complex_candidates.py",
             PLOTS + "/plot_needlr_population.py",
             PLOTS + "/plot_candidate_evidence_matrix.py",
             PLOTS + "/plot_candidate_genes.py",
@@ -419,6 +449,7 @@ rule thesis_plots_sample:
             --root {PATH} \
             --sample {wildcards.sample} \
             --platform lrs \
+            --candidate-table {input.candidate_events} \
             --methylation-units {params.methylation_units} \
             {params.gene_bed_arg} \
             {params.methylation_arg} \
