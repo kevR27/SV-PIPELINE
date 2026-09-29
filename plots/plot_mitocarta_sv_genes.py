@@ -28,7 +28,7 @@ def main():
 
     id_col = first_existing(df, ["SV_ID", "ID"])
     gene_col = first_existing(df, ["GENES", "ANNotsv_Gene", "Gene", "GENE"])
-    score_col = first_existing(df, ["ALLELE_RESEARCH_SCORE", "INTEGRATED_DISCOVERY_SCORE", "PHENOTYPE_SCORE"])
+    score_col = first_existing(df, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
     panel_col = first_existing(df, ["PANEL_STATUS", "panel_gene"])
     if id_col is None or gene_col is None or "MITOCARTA_ENCODING" not in df:
         raise ValueError("Input is not a MitoCarta-annotated integrated table.")
