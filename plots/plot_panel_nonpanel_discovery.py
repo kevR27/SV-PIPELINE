@@ -58,7 +58,7 @@ def main():
     panel_col = first_existing(df, ["PANEL_STATUS", "panel_gene"])
     pheno_col = first_existing(df, ["PHENOTYPE_SCORE", "phenotype_score"])
     disease_col = first_existing(df, ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"])
-    score_col = first_existing(df, ["ALLELE_RESEARCH_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score"])
+    score_col = first_existing(df, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
     if id_col is None or gene_col is None:
         raise ValueError("Input needs SV_ID and overlapping-gene columns.")
 
@@ -113,32 +113,56 @@ def main():
         for x in plot["category"]
     ]
 
-    fig, axes = plt.subplots(1, 2, figsize=(14.4, max(6.8, 0.55 * len(plot) + 2.6)))
-    ax1, ax2 = axes
-    y = np.arange(len(plot))
+    label_map = dict(zip(plot["category"], labels))
+    prioritized_categories = [
+        "PANEL_GENE",
+        "NONPANEL_HPO_AND_DISEASE",
+        "NONPANEL_HPO_ONLY",
+        "NONPANEL_DISEASE_ONLY",
+    ]
+    focused = plot[plot["category"].isin(prioritized_categories)].copy()
+    background = plot[~plot["category"].isin(prioritized_categories)].copy()
 
+    fig, axes = plt.subplots(1, 2, figsize=(14.6, 7.2))
+    ax1, ax2 = axes
+
+    y1 = np.arange(len(focused))
     width = 0.36
-    ax1.barh(y - width / 2, plot["unique_SVs"], height=width, label="Unique SVs")
-    ax1.barh(y + width / 2, plot["unique_genes"], height=width, label="Unique genes")
-    ax1.set_yticks(y)
-    ax1.set_yticklabels(labels)
+    ax1.barh(y1 - width / 2, focused["unique_SVs"], height=width, label="Unique SVs")
+    ax1.barh(y1 + width / 2, focused["unique_genes"], height=width, label="Unique genes")
+    ax1.set_yticks(y1)
+    ax1.set_yticklabels([label_map[x] for x in focused["category"]])
     ax1.set_xlabel("Count")
-    ax1.set_title("Distinct SVs and genes by discovery category")
+    ax1.set_title("Prioritized SV-gene discovery categories")
     ax1.legend(frameon=False)
     style_axis(ax1, "x")
+    for container in ax1.containers:
+        ax1.bar_label(container, fmt="%d", padding=3, fontsize=8)
 
-    ax2.barh(y, plot["SV_gene_pairs"])
-    ax2.set_yticks(y)
-    ax2.set_yticklabels(labels)
-    ax2.set_xlabel("SV-gene associations")
-    ax2.set_title("Number of explicit SV-gene pairs")
+    total_pairs = max(int(summary["SV_gene_pairs"].sum()), 1)
+    background = background.copy()
+    background["pair_percent"] = 100.0 * background["SV_gene_pairs"] / total_pairs
+    y2 = np.arange(len(background))
+    bars = ax2.barh(y2, background["pair_percent"])
+    ax2.set_yticks(y2)
+    ax2.set_yticklabels([label_map[x] for x in background["category"]])
+    ax2.set_xlabel("Share of all SV-gene rows (%)")
+    ax2.set_title("Background / unresolved annotation context")
     style_axis(ax2, "x")
+    for bar, (_, row) in zip(bars, background.iterrows()):
+        ax2.text(
+            bar.get_width(),
+            bar.get_y() + bar.get_height() / 2,
+            f"  {row['pair_percent']:.1f}%  (n={int(row['SV_gene_pairs']):,})",
+            va="center",
+            fontsize=8.5,
+        )
 
     fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
     fig.text(
         0.5,
         0.012,
-        "Categories are assigned at the SV-gene-pair level. HPO means a positive phenotype-relevance score; disease means positive curated gene-disease evidence. These categories prioritize follow-up and do not establish causality.",
+        "Left: categories with phenotype and/or curated disease relevance are shown on a linear count scale. Right: the large background/unresolved classes are shown as proportions so they do not visually suppress the prioritized categories. Categories do not establish causality.",
         ha="center",
         fontsize=9,
     )
