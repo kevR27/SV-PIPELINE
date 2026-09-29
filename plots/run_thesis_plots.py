@@ -74,6 +74,7 @@ def main():
         "integration": out / "10_integrated_evidence",
         "associations": out / "11_sv_gene_associations",
         "loci": out / "12_candidate_loci",
+        "mitochondrial": out / "14_mitochondrial_context",
     }
     for folder in folders.values():
         folder.mkdir(parents=True, exist_ok=True)
@@ -98,7 +99,10 @@ def main():
     integrated_base = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_analysis.tsv"
     integrated_extended = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_orthogonal_evidence.tsv"
     integrated_multimodal = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_multimodal_context.tsv"
-    if integrated_multimodal.exists():
+    integrated_mitocarta = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_mitocarta.tsv"
+    if integrated_mitocarta.exists():
+        integrated = integrated_mitocarta
+    elif integrated_multimodal.exists():
         integrated = integrated_multimodal
     elif integrated_extended.exists():
         integrated = integrated_extended
@@ -228,6 +232,14 @@ def main():
                     "--out-prefix", str(folders["integration"] / f"{s}_gene_multimodal_evidence"),
                 ],
                 [gene_summary],
+            ),
+            (
+                [
+                    py, str(HERE / "plot_mitocarta_sv_genes.py"),
+                    "--input", str(integrated),
+                    "--out-prefix", str(folders["mitochondrial"] / f"{s}_mitocarta_sv_genes"),
+                ],
+                [integrated],
             ),
         ]
     )
