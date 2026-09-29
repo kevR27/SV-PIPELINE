@@ -103,6 +103,15 @@ def main():
                 if g not in {"", ".", "nan", "None"}
             })
         ) or "."
+        row["_has_panel_event"] = (
+            group["PANEL_STATUS"]
+            .fillna("")
+            .astype(str)
+            .eq("PANEL_GENE")
+            .any()
+            if "PANEL_STATUS" in group.columns
+            else False
+        )
         collapsed.append(row)
 
     cand = pd.DataFrame(collapsed)
@@ -125,9 +134,33 @@ def main():
                 ["_score", "_population_rank", "_callers"],
                 ascending=[False, False, False],
             )
-            selected_indices.extend(
-                sub.head(per_bucket).index.tolist()
-            )
+
+            if "_has_panel_event" in sub.columns and per_bucket >= 2:
+                panel_sub = sub[sub["_has_panel_event"].eq(True)]
+                nonpanel_sub = sub[~sub["_has_panel_event"].eq(True)]
+
+                chosen = []
+                if not panel_sub.empty:
+                    chosen.extend(panel_sub.head(1).index.tolist())
+                if not nonpanel_sub.empty:
+                    chosen.extend(
+                        nonpanel_sub.head(
+                            per_bucket - len(chosen)
+                        ).index.tolist()
+                    )
+
+                if len(chosen) < per_bucket:
+                    chosen.extend(
+                        sub.loc[~sub.index.isin(chosen)]
+                        .head(per_bucket - len(chosen))
+                        .index.tolist()
+                    )
+
+                selected_indices.extend(chosen)
+            else:
+                selected_indices.extend(
+                    sub.head(per_bucket).index.tolist()
+                )
 
         selected_indices = list(dict.fromkeys(selected_indices))
 
@@ -238,6 +271,7 @@ def main():
                 "gene_relationship": row.get("SV_GENE_RELATIONSHIP", "."),
                 "sv_gene_count": row.get("SV_GENE_COUNT", "."),
                 "population_tier": row.get("EVENT_POPULATION_TIER", "."),
+                "contains_panel_gene": "YES" if bool(row.get("_has_panel_event", False)) else "NO",
                 "plot_scope": scope,
                 "output": output,
             })
