@@ -190,7 +190,7 @@ rule all:
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv",
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
@@ -486,7 +486,7 @@ COHORT_PLOT_OUTPUTS = (
 rule cohort_thesis_comparison:
     input:
         tables=expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
             sample=POSTPROCESS_SAMPLES,
         ),
         script=PLOTS + "/plot_cohort_sv_comparison.py"
