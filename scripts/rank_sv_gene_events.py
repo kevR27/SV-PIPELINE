@@ -585,6 +585,21 @@ def main():
         + 1
     )
 
+    panel_group = (
+        out["PANEL_STATUS"]
+        if "PANEL_STATUS" in out
+        else pd.Series("UNSPECIFIED", index=out.index)
+    )
+    out["_PANEL_GROUP_FOR_RANK"] = panel_group.fillna("UNSPECIFIED").astype(str)
+    out["EVENT_RANK_WITHIN_BUCKET_PANEL_STATUS"] = (
+        out.groupby(
+            ["EVENT_REVIEW_BUCKET", "_PANEL_GROUP_FOR_RANK"]
+        )
+        .cumcount()
+        + 1
+    )
+    out = out.drop(columns=["_PANEL_GROUP_FOR_RANK"])
+
     out["EVENT_RANKING_MODEL"] = (
         "geneRelevance_phenoPlusDisease__"
         "mechanism_population_callers__v1"
