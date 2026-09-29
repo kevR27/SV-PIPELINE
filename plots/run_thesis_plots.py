@@ -78,6 +78,7 @@ def main():
         "qc": out / "01_qc",
         "caller": out / "02_caller_concordance",
         "landscape": out / "03_sv_landscape",
+        "large_sv": out / "03_sv_landscape" / "very_large_sv",
         "population": out / "04_population_frequency",
         "candidates": out / "05_candidate_prioritization",
         "phenotype": out / "06_phenotype",
@@ -187,6 +188,14 @@ def main():
                     py, str(HERE / "plot_sv_landscape.py"),
                     "--input", str(integrated),
                     "--out-prefix", str(folders["landscape"] / f"{s}_sv_landscape"),
+                ],
+                [integrated],
+            ),
+            (
+                [
+                    py, str(HERE / "plot_large_sv_overview.py"),
+                    "--input", str(integrated),
+                    "--out-prefix", str(folders["large_sv"] / f"{s}_very_large_sv"),
                 ],
                 [integrated],
             ),
