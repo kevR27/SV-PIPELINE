@@ -27,7 +27,7 @@ def parse_args():
     p.add_argument("--gene-bed", required=True, help="BED with chrom, start, end, gene label")
     p.add_argument("--methylation-bed", default=None, help="Optional tabix-indexed modkit bedMethyl")
     p.add_argument("--out-dir", required=True)
-    p.add_argument("--top-n", type=int, default=8)
+    p.add_argument("--top-n", type=int, default=12)
     p.add_argument("--flank", type=int, default=50000)
     p.add_argument("--title-prefix", default="Candidate locus")
     return p.parse_args()
@@ -125,7 +125,7 @@ def main():
     start_col = first_existing(df, ["START", "POS"])
     end_col = first_existing(df, ["END"])
     type_col = first_existing(df, ["SVTYPE", "SV_type"])
-    score_col = first_existing(df, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
+    score_col = first_existing(df, ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
     af_col = first_existing(df, ["NEEDLR_AF"])
 
@@ -154,9 +154,50 @@ def main():
             ascending=[False, False, False, True, True],
         )
         .drop_duplicates([id_col, gene_col], keep="first")
-        .head(args.top_n)
         .copy()
     )
+
+    bucket_col = first_existing(work, ["EVENT_REVIEW_BUCKET"])
+    bucket_rank_col = first_existing(work, ["EVENT_RANK_WITHIN_BUCKET"])
+    bucket_order = [
+        "BREAKPOINT_GENE_CANDIDATE",
+        "LARGE_CNV_GENE_CANDIDATE",
+        "VERY_LARGE_CNV_GENE_CONTEXT",
+        "INSERTION_GENE_CANDIDATE",
+        "SMALL_MEDIUM_CNV_GENE_CANDIDATE",
+        "LARGE_COMPLEX_INTERVAL_CONTEXT",
+    ]
+
+    if bucket_col:
+        work["_bucket_rank"] = (
+            numeric(work[bucket_rank_col]).fillna(np.inf)
+            if bucket_rank_col
+            else np.inf
+        )
+        per_bucket = max(1, args.top_n // len(bucket_order))
+        selected_indices = []
+
+        for bucket in bucket_order:
+            sub = work[work[bucket_col].eq(bucket)].sort_values(
+                ["_bucket_rank", "_priority", "_population_rank", "_caller_count"],
+                ascending=[True, False, False, False],
+            )
+            selected_indices.extend(sub.head(per_bucket).index.tolist())
+
+        selected_indices = list(dict.fromkeys(selected_indices))
+
+        if len(selected_indices) < args.top_n:
+            remainder = work.loc[~work.index.isin(selected_indices)].sort_values(
+                ["_priority", "_population_rank", "_caller_count"],
+                ascending=[False, False, False],
+            )
+            selected_indices.extend(
+                remainder.head(args.top_n - len(selected_indices)).index.tolist()
+            )
+
+        work = work.loc[selected_indices].head(args.top_n).copy()
+    else:
+        work = work.head(args.top_n).copy()
 
     outdir = Path(args.out_dir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -173,7 +214,17 @@ def main():
         svtype = str(row["_svtype"])
         is_breakpoint = svtype in {"INS", "BND"} or end == start
 
-        sv_span = abs(end - start)
+        event_span_col = first_existing(work, ["SV_EVENT_SPAN_BP"])
+        event_span = (
+            numeric(pd.Series([row[event_span_col]])).iloc[0]
+            if event_span_col
+            else np.nan
+        )
+        sv_span = (
+            float(event_span)
+            if pd.notna(event_span)
+            else abs(end - start)
+        )
         target_gene = genes[
             genes["chrom"].eq(chrom)
             & genes["gene"].astype(str).eq(gene)
@@ -209,7 +260,7 @@ def main():
         fig, axes = plt.subplots(
             3,
             1,
-            figsize=(14.5, 9.4),
+            figsize=(14.5, 10.4),
             gridspec_kw={"height_ratios": [1.1, 1.5, 1.25]},
         )
         ax_sv, ax_gene, ax_ev = axes
@@ -287,12 +338,16 @@ def main():
 
         evidence = [
             ("Overlapping gene", gene),
-            ("Gene-discovery score", f"{row['_priority']:.3g}" if pd.notna(row["_priority"]) else "."),
+            ("Gene/event relevance", f"{row['_priority']:.3g}" if pd.notna(row["_priority"]) else "."),
+            ("Event bucket", compact_text(evidence_value(row, ["EVENT_REVIEW_BUCKET"]), 52, 2)),
+            ("Gene relationship", compact_text(evidence_value(row, ["SV_GENE_RELATIONSHIP"]), 52, 2)),
+            ("SV gene count", evidence_value(row, ["SV_GENE_COUNT"])),
             ("Callers", evidence_value(row, ["CALLERS"])),
             ("Caller count", evidence_value(row, ["CALLER_COUNT", "SUPP"])),
             ("Read support", evidence_value(row, ["CALLER_READ_SUPPORT"])),
             ("needLR AF", evidence_value(row, ["NEEDLR_AF"])),
             ("needLR status", evidence_value(row, ["NEEDLR_STATUS"])),
+            ("Population tier", evidence_value(row, ["EVENT_POPULATION_TIER"])),
             ("Panel status", evidence_value(row, ["PANEL_STATUS"])),
             ("Phenotype score", evidence_value(row, ["PHENOTYPE_SCORE"])),
             ("Gene-disease evidence", compact_text(evidence_value(row, ["GENE_DISEASE_EVIDENCE_LEVEL", "GENCC"]))),
@@ -305,8 +360,8 @@ def main():
             ("Local mean 5mC", evidence_value(row, ["METHYLATION_5MC_MEAN_PERCENT"])),
         ]
         ax_ev.axis("off")
-        left = evidence[:9]
-        right = evidence[9:]
+        left = evidence[:11]
+        right = evidence[11:]
         for col_x, block in [(0.01, left), (0.52, right)]:
             y = 0.96
             for label, value in block:
