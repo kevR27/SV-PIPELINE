@@ -182,7 +182,37 @@ def main():
                 ["_bucket_rank", "_priority", "_population_rank", "_caller_count"],
                 ascending=[True, False, False, False],
             )
-            selected_indices.extend(sub.head(per_bucket).index.tolist())
+
+            if "PANEL_STATUS" in sub.columns and per_bucket >= 2:
+                panel_sub = sub[
+                    sub["PANEL_STATUS"].fillna("").astype(str).eq("PANEL_GENE")
+                ]
+                nonpanel_sub = sub[
+                    ~sub.index.isin(panel_sub.index)
+                ]
+
+                chosen = []
+                if not panel_sub.empty:
+                    chosen.extend(panel_sub.head(1).index.tolist())
+                if not nonpanel_sub.empty:
+                    chosen.extend(
+                        nonpanel_sub.head(
+                            per_bucket - len(chosen)
+                        ).index.tolist()
+                    )
+
+                if len(chosen) < per_bucket:
+                    chosen.extend(
+                        sub.loc[~sub.index.isin(chosen)]
+                        .head(per_bucket - len(chosen))
+                        .index.tolist()
+                    )
+
+                selected_indices.extend(chosen)
+            else:
+                selected_indices.extend(
+                    sub.head(per_bucket).index.tolist()
+                )
 
         selected_indices = list(dict.fromkeys(selected_indices))
 
