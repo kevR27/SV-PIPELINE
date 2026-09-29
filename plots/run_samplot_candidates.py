@@ -40,7 +40,7 @@ def main():
     p.add_argument("--reference", required=True)
     p.add_argument("--sample", required=True)
     p.add_argument("--out-dir", required=True)
-    p.add_argument("--top-n", type=int, default=8)
+    p.add_argument("--top-n", type=int, default=12)
     p.add_argument("--min-mapq", type=int, default=20)
     p.add_argument("--long-read-min", type=int, default=1000)
     p.add_argument("--zoom", type=int, default=20000)
@@ -57,7 +57,7 @@ def main():
     chr2_col = first_existing(df, ["CHR2"])
     pos2_col = first_existing(df, ["POS2"])
     type_col = first_existing(df, ["SVTYPE", "SV_type"])
-    score_col = first_existing(df, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
+    score_col = first_existing(df, ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
     af_col = first_existing(df, ["NEEDLR_AF"])
     if None in (id_col, chrom_col, start_col, type_col):
@@ -75,19 +75,81 @@ def main():
     work["_end"] = pd.to_numeric(work[end_col], errors="coerce") if end_col else work["_start"]
     work["_end"] = work["_end"].fillna(work["_start"])
 
+    bucket_col = first_existing(work, ["EVENT_REVIEW_BUCKET"])
+    bucket_rank_col = first_existing(work, ["EVENT_RANK_WITHIN_BUCKET"])
+
     collapsed = []
     for sv_id, group in work.groupby(id_col, sort=False):
+        sort_cols = ["_score", "_population_rank", "_callers"]
+        ascending = [False, False, False]
+
+        if bucket_rank_col:
+            group = group.copy()
+            group["_event_bucket_rank"] = pd.to_numeric(
+                group[bucket_rank_col],
+                errors="coerce",
+            ).fillna(float("inf"))
+            sort_cols = ["_event_bucket_rank"] + sort_cols
+            ascending = [True] + ascending
+
         row = group.sort_values(
+            sort_cols,
+            ascending=ascending,
+        ).iloc[0].copy()
+        row["_genes"] = ";".join(
+            sorted({
+                g
+                for g in group["_gene"]
+                if g not in {"", ".", "nan", "None"}
+            })
+        ) or "."
+        collapsed.append(row)
+
+    cand = pd.DataFrame(collapsed)
+
+    bucket_order = [
+        "BREAKPOINT_GENE_CANDIDATE",
+        "LARGE_CNV_GENE_CANDIDATE",
+        "VERY_LARGE_CNV_GENE_CONTEXT",
+        "INSERTION_GENE_CANDIDATE",
+        "SMALL_MEDIUM_CNV_GENE_CANDIDATE",
+        "LARGE_COMPLEX_INTERVAL_CONTEXT",
+    ]
+
+    if bucket_col and bucket_col in cand.columns:
+        per_bucket = max(1, args.top_n // len(bucket_order))
+        selected_indices = []
+
+        for bucket in bucket_order:
+            sub = cand[cand[bucket_col].eq(bucket)].sort_values(
+                ["_score", "_population_rank", "_callers"],
+                ascending=[False, False, False],
+            )
+            selected_indices.extend(
+                sub.head(per_bucket).index.tolist()
+            )
+
+        selected_indices = list(dict.fromkeys(selected_indices))
+
+        if len(selected_indices) < args.top_n:
+            remainder = cand.loc[
+                ~cand.index.isin(selected_indices)
+            ].sort_values(
+                ["_score", "_population_rank", "_callers"],
+                ascending=[False, False, False],
+            )
+            selected_indices.extend(
+                remainder.head(
+                    args.top_n - len(selected_indices)
+                ).index.tolist()
+            )
+
+        cand = cand.loc[selected_indices].head(args.top_n)
+    else:
+        cand = cand.sort_values(
             ["_score", "_population_rank", "_callers"],
             ascending=[False, False, False],
-        ).iloc[0].copy()
-        row["_genes"] = ";".join(sorted({g for g in group["_gene"] if g not in {"", ".", "nan", "None"}})) or "."
-        collapsed.append(row)
-    cand = pd.DataFrame(collapsed)
-    cand = cand.sort_values(
-        ["_score", "_population_rank", "_callers"],
-        ascending=[False, False, False],
-    ).head(args.top_n)
+        ).head(args.top_n)
 
     outdir = Path(args.out_dir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -172,6 +234,10 @@ def main():
                 "score_field": score_col or ".",
                 "needLR_AF": row["_af"] if pd.notna(row["_af"]) else ".",
                 "caller_count": row["_callers"],
+                "event_bucket": row.get("EVENT_REVIEW_BUCKET", "."),
+                "gene_relationship": row.get("SV_GENE_RELATIONSHIP", "."),
+                "sv_gene_count": row.get("SV_GENE_COUNT", "."),
+                "population_tier": row.get("EVENT_POPULATION_TIER", "."),
                 "plot_scope": scope,
                 "output": output,
             })
