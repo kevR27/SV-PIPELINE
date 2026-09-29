@@ -103,20 +103,44 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--integrated", required=True)
     p.add_argument("--mitocarta", required=True)
+    p.add_argument("--ranking", required=True, help="*_ranked_candidates.tsv with ON-anchor HPO evidence")
     p.add_argument("--output", required=True)
     args = p.parse_args()
 
     sv = pd.read_csv(args.integrated, sep="\t", dtype=str, low_memory=False)
     gene_col = first_existing(sv, ["GENES", "ANNotsv_Gene", "Gene", "GENE"])
-    pheno_col = first_existing(sv, ["PHENOTYPE_SCORE", "phenotype_score"])
+    panel_col = first_existing(sv, ["PANEL_STATUS", "panel_gene"])
     if gene_col is None:
         raise ValueError("Integrated table needs an overlapping-gene column.")
+
+    ranking = pd.read_csv(args.ranking, sep="\t", dtype=str, low_memory=False)
+    ranking_gene_col = first_existing(ranking, ["gene", "Gene", "GENE", "SYMBOL"])
+    anchor_col = first_existing(
+        ranking,
+        ["optic_neuropathy_anchor_HPO_count", "anchor_HPO_count"],
+    )
+    if ranking_gene_col is None:
+        raise ValueError("Ranking table needs a gene column.")
+
+    anchor_by_gene = {}
+    if anchor_col:
+        for _, row in ranking.iterrows():
+            gene = str(row[ranking_gene_col]).upper().strip()
+            try:
+                count = int(float(row[anchor_col]))
+            except Exception:
+                count = 0
+            anchor_by_gene[gene] = count
 
     mito = read_mitocarta(args.mitocarta)
 
     out = sv.copy()
     genes = out[gene_col].fillna(".").astype(str).str.upper().str.strip()
-    phenotype = pd.to_numeric(out[pheno_col], errors="coerce").fillna(0) if pheno_col else pd.Series(0, index=out.index)
+    if panel_col:
+        panel_text = out[panel_col].fillna("").astype(str).str.upper().str.strip()
+        panel_gene = panel_text.isin(["PANEL_GENE", "YES", "TRUE", "1"])
+    else:
+        panel_gene = pd.Series(False, index=out.index)
 
     defaults = {
         "MITOCARTA_STATUS": "NO",
@@ -127,7 +151,9 @@ def main():
         "MITOCARTA_SUBCOMPARTMENT": ".",
         "MITOCARTA_MITOPATHWAYS": ".",
         "MITOCARTA_TOP_LEVEL_PATHWAYS": ".",
+        "MITO_ON_ANCHOR_HPO_COUNT": 0,
         "MITO_ON_CONTEXT": "NO",
+        "MITO_ON_CONTEXT_SOURCE": "NONE",
         "MITO_ON_ASSOCIATION_CLASS": "NOT_MITOCARTA",
     }
     for col, value in defaults.items():
@@ -151,20 +177,29 @@ def main():
         top = sorted({x.split(">", 1)[0].strip() for x in pathways if x})
         out.at[idx, "MITOCARTA_TOP_LEVEL_PATHWAYS"] = ";".join(top) if top else "."
 
-        on_context = phenotype.loc[idx] > 0
+        anchor_count = int(anchor_by_gene.get(gene, 0))
+        is_panel = bool(panel_gene.loc[idx])
+        on_context = is_panel or anchor_count > 0
+
+        out.at[idx, "MITO_ON_ANCHOR_HPO_COUNT"] = anchor_count
         out.at[idx, "MITO_ON_CONTEXT"] = "YES" if on_context else "NO"
-        if gene in MTDNA_PROTEIN_GENES:
-            out.at[idx, "MITO_ON_ASSOCIATION_CLASS"] = (
-                "MTDNA_GENE_WITH_ON_PHENOTYPE_CONTEXT"
-                if on_context
-                else "MTDNA_GENE_WITHOUT_ON_PHENOTYPE_CONTEXT"
-            )
+
+        if is_panel and anchor_count > 0:
+            context_source = "ON_PANEL_AND_ANCHOR_HPO"
+        elif is_panel:
+            context_source = "ON_PANEL_GENE"
+        elif anchor_count > 0:
+            context_source = "ON_ANCHOR_HPO"
         else:
-            out.at[idx, "MITO_ON_ASSOCIATION_CLASS"] = (
-                "NUCLEAR_MITO_GENE_WITH_ON_PHENOTYPE_CONTEXT"
-                if on_context
-                else "NUCLEAR_MITO_GENE_WITHOUT_ON_PHENOTYPE_CONTEXT"
-            )
+            context_source = "NONE"
+        out.at[idx, "MITO_ON_CONTEXT_SOURCE"] = context_source
+
+        encoding = "MTDNA" if gene in MTDNA_PROTEIN_GENES else "NUCLEAR_MITO"
+        out.at[idx, "MITO_ON_ASSOCIATION_CLASS"] = (
+            f"{encoding}_{context_source}"
+            if on_context
+            else f"{encoding}_NO_ON_SPECIFIC_CONTEXT"
+        )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
