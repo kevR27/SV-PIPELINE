@@ -68,8 +68,10 @@ def main():
     gene_order = (
         work.groupby("_gene")["_priority"].max().sort_values(ascending=False).index.astype(str).tolist()
     )
-    sv_y = {sv: y for y, sv in enumerate(np.linspace(len(sv_order)-1, 0, len(sv_order)))}
-    gene_y = {gene: y for y, gene in enumerate(np.linspace(len(gene_order)-1, 0, len(gene_order)))}
+    sv_positions = np.linspace(len(sv_order) - 1, 0, len(sv_order))
+    gene_positions = np.linspace(len(gene_order) - 1, 0, len(gene_order))
+    sv_y = dict(zip(sv_order, sv_positions))
+    gene_y = dict(zip(gene_order, gene_positions))
 
     height = max(7.5, 0.36 * max(len(sv_order), len(gene_order)) + 2.5)
     fig, ax = plt.subplots(figsize=(15.5, height))
