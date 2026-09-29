@@ -87,6 +87,7 @@ def main():
             "samplot", "plot",
             "-n", args.sample,
             "-b", args.bam,
+            "-r", args.reference,
             "-o", str(output),
             "-c", str(chrom),
             "-s", str(int(start)),
