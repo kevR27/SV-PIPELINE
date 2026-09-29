@@ -265,10 +265,25 @@ def main() -> int:
                 if sv_id:
                     data["sv_ids"].add(sv_id)
 
-                    svtype = first(
-                        row,
-                        ["SV_type", "SVTYPE", "svtype"],
-                    ).upper()
+                    info_text = first(row, ["INFO"])
+                    info_svtype = ""
+                    if info_text:
+                        match = re.search(
+                            r"(?:^|;)SVTYPE=([^;]+)",
+                            info_text,
+                            flags=re.IGNORECASE,
+                        )
+                        if match:
+                            info_svtype = match.group(1).upper()
+
+                    svtype = (
+                        info_svtype
+                        or first(
+                            row,
+                            ["SVTYPE", "SV_type", "svtype"],
+                        ).upper()
+                    )
+
                     raw_svlen = first(
                         row,
                         ["SV_length", "SVLEN", "svlen"],
