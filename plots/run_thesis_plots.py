@@ -46,11 +46,25 @@ def first_glob(root: Path, patterns: list[str]) -> Path | None:
 def run(command: list[str], required_paths: list[Path], dry_run: bool):
     missing = [p for p in required_paths if not p.exists()]
     if missing:
-        print("[SKIP] missing:", ", ".join(str(p) for p in missing))
+        print("[SKIP] missing:", ", ".join(str(p) for p in missing), flush=True)
         return
-    print("[RUN]", " ".join(command))
-    if not dry_run:
+
+    label = Path(command[1]).name if len(command) > 1 else command[0]
+    print(f"[RUN] {label}", flush=True)
+    print("      " + " ".join(command), flush=True)
+
+    if dry_run:
+        return
+
+    try:
         subprocess.run(command, check=True)
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"[ERROR] plot failed: {label}; exit_code={exc.returncode}",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise
 
 
 def main():
