@@ -126,6 +126,24 @@ orthogonal_longphase_breakpoint_tolerance: 500
 thesis_methylation_region: null
 
 # ============================================================
+# MITOCARTA / MITOCHONDRIAL CONTEXT
+# ============================================================
+
+# Official Human MitoCarta3.0 workbook. Download from the Broad Institute
+# MitoCarta3.0 resource into this local path before running the annotation.
+mitocarta_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/mitocarta/Human.MitoCarta3.0.xls"
+
+# ============================================================
+# SAMPLOT READ-LEVEL BREAKPOINT EVIDENCE
+# ============================================================
+
+samplot_top_n: 8
+samplot_min_mapq: 20
+samplot_long_read_min_length: 1000
+samplot_zoom_bp: 20000
+samplot_large_sv_threshold: 1000000
+
+# ============================================================
 # MONARCH / HPO DISCOVERY
 # ============================================================
 
