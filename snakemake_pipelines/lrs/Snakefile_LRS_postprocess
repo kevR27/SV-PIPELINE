@@ -40,6 +40,7 @@ ORTHOGONAL_LONGPHASE_BP_TOL = config.get(
 THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
 GENE_BED = config.get("gene_bed")
 MITOCARTA_FILE = config.get("mitocarta_file")
+MITOCARTA_PATHWAYS_FILE = config.get("mitocarta_pathways_file")
 
 SAMPLOT_TOP_N = config.get("samplot_top_n", 8)
 SAMPLOT_MIN_MAPQ = config.get("samplot_min_mapq", 20)
@@ -285,6 +286,7 @@ rule annotate_mitocarta_context:
     input:
         integrated=rules.integrate_candidate_context.output.tsv,
         mitocarta=MITOCARTA_FILE,
+        pathways=MITOCARTA_PATHWAYS_FILE,
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         script=SCRIPTS + "/annotate_mitocarta_context.py"
     output:
@@ -298,6 +300,7 @@ rule annotate_mitocarta_context:
         python {input.script} \
             --integrated {input.integrated} \
             --mitocarta {input.mitocarta} \
+            --pathways-gmx {input.pathways} \
             --ranking {input.ranking} \
             --output {output.tsv}
 
