@@ -408,6 +408,7 @@ rule thesis_plots_sample:
             PLOTS + "/plot_needlr_population.py",
             PLOTS + "/plot_candidate_evidence_matrix.py",
             PLOTS + "/plot_candidate_genes.py",
+            PLOTS + "/plot_gene_sv_spectrum.py",
             PLOTS + "/plot_panel_nonpanel_discovery.py",
             PLOTS + "/plot_sv_gene_associations.py",
             PLOTS + "/plot_sv_gene_network.py",
