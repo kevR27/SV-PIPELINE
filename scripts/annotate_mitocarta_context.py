@@ -267,6 +267,10 @@ def main():
             anchor_by_gene[gene] = count
 
     mito, source_sheet, source_header = read_mitocarta(args.mitocarta)
+    workbook_pathways_by_gene = {
+        gene: split_pathways(value)
+        for gene, value in mito["MITOCARTA_MITOPATHWAYS"].items()
+    }
     gmx = read_gmx(args.pathways_gmx)
 
     # GMX is a fallback/augmentation. Preserve hierarchical workbook paths
@@ -340,16 +344,12 @@ def main():
             ";".join(top) if top else "."
         )
 
-        workbook_original = split_pathways(
-            read_mitocarta_path := rec["MITOCARTA_MITOPATHWAYS"]
-        )
-        # If the gene is in the GMX and pathways are present, the final value
-        # may be workbook, GMX, or a union of both.
+        workbook_original = workbook_pathways_by_gene.get(gene, [])
         if gene in gmx and workbook_original:
-            out.at[idx, "MITOCARTA_PATHWAY_SOURCE"] = "WORKBOOK_OR_GMX"
+            out.at[idx, "MITOCARTA_PATHWAY_SOURCE"] = "WORKBOOK_AND_GMX"
         elif gene in gmx:
             out.at[idx, "MITOCARTA_PATHWAY_SOURCE"] = "GMX"
-        elif pathways:
+        elif workbook_original:
             out.at[idx, "MITOCARTA_PATHWAY_SOURCE"] = "WORKBOOK"
 
         anchor_count = int(anchor_by_gene.get(gene, 0))
