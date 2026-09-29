@@ -56,7 +56,7 @@ def main():
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
     score_col = first_existing(
         df,
-        ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"],
+        ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"],
     )
     pheno_col = first_existing(df, ["PHENOTYPE_SCORE", "phenotype_score"])
     disease_col = first_existing(df, ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"])
@@ -75,6 +75,15 @@ def main():
     work["_svlen"] = abs_svlen(work).fillna(50).clip(lower=50)
     work["_svtype"] = normalize_svtype(work[type_col]) if type_col else "OTHER"
     work["_af"] = numeric(work[af_col]) if af_col else np.nan
+    relationship_col = first_existing(work, ["SV_GENE_RELATIONSHIP"])
+    work["_interval_context_only"] = (
+        work[relationship_col]
+        .fillna("")
+        .astype(str)
+        .eq("INTERVAL_CONTEXT_ONLY")
+        if relationship_col
+        else False
+    )
 
     if panel_col:
         ptxt = work[panel_col].fillna("").astype(str).str.upper().str.strip()
@@ -132,15 +141,32 @@ def main():
     edge = np.where(work["_orthogonal"], "black", "white")
     colors = [SVTYPE_COLORS.get(x, "#999999") for x in work["_svtype"]]
 
+    directed = ~work["_interval_context_only"]
+    interval_only = work["_interval_context_only"]
+
     ax1.scatter(
-        work["_caller_count"],
-        work["_priority"],
-        s=sizes,
-        c=colors,
-        edgecolors=edge,
-        linewidths=np.where(work["_orthogonal"], 1.3, 0.5),
+        work.loc[directed, "_caller_count"],
+        work.loc[directed, "_priority"],
+        s=sizes[directed],
+        c=np.asarray(colors)[directed],
+        edgecolors=np.asarray(edge)[directed],
+        linewidths=np.where(work.loc[directed, "_orthogonal"], 1.3, 0.5),
         alpha=0.88,
+        label="Gene-directed / dosage / breakpoint",
     )
+    if interval_only.any():
+        ax1.scatter(
+            work.loc[interval_only, "_caller_count"],
+            work.loc[interval_only, "_priority"],
+            s=sizes[interval_only],
+            facecolors="none",
+            edgecolors="#666666",
+            linewidths=1.0,
+            marker="o",
+            alpha=0.65,
+            label="INV/BND interval context only",
+        )
+    ax1.legend(frameon=False, fontsize=7.5, loc="best")
     label_rows = (
         work.sort_values(["_priority", "_phenotype", "_disease", "_caller_count"], ascending=False)
         .drop_duplicates("_gene")
@@ -161,15 +187,26 @@ def main():
     ax1.set_title("Technical support versus candidate priority")
     style_axis(ax1, "both")
 
+    panel_colors = np.where(work["_panel"], "#0072B2", "#E69F00")
     ax2.scatter(
-        work["_phenotype"],
-        work["_disease"],
-        s=sizes,
-        c=np.where(work["_panel"], "#0072B2", "#E69F00"),
-        edgecolors=np.where(work["_path_db"], "black", "white"),
-        linewidths=np.where(work["_path_db"], 1.3, 0.5),
+        work.loc[directed, "_phenotype"],
+        work.loc[directed, "_disease"],
+        s=sizes[directed],
+        c=panel_colors[directed],
+        edgecolors=np.where(work.loc[directed, "_path_db"], "black", "white"),
+        linewidths=np.where(work.loc[directed, "_path_db"], 1.3, 0.5),
         alpha=0.88,
     )
+    if interval_only.any():
+        ax2.scatter(
+            work.loc[interval_only, "_phenotype"],
+            work.loc[interval_only, "_disease"],
+            s=sizes[interval_only],
+            facecolors="none",
+            edgecolors="#666666",
+            linewidths=1.0,
+            alpha=0.65,
+        )
     for j, (_, row) in enumerate(label_rows.iterrows()):
         ax2.annotate(
             str(row["_gene"]),
@@ -188,7 +225,7 @@ def main():
     fig.text(
         0.5,
         0.012,
-        "Each point is one master SV-gene pair. Point size scales with SV length. Left: color denotes SV type and black outline denotes an orthogonal match. Right: blue=panel gene, orange=non-panel gene, black outline=reported pathogenic-SV database evidence. Scores are research-prioritization variables, not pathogenicity probabilities.",
+        "Each point is one master SV-gene pair. Point size scales with SV span. Hollow grey points are genes that lie inside an INV/BND interval without breakpoint overlap and are retained as context, not direct disruption. Right: blue=panel gene, orange=non-panel gene. Scores are research-prioritization variables, not pathogenicity probabilities.",
         ha="center",
         fontsize=8.5,
         wrap=True,
