@@ -16,7 +16,9 @@ configfile: "config_lrs.yaml"
 # Plotting is intentionally excluded from this Snakefile's rule all.
 
 SAMPLES = list(config["samples"].keys())
+BAMS = config["samples"]
 PATH = config["path"].rstrip("/") + "/"
+REF = config["ref"]
 CONDAENV = config["condaenv"]
 
 SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
@@ -37,6 +39,13 @@ ORTHOGONAL_LONGPHASE_BP_TOL = config.get(
 
 THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
 GENE_BED = config.get("gene_bed")
+MITOCARTA_FILE = config.get("mitocarta_file")
+
+SAMPLOT_TOP_N = config.get("samplot_top_n", 8)
+SAMPLOT_MIN_MAPQ = config.get("samplot_min_mapq", 20)
+SAMPLOT_LONG_READ_MIN = config.get("samplot_long_read_min_length", 1000)
+SAMPLOT_ZOOM_BP = config.get("samplot_zoom_bp", 20000)
+SAMPLOT_LARGE_SV_THRESHOLD = config.get("samplot_large_sv_threshold", 1000000)
 
 
 def integration_source_files(sample):
@@ -114,6 +123,14 @@ def multimodal_context_table(sample):
     )
 
 
+def mitocarta_context_table(sample):
+    return (
+        PATH
+        + f"{sample}/gene_discovery/"
+        + f"{sample}_integrated_SV_gene_with_mitocarta.tsv"
+    )
+
+
 def sample_ready_for_postprocess(sample):
     """A sample is ready if the extended table already exists or all source files exist."""
     if os.path.exists(extended_table(sample)):
@@ -173,7 +190,11 @@ rule all:
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
             sample=POSTPROCESS_SAMPLES,
         )
 
@@ -259,9 +280,31 @@ rule integrate_candidate_context:
         """
 
 
-rule build_gene_multimodal_summary:
+rule annotate_mitocarta_context:
     input:
         integrated=rules.integrate_candidate_context.output.tsv,
+        mitocarta=MITOCARTA_FILE,
+        script=SCRIPTS + "/annotate_mitocarta_context.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        python {input.script} \
+            --integrated {input.integrated} \
+            --mitocarta {input.mitocarta} \
+            --output {output.tsv}
+
+        test -s {output.tsv}
+        """
+
+
+rule build_gene_multimodal_summary:
+    input:
+        integrated=rules.annotate_mitocarta_context.output.tsv,
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         script=PLOTS + "/build_gene_evidence_summary.py"
@@ -316,7 +359,7 @@ def existing_plot_inputs(wc):
 
 rule thesis_plots_sample:
     input:
-        integrated=rules.integrate_candidate_context.output.tsv,
+        integrated=rules.annotate_mitocarta_context.output.tsv,
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
         available=existing_plot_inputs,
         plot_scripts=[
@@ -338,6 +381,7 @@ rule thesis_plots_sample:
             PLOTS + "/plot_phasing_qc.py",
             PLOTS + "/plot_methylation.py",
             PLOTS + "/plot_gene_multimodal_summary.py",
+            PLOTS + "/plot_mitocarta_sv_genes.py",
             PLOTS + "/plot_cohort_sv_comparison.py",
             PLOTS + "/integrate_candidate_context.py",
         ]
@@ -375,13 +419,52 @@ rule thesis_plots_sample:
 
 
 
+rule samplot_candidate_breakpoints:
+    input:
+        integrated=rules.annotate_mitocarta_context.output.tsv,
+        bam=lambda wc: BAMS[wc.sample],
+        script=PLOTS + "/run_samplot_candidates.py"
+    output:
+        manifest=PATH + "{sample}/plots/13_breakpoint_evidence/samplot_manifest.tsv",
+        marker=touch(PATH + "{sample}/plots/13_breakpoint_evidence/.samplot.done")
+    params:
+        outdir=PATH + "{sample}/plots/13_breakpoint_evidence",
+        top_n=SAMPLOT_TOP_N,
+        min_mapq=SAMPLOT_MIN_MAPQ,
+        long_read_min=SAMPLOT_LONG_READ_MIN,
+        zoom=SAMPLOT_ZOOM_BP,
+        large_threshold=SAMPLOT_LARGE_SV_THRESHOLD
+    conda:
+        CONDAENV + "samplot.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p {params.outdir}
+
+        python {input.script} \
+            --input {input.integrated} \
+            --bam {input.bam} \
+            --reference {REF} \
+            --sample {wildcards.sample} \
+            --out-dir {params.outdir} \
+            --top-n {params.top_n} \
+            --min-mapq {params.min_mapq} \
+            --long-read-min {params.long_read_min} \
+            --zoom {params.zoom} \
+            --large-sv-threshold {params.large_threshold}
+
+        test -s {output.manifest}
+        touch {output.marker}
+        """
+
+
 def cohort_sample_args():
     return " ".join(
         "--sample-input "
         + shlex.quote(
             sample
             + "="
-            + multimodal_context_table(sample)
+            + mitocarta_context_table(sample)
         )
         for sample in POSTPROCESS_SAMPLES
     )
@@ -439,6 +522,10 @@ rule all_thesis_plots:
     input:
         expand(
             PATH + "{sample}/plots/.thesis_plots.done",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots/13_breakpoint_evidence/.samplot.done",
             sample=POSTPROCESS_SAMPLES,
         ),
         COHORT_PLOT_OUTPUTS
