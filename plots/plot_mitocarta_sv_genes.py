@@ -34,8 +34,38 @@ def main():
         raise ValueError("Input is not a MitoCarta-annotated integrated table.")
 
     work = df[df["MITOCARTA_ENCODING"].eq("NUCLEAR_MITOCHONDRIAL_GENE")].copy()
+
+    prefix = Path(args.out_prefix)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+
     if work.empty:
-        raise ValueError("No nuclear-encoded MitoCarta genes overlap master SVs.")
+        pd.DataFrame(columns=["SV_ID", "gene"]).to_csv(
+            prefix.with_name(prefix.name + "_sv_gene_pairs.tsv"), sep="\t", index=False
+        )
+        pd.DataFrame(columns=["gene", "unique_SVs"]).to_csv(
+            prefix.with_name(prefix.name + "_genes.tsv"), sep="\t", index=False
+        )
+        pd.DataFrame(columns=["pathway", "unique_SVs", "unique_genes"]).to_csv(
+            prefix.with_name(prefix.name + "_pathways.tsv"), sep="\t", index=False
+        )
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        ax.axis("off")
+        ax.text(
+            0.5, 0.55,
+            "No nuclear-encoded MitoCarta3.0 genes overlap the master SV-gene set",
+            ha="center", va="center", fontsize=13,
+        )
+        ax.text(
+            0.5, 0.42,
+            "This is a valid negative result, not a missing-data state.",
+            ha="center", va="center", fontsize=10,
+        )
+        fig.suptitle("MitoCarta3.0 context for SV-overlapping genes", fontsize=16, fontweight="bold")
+        outputs = save_figure(fig, prefix)
+        plt.close(fig)
+        print("[OK] no nuclear MitoCarta SV-gene overlaps")
+        print("[OK]", *outputs, sep="\n")
+        return
 
     work["_priority"] = numeric(work[score_col]).fillna(0) if score_col else 0
     if panel_col:
@@ -77,8 +107,6 @@ def main():
     else:
         pathway_summary = pd.DataFrame(columns=["pathway", "unique_SVs", "unique_genes"])
 
-    prefix = Path(args.out_prefix)
-    prefix.parent.mkdir(parents=True, exist_ok=True)
     pairs.to_csv(prefix.with_name(prefix.name + "_sv_gene_pairs.tsv"), sep="\t", index=False)
     gene_summary.to_csv(prefix.with_name(prefix.name + "_genes.tsv"), sep="\t", index=False)
     pathway_summary.to_csv(prefix.with_name(prefix.name + "_pathways.tsv"), sep="\t", index=False)
