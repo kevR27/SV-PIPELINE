@@ -371,6 +371,7 @@ rule thesis_plots_sample:
             PLOTS + "/plot_lrs_qc.py",
             PLOTS + "/plot_caller_concordance.py",
             PLOTS + "/plot_sv_landscape.py",
+            PLOTS + "/plot_large_sv_overview.py",
             PLOTS + "/plot_needlr_population.py",
             PLOTS + "/plot_candidate_evidence_matrix.py",
             PLOTS + "/plot_candidate_genes.py",
