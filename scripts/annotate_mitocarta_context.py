@@ -38,19 +38,34 @@ def read_mitocarta(path):
         raise FileNotFoundError(path)
 
     if path.suffix.lower() in {".xls", ".xlsx"}:
-        sheets = pd.read_excel(path, sheet_name=None, dtype=str)
+        book = pd.ExcelFile(path)
         candidates = []
-        for name, df in sheets.items():
-            symbol = first_existing(df, ["Symbol", "Gene Symbol", "GeneSymbol"])
-            pathway = first_existing(df, ["MitoPathways", "MitoPathway"])
-            compartment = first_existing(df, ["Sub-compartment", "Subcompartment", "SubMitoLocalization"])
-            if symbol is not None:
+        for name in book.sheet_names:
+            for header in range(0, 11):
+                try:
+                    sheet = pd.read_excel(book, sheet_name=name, header=header, dtype=str)
+                except Exception:
+                    continue
+                symbol = first_existing(sheet, ["Symbol", "Gene Symbol", "GeneSymbol"])
+                if symbol is None:
+                    continue
+                pathway = first_existing(sheet, ["MitoPathways", "MitoPathway"])
+                compartment = first_existing(sheet, ["Sub-compartment", "Subcompartment", "SubMitoLocalization"])
                 score = int(pathway is not None) + int(compartment is not None)
-                candidates.append((score, len(df), name, df))
+                # The curated human MitoCarta3.0 inventory contains 1,136 genes.
+                # Prefer that inventory sheet over auxiliary all-gene score sheets.
+                distance = abs(len(sheet) - 1136)
+                candidates.append((score, -distance, name, header, sheet))
+                break
         if not candidates:
             raise ValueError("No MitoCarta sheet with a Symbol column was found.")
         candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        df = candidates[0][3].copy()
+        df = candidates[0][4].copy()
+        if not 1000 <= len(df) <= 1300:
+            raise ValueError(
+                f"Selected MitoCarta sheet has {len(df)} rows; expected the curated "
+                "human inventory (~1,136 genes), not an auxiliary all-gene score sheet."
+            )
     else:
         sep = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
         df = pd.read_csv(path, sep=sep, dtype=str, low_memory=False)
