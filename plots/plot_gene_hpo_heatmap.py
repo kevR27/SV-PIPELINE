@@ -21,14 +21,14 @@ def parse_args():
     p.add_argument("--ranking", default=None, help="Optional *_ranked_candidates.tsv used to select/order genes")
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--top-genes", type=int, default=20)
-    p.add_argument("--top-hpo", type=int, default=24)
+    p.add_argument("--top-hpo", type=int, default=18)
     p.add_argument("--title", default="Human gene–phenotype associations for SV-overlapping genes")
     return p.parse_args()
 
 
 def make_heatmap(matrix, xlabels, anchor_hpos, out_prefix, title, hpos):
     cmap = ListedColormap(["#F3F4F4", "#0B6E69"])
-    fig_w = max(11.5, 0.55 * len(hpos) + 4.5)
+    fig_w = max(12.0, 0.72 * len(hpos) + 4.5)
     fig_h = max(6.5, 0.38 * len(matrix.index) + 2.8)
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.imshow(matrix.values, aspect="auto", interpolation="nearest", cmap=cmap, vmin=0, vmax=1)
@@ -36,7 +36,7 @@ def make_heatmap(matrix, xlabels, anchor_hpos, out_prefix, title, hpos):
     ax.set_yticks(np.arange(len(matrix.index)))
     ax.set_yticklabels(matrix.index, fontsize=10)
     ax.set_xticks(np.arange(len(hpos)))
-    ax.set_xticklabels(xlabels, rotation=50, ha="right", fontsize=8.5)
+    ax.set_xticklabels(xlabels, rotation=55, ha="right", fontsize=8.5)
     ax.set_xlabel("Human Phenotype Ontology term")
     ax.set_ylabel("SV-overlapping gene")
     ax.set_title(title, fontweight="bold", fontsize=14)
