@@ -30,7 +30,7 @@ def main():
     gene_col = first_existing(df, ["GENES", "ANNotsv_Gene", "Gene", "GENE"])
     type_col = first_existing(df, ["SVTYPE", "SV_type"])
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
-    score_col = first_existing(df, ["ALLELE_RESEARCH_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE"])
+    score_col = first_existing(df, ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
     panel_col = first_existing(df, ["PANEL_STATUS", "panel_gene"])
     if id_col is None or gene_col is None:
         raise ValueError("Input needs SV_ID and overlapping-gene columns.")
@@ -41,6 +41,15 @@ def main():
     work["_priority"] = numeric(work[score_col]).fillna(0) if score_col else 0
     work["_caller_count"] = numeric(work[caller_col]).fillna(0) if caller_col else 0
     work["_svtype"] = normalize_svtype(work[type_col]) if type_col else "OTHER"
+    relationship_col = first_existing(work, ["SV_GENE_RELATIONSHIP"])
+    work["_interval_context_only"] = (
+        work[relationship_col]
+        .fillna("")
+        .astype(str)
+        .eq("INTERVAL_CONTEXT_ONLY")
+        if relationship_col
+        else False
+    )
     if panel_col:
         ptxt = work[panel_col].fillna("").astype(str).str.upper().str.strip()
         work["_panel"] = ptxt.isin(["PANEL_GENE", "YES", "TRUE", "1"])
@@ -48,7 +57,10 @@ def main():
         work["_panel"] = False
 
     work = (
-        work.sort_values(["_priority", "_caller_count", id_col, "_gene"], ascending=[False, False, True, True])
+        work.sort_values(
+            ["_interval_context_only", "_priority", "_caller_count", id_col, "_gene"],
+            ascending=[True, False, False, True, True],
+        )
         .drop_duplicates([id_col, gene_col], keep="first")
         .head(args.top_n_pairs)
         .copy()
@@ -80,7 +92,16 @@ def main():
         sv = str(row[id_col])
         gene = str(row["_gene"])
         width = 0.7 + 0.45 * min(float(row["_caller_count"]), 3.0)
-        ax.plot([0.2, 0.8], [sv_y[sv], gene_y[gene]], linewidth=width, alpha=0.38, color="#8A949E", zorder=1)
+        interval_only = bool(row["_interval_context_only"])
+        ax.plot(
+            [0.2, 0.8],
+            [sv_y[sv], gene_y[gene]],
+            linewidth=width,
+            alpha=0.22 if interval_only else 0.42,
+            color="#8A949E",
+            linestyle="--" if interval_only else "-",
+            zorder=1,
+        )
 
     sv_meta = work.drop_duplicates(id_col).set_index(id_col)
     for sv in sv_order:
@@ -112,7 +133,7 @@ def main():
     fig.text(
         0.5,
         0.012,
-        "Each line is one explicit (SV_ID, gene) association from the integrated table. Edge width scales with caller count. Gene nodes: blue=panel, orange=non-panel. SV-node color denotes SV type.",
+        "Each line is one explicit (SV_ID, gene) association. Solid edges indicate gene-directed/dosage/breakpoint context; dashed edges indicate INV/BND interval-only context without breakpoint overlap. Edge width scales with caller count. Gene nodes: blue=panel, orange=non-panel.",
         ha="center",
         fontsize=9,
     )
