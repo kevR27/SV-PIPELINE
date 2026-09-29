@@ -59,15 +59,68 @@ def compact_population(value):
 
 def choose(df, buckets, n):
     parts = []
+
     for bucket in buckets:
         sub = df[df["EVENT_REVIEW_BUCKET"].eq(bucket)].copy()
         if sub.empty:
             continue
-        sub["_score"] = numeric(sub["EVENT_GENE_RELEVANCE_SCORE"]).fillna(0)
-        sub["_rank"] = numeric(sub["EVENT_RANK_WITHIN_BUCKET"]).fillna(np.inf)
-        sub = sub.sort_values(["_rank", "_score"], ascending=[True, False]).head(n)
-        parts.append(sub)
-    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+        sub["_score"] = numeric(
+            sub["EVENT_GENE_RELEVANCE_SCORE"]
+        ).fillna(0)
+        sub["_rank"] = numeric(
+            sub["EVENT_RANK_WITHIN_BUCKET"]
+        ).fillna(np.inf)
+
+        panel = sub[
+            sub.get("PANEL_STATUS", "")
+            .fillna("")
+            .astype(str)
+            .eq("PANEL_GENE")
+        ].sort_values(
+            ["_rank", "_score"],
+            ascending=[True, False],
+        )
+
+        nonpanel = sub[
+            ~sub.index.isin(panel.index)
+        ].sort_values(
+            ["_rank", "_score"],
+            ascending=[True, False],
+        )
+
+        selected = []
+        if not panel.empty:
+            selected.append(panel.head(max(1, n // 2)))
+        if not nonpanel.empty:
+            selected.append(
+                nonpanel.head(max(1, n - sum(len(x) for x in selected)))
+            )
+
+        chosen = (
+            pd.concat(selected)
+            if selected
+            else sub.head(n)
+        )
+
+        if len(chosen) < n:
+            remainder = sub.loc[
+                ~sub.index.isin(chosen.index)
+            ].sort_values(
+                ["_rank", "_score"],
+                ascending=[True, False],
+            )
+            chosen = pd.concat(
+                [chosen, remainder.head(n - len(chosen))]
+            )
+
+        parts.append(chosen.head(n))
+
+    return (
+        pd.concat(parts, ignore_index=True)
+        if parts
+        else pd.DataFrame()
+    )
 
 
 def plot_panel(ax, data, title):
