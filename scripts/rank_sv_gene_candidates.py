@@ -239,6 +239,7 @@ def main() -> int:
             "constraint": [],
             "hi": [],
             "ts": [],
+            "sv_records": {},
         }
     )
 
@@ -263,6 +264,33 @@ def main() -> int:
                 data = annotsv[gene]
                 if sv_id:
                     data["sv_ids"].add(sv_id)
+
+                    svtype = first(
+                        row,
+                        ["SV_type", "SVTYPE", "svtype"],
+                    ).upper()
+                    raw_svlen = first(
+                        row,
+                        ["SV_length", "SVLEN", "svlen"],
+                    )
+                    try:
+                        abs_svlen = abs(float(raw_svlen))
+                    except (TypeError, ValueError):
+                        abs_svlen = None
+
+                    previous = data["sv_records"].get(sv_id)
+                    current = {
+                        "svtype": svtype or ".",
+                        "abs_svlen": abs_svlen,
+                    }
+                    if (
+                        previous is None
+                        or (
+                            previous.get("abs_svlen") is None
+                            and abs_svlen is not None
+                        )
+                    ):
+                        data["sv_records"][sv_id] = current
 
                 # These describe overlapping SV records, including the full
                 # event row. They do not assert pathogenicity of each gene.
@@ -329,6 +357,46 @@ def main() -> int:
         gencc_summary = summarize_gencc(a["gencc_classification"], has_omim)
         gene_disease_component = float(gencc_summary["score"])
 
+        sv_records = list(a["sv_records"].values())
+        sv_types = sorted({
+            record["svtype"]
+            for record in sv_records
+            if record.get("svtype") not in ("", ".")
+        })
+
+        sized_records = [
+            record
+            for record in sv_records
+            if record.get("abs_svlen") is not None
+        ]
+        sv_count_lt100kb = sum(
+            record["abs_svlen"] < 100_000
+            for record in sized_records
+        )
+        sv_count_100kb_1mb = sum(
+            100_000 <= record["abs_svlen"] < 1_000_000
+            for record in sized_records
+        )
+        sv_count_1mb_10mb = sum(
+            1_000_000 <= record["abs_svlen"] < 10_000_000
+            for record in sized_records
+        )
+        sv_count_ge10mb = sum(
+            record["abs_svlen"] >= 10_000_000
+            for record in sized_records
+        )
+        breakpoint_defined_count = sum(
+            record.get("svtype") in {"INV", "BND", "TRA"}
+            for record in sv_records
+        )
+        max_sv_size_bp = max(
+            (
+                record["abs_svlen"]
+                for record in sized_records
+            ),
+            default=None,
+        )
+
         # Research-priority score only:
         # phenotype (0-13) + curated gene-disease evidence (0-4)
         # + limited SV-count contribution (0-2).
@@ -360,6 +428,17 @@ def main() -> int:
                 "gene": gene,
                 "panel_gene": "YES" if gene in panel else "NO",
                 "SV_count": sv_count,
+                "SV_types": ";".join(sv_types) if sv_types else ".",
+                "SV_count_lt100kb": sv_count_lt100kb,
+                "SV_count_100kb_to_1Mb": sv_count_100kb_1mb,
+                "SV_count_1Mb_to_10Mb": sv_count_1mb_10mb,
+                "SV_count_ge10Mb": sv_count_ge10mb,
+                "breakpoint_defined_INV_BND_count": breakpoint_defined_count,
+                "max_SV_size_bp": (
+                    int(max_sv_size_bp)
+                    if max_sv_size_bp is not None
+                    else "."
+                ),
                 "human_HPO_count": p["hpo_count"],
                 "optic_neuropathy_anchor_HPO_count": p["anchor_count"],
                 "phenotype_score": round(phenotype_component, 3),
@@ -395,13 +474,16 @@ def main() -> int:
                 ),
                 "candidate_group": candidate_group,
                 "classification": candidate_group,
-                "ranking_model": "phenotype13_geneDisease4_sv2_v2.1",
+                "ranking_model": "phenotype13_geneDisease4_sv2_v2.2_eventSpectrum",
                 "interpretation": (
                     "Research-priority score only. The gene-disease component "
                     "summarizes curated evidence and is not a gene pathogenicity "
                     "probability. Review the specific SV, inheritance, dosage "
                     "mechanism, population frequency, phenotype fit and clinical "
-                    "evidence before pathogenicity assessment."
+                    "evidence before pathogenicity assessment. Size-class and "
+                    "INV/BND counts are descriptive and do not add pathogenicity "
+                    "points; use the SV-gene event ranking for mechanism-aware "
+                    "large/complex-event review."
                 ),
             }
         )
