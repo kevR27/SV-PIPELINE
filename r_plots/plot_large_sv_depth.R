@@ -33,6 +33,15 @@ summary <- head(summary[order(-SIZE_MB)], top_n)
 bins <- bins[SV_ID %in% summary$SV_ID]
 bins <- merge(bins, summary[, .(SV_ID, DEPTH_RATIO, DEPTH_PATTERN, SIZE_MB)], by = "SV_ID", all.x = TRUE)
 bins[, POSITION_MB := (PLOT_START + PLOT_END) / 2 / 1e6]
+setorder(bins, SV_ID, PLOT_START)
+bins[, ROLLING_MEDIAN_DEPTH := frollmedian(
+  NORMALIZED_DEPTH,
+  n = 3,
+  align = "center",
+  fill = NA_real_,
+  na.rm = TRUE
+), by = SV_ID]
+
 bins[, LABEL := paste0(
   GENE, " | ", SVTYPE, " | ", sprintf("%.2f Mb", SIZE_MB),
   " | depth ratio=", sprintf("%.2f", as.numeric(DEPTH_RATIO))
@@ -44,7 +53,13 @@ boundary[, SV_END_MB := SV_END / 1e6]
 
 p <- ggplot(bins, aes(POSITION_MB, NORMALIZED_DEPTH)) +
   geom_hline(yintercept = 1, linewidth = 0.35, linetype = "dashed", colour = "grey45") +
-  geom_line(linewidth = 0.55, colour = "grey20") +
+  geom_line(linewidth = 0.35, colour = "grey65", alpha = 0.55) +
+  geom_line(
+    aes(y = ROLLING_MEDIAN_DEPTH),
+    linewidth = 0.85,
+    colour = "grey15",
+    na.rm = TRUE
+  ) +
   geom_vline(data = boundary, aes(xintercept = SV_START_MB), linewidth = 0.4, linetype = "dashed", colour = "grey45") +
   geom_vline(data = boundary, aes(xintercept = SV_END_MB), linewidth = 0.4, linetype = "dashed", colour = "grey45") +
   facet_wrap(~ LABEL, scales = "free_x", ncol = 2) +
@@ -59,7 +74,7 @@ p <- ggplot(bins, aes(POSITION_MB, NORMALIZED_DEPTH)) +
   ) +
   labs(
     title = "Read-depth support for large copy-number-changing SVs",
-    subtitle = "Median depth is binned before plotting; dashed lines mark SV boundaries."
+    subtitle = "Grey: adaptive median depth bins. Black: 3-bin rolling median. Dashed lines mark SV boundaries."
   ) +
   theme_thesis(10) +
   theme(strip.text = element_text(size = 8.5))
