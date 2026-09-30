@@ -39,7 +39,7 @@ class TestSVGeneEffects(unittest.TestCase):
         self.assertEqual(distance, 39900)
         self.assertEqual(
             get_functional_context("INV", effect),
-            "GENE_ORIENTATION_CHANGED_COPY_NEUTRAL_REGULATORY_CONTEXT",
+            "GENE_FULLY_SPANNED_COPY_NEUTRAL_REGULATORY_3D_CONTEXT_POSSIBLE",
         )
 
     def test_inversion_breakpoint_in_exon(self):
