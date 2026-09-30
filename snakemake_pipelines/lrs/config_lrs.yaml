@@ -44,7 +44,8 @@ cpg_region: null
 # ENVIRONMENTS / EXECUTABLES
 # ============================================================
 
-condaenv: "/DATA/casadei7/tools/SV-PIPELINE-main/envs/"
+# Conda YAML files are resolved from the active repository checkout.
+# --conda-prefix still controls where Snakemake creates/reuses environments.
 
 # modkit 0.6.4 executable installed on the analysis server.
 # Retained for reference; the active rule uses the modkit executable supplied
@@ -159,7 +160,7 @@ discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuro
 
 # Core HON phenotypes are used only as ontology seeds. The semantic-similarity
 # reference itself is generated from Monarch gene-disease-HPO associations.
-hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
+# hon_hpo_seed_terms defaults to reference/hon_hpo_seed_terms.tsv in the active checkout.
 
 # Optional patient-specific HPO files. Each file may be a one-HPO-ID-per-line
 # file or TSV containing hpo_id/HPO_ID. If absent, the semantic stage reports
@@ -186,7 +187,7 @@ annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/AnnotS
 # filters control which records enter Jasmine; soft flags remain visible in
 # the TSV and final integrated table.
 
-filter_sv_evidence_script: "/DATA/casadei7/tools/SV-PIPELINE-main/scripts/filter_sv_evidence.py"
+# filter_sv_evidence.py is resolved from the active repository checkout.
 
 evidence_min_support: 2
 evidence_min_svlen: 50
