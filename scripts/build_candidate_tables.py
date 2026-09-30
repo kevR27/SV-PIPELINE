@@ -153,6 +153,10 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "LONGPHASE": text_value(source, ["LONGPHASE_MATCH", "LONGPHASE_STATUS"]),
             "STRAGLR": text_value(source, ["STRAGLR_MATCH", "STRAGLR_STATUS"]),
             "TLDR": text_value(source, ["TLDR_MATCH", "TLDR_STATUS"]),
+            "LONGPHASE_GT": text_value(source, ["LONGPHASE_GT"]),
+            "LONGPHASE_PS": text_value(source, ["LONGPHASE_PS"]),
+            "LONGPHASE_PHASED": text_value(source, ["LONGPHASE_PHASED"]),
+            "BND_ORIENTATION": text_value(source, ["BND_ORIENTATION"]),
             "METHYLATION_CONTEXT": text_value(source, ["METHYLATION_CONTEXT"]),
         })
 
