@@ -37,7 +37,7 @@ effect_direct <- grepl(
   functional_context
 )
 effect_regulatory <- grepl(
-  "REGULATORY_OR_POSITION_EFFECT|GENE_ORIENTATION_CHANGED",
+  "REGULATORY_OR_POSITION_EFFECT|FULLY_SPANNED_COPY_NEUTRAL_REGULATORY_3D",
   functional_context
 )
 depth_support <- if ("DEPTH_SUPPORT_CLASS" %in% names(dt)) {
