@@ -25,6 +25,10 @@ The new final folder contains:
 ├── <sample>_sv_gene_candidates.tsv
 ├── <sample>_large_sv_depth.tsv
 ├── <sample>_large_sv_depth_bins.tsv
+├── <sample>_large_sv_genes.tsv
+├── <sample>_hpo_semantic_similarity.tsv
+├── <sample>_population_gene_effect.tsv
+├── <sample>_population_gene_summary.tsv
 └── <sample>_snv_sv_candidates.tsv
 ```
 
@@ -35,7 +39,7 @@ The older detailed files remain unchanged.
 `GENE_RELEVANCE_SCORE` is deliberately simple:
 
 ```text
-phenotype relevance + curated gene-disease evidence
+HON-anchor phenotype relevance + curated gene-disease evidence
 ```
 
 The number of SVs in a gene is reported, but it does not add points to the new
@@ -173,3 +177,28 @@ mixing new images with older Samplot figures. The current
 A BND may create two breakpoint images, so the number of PNG files can be
 larger than the number of selected SVs. The manifest records both
 `requested_top_n` and `selected_sv_rank`.
+
+
+## HON phenotype reference and semantic similarity
+
+The workflow builds a cohort-level `hon_hpo_reference.tsv` from the local Monarch KG for all optic-neuropathy panel genes. It records HPO ID/name, HON relevance, associated disease and gene, an automated phenotype-breadth descriptor, MitoCarta pathway context, publication identifiers when supplied by Monarch, and KG source provenance.
+
+The automated ocular-versus-multisystem descriptor is a heuristic summary of available HPO annotations, not a clinical classification of the disease.
+
+If patient-specific HPO terms are configured, the pipeline calculates a Resnik best-match-average phenotype-to-gene similarity. Information content is estimated from the full human gene-HPO corpus in the local Monarch KG. If patient terms are absent, the output explicitly reports `PATIENT_HPO_NOT_AVAILABLE`; no similarity is inferred.
+
+This phenotype layer prioritizes the affected gene/disease relationship. It does not establish that a particular SV is pathogenic or mechanistically compatible.
+
+## Population-frequency and SV-effect table
+
+`<sample>_population_gene_effect.tsv` keeps needLR and AnnotSV population evidence separate. needLR provides matched long-read control-frequency evidence. AnnotSV benign `AFmax` represents overlapping benign SV-region context and can aggregate several resources; it is therefore not relabelled as a source-specific gnomAD exact-allele AF.
+
+The corresponding R plot compares population-frequency context with the predicted SV-gene relationship. Frequency class is used for rarity/commonness triage only; the pipeline does not infer benignity or pathogenicity from AF alone.
+
+## Inversion interpretation
+
+Direct breakpoint disruption has the strongest geometric evidence. A gene fully spanned by an inversion is kept as a separate copy-neutral inversion context because regulatory position effects, enhancer-promoter rewiring or 3D-genome/TAD changes are possible. The pipeline does not automatically call a fully spanned gene non-functional.
+
+## Large-event gene tracks
+
+The depth figure now aligns all genes from the configured gene BED to the genomic position of each plotted large DEL/DUP. Only a small prioritized subset is labelled on the figure to preserve readability; `<sample>_large_sv_genes.tsv` contains the complete gene list and coordinates.
