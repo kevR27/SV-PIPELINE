@@ -58,7 +58,7 @@ def main():
         ("tldr_matched_SV_count", "TLDR overlap"),
         ("longphase_phased_SV_count", "LongPhase phased"),
         ("whatshap_nearby_phased_SV_count", "Nearby WhatsHap phase"),
-        ("methylation_evaluated_SV_count", "Methylation context"),
+        ("methylation_evaluated_SV_count", "Methylation data available"),
         ("mitocarta_nuclear_SV_count", "Nuclear mitochondrial"),
         ("mitocarta_ON_context_SV_count", "Mito + ON context"),
     ]
@@ -93,7 +93,7 @@ def main():
 
     fig, axes = plt.subplots(
         1, 2,
-        figsize=(14.2, max(7.0, 0.38 * len(work) + 2.4)),
+        figsize=(15.8, max(7.4, 0.40 * len(work) + 2.6)),
         gridspec_kw={"width_ratios": [0.8, 1.8]},
     )
     ax1, ax2 = axes
@@ -109,7 +109,7 @@ def main():
     cmap = ListedColormap(["#F3F4F4", "#0B6E69"])
     ax2.imshow(matrix, aspect="auto", interpolation="nearest", cmap=cmap, vmin=0, vmax=1)
     ax2.set_xticks(np.arange(len(labels)))
-    ax2.set_xticklabels(labels, rotation=38, ha="right", fontsize=9)
+    ax2.set_xticklabels(labels, rotation=42, ha="right", fontsize=8.5)
     ax2.set_yticks(y)
     ax2.set_yticklabels([])
     ax2.set_xlabel("Evidence layer")
@@ -122,7 +122,7 @@ def main():
     fig.text(
         0.5,
         0.008,
-        "Dark teal indicates that at least one SV/context item for that gene satisfies the indicated layer. WhatsHap and methylation columns are contextual, not SV confirmations or pathogenicity evidence.",
+        "Dark teal indicates that at least one SV/context item for that gene satisfies the indicated layer. Straglr, TLDR and phasing are complementary computational evidence from the same sequencing data; WhatsHap and methylation availability are contextual and are not independent confirmation or pathogenicity evidence.",
         ha="center",
         fontsize=9,
     )
