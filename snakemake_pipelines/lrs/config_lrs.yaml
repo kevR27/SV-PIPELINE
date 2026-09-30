@@ -206,3 +206,29 @@ allele_min_support: 5
 allele_min_gq: 20
 allele_min_dp: 5
 methylation_units: "percent"  # modkit bedMethyl column 11
+
+
+# ============================================================
+# OPTIONAL FINAL THESIS ANALYSIS
+# ============================================================
+# These settings affect only the additive thesis_extensions.smk layer.
+# They do not change SV calling, Jasmine merging, AnnotSV or needLR.
+
+# Base coverage resolution used for large deletion/duplication depth support.
+# Plotting combines these base bins into larger median bins for large events,
+# which prevents individual depth spikes from dominating the figure.
+depth_base_bin_bp: 10000
+depth_min_mapq: 20
+large_sv_depth_min_size: 100000
+
+# Publication-style R figures.
+r_plot_top_candidates: 30
+r_plot_top_hpo: 20
+
+# Dorado sequencing summary is optional. Point each sample to the BAM created
+# during Dorado basecalling (before downstream merging/reprocessing) when available.
+dorado_bin: "dorado"
+dorado_summary_bams: {}
+# Example:
+# dorado_summary_bams:
+#   "21930": "/path/to/21930.basecalled.bam"
