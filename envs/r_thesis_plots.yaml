@@ -1,0 +1,15 @@
+name: r-thesis-plots
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.4
+  - r-data.table
+  - r-ggplot2
+  - r-scales
+  - r-patchwork
+  - r-ggrepel
+  - r-rcolorbrewer
+  - r-svglite
+  - r-circlize
+  - bioconductor-complexheatmap
