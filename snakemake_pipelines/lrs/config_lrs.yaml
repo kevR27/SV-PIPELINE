@@ -221,6 +221,10 @@ depth_base_bin_bp: 10000
 depth_min_mapq: 20
 large_sv_depth_min_size: 100000
 
+# Number of top genes/candidate gene-SV rows shown in the main thesis figures.
+# Change this single value to 20 or 30 if you want a shorter/longer display.
+thesis_top_genes: 25
+
 # Publication-style R figures.
 r_plot_top_candidates: 30
 r_plot_top_hpo: 20
