@@ -10,6 +10,16 @@ DEPTH_MIN_MAPQ = config.get("depth_min_mapq", 20)
 LARGE_SV_DEPTH_MIN_SIZE = config.get("large_sv_depth_min_size", 100000)
 R_TOP_CANDIDATES = config.get("r_plot_top_candidates", 30)
 R_TOP_HPO = config.get("r_plot_top_hpo", 20)
+HON_HPO_SEEDS = config.get(
+    "hon_hpo_seed_terms",
+    os.path.abspath(os.path.join(workflow.basedir, "../../reference/hon_hpo_seed_terms.tsv")),
+)
+PATIENT_HPO_FILES = config.get("patient_hpo_files", {}) or {}
+
+
+def patient_hpo_path(sample):
+    value = PATIENT_HPO_FILES.get(str(sample))
+    return str(value) if value else None
 
 VEP_CACHE_DIR_EXT = config.get("vep_cache_dir")
 VEP_ASSEMBLY_EXT = config.get("vep_assembly", "GRCh38")
@@ -22,6 +32,68 @@ SNV_SV_SAMPLES = [
     for sample in POSTPROCESS_SAMPLES
     if os.path.exists(PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz")
 ]
+
+
+rule build_hon_hpo_reference:
+    input:
+        panel=GENE_LIST,
+        nodes=MONARCH_NODES,
+        edges=MONARCH_EDGES,
+        seeds=HON_HPO_SEEDS,
+        pathways=MITOCARTA_PATHWAYS_FILE,
+        script=SCRIPTS + "/build_hon_hpo_reference.py"
+    output:
+        tsv=PATH + "cohort_analysis/reference/hon_hpo_reference.tsv"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.tsv})
+        python {input.script} \
+            --panel {input.panel} \
+            --nodes {input.nodes} \
+            --edges {input.edges} \
+            --hon-seeds {input.seeds} \
+            --mitopathways-gmx {input.pathways} \
+            --output {output.tsv}
+        test -s {output.tsv}
+        """
+
+
+def hpo_optional_input(wc):
+    path = patient_hpo_path(wc.sample)
+    return [path] if path else []
+
+
+rule hpo_semantic_similarity:
+    input:
+        genes=rules.build_final_candidate_tables.output.genes,
+        reference=rules.build_hon_hpo_reference.output.tsv,
+        edges=MONARCH_EDGES,
+        patient=hpo_optional_input,
+        script=SCRIPTS + "/hpo_semantic_similarity.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/final/{sample}_hpo_semantic_similarity.tsv"
+    params:
+        patient_arg=lambda wc: (
+            f"--patient-hpo {shlex.quote(patient_hpo_path(wc.sample))}"
+            if patient_hpo_path(wc.sample)
+            else ""
+        )
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --genes {input.genes} \
+            --reference {input.reference} \
+            --edges {input.edges} \
+            {params.patient_arg} \
+            --output {output.tsv}
+        test -s {output.tsv}
+        """
 
 
 rule build_final_candidate_tables:
@@ -135,6 +207,7 @@ rule integrate_depth_into_final_candidates:
         genes=rules.build_final_candidate_tables.output.genes,
         sv=rules.build_final_candidate_tables.output.sv,
         depth=rules.summarize_large_sv_depth.output.summary,
+        hpo=rules.hpo_semantic_similarity.output.tsv,
         script=SCRIPTS + "/integrate_depth_into_candidates.py"
     output:
         genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.tsv",
@@ -150,6 +223,7 @@ rule integrate_depth_into_final_candidates:
             --gene-candidates {input.genes} \
             --sv-candidates {input.sv} \
             --depth-summary {input.depth} \
+            --hpo-similarity {input.hpo} \
             --gene-output {output.genes} \
             --sv-output {output.sv} \
             --min-size {params.min_size}
@@ -330,6 +404,7 @@ rule summarize_dorado_qc:
 
 
 FINAL_THESIS_OUTPUTS = [
+    rules.build_hon_hpo_reference.output.tsv,
     *expand(
         PATH + "{sample}/plots/.thesis_plots.done",
         sample=POSTPROCESS_SAMPLES,
@@ -348,6 +423,10 @@ FINAL_THESIS_OUTPUTS = [
     ),
     *expand(
         PATH + "{sample}/gene_discovery/final/{sample}_large_sv_genes.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_hpo_semantic_similarity.tsv",
         sample=POSTPROCESS_SAMPLES,
     ),
     *expand(
