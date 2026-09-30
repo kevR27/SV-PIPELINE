@@ -39,33 +39,37 @@ def split_values(series):
 
 
 def relevance_score(df):
-    """Return a transparent gene-relevance value for display only."""
+    """Return phenotype + curated gene-disease relevance for display only."""
+    phenotype = first_existing(df, ["PHENOTYPE_SCORE", "PHENOTYPE_RELEVANCE_SCORE"])
+    disease = first_existing(
+        df,
+        ["GENE_DISEASE_EVIDENCE_SCORE", "GENE_DISEASE_SCORE"],
+    )
+
+    if phenotype or disease:
+        phenotype_values = (
+            numeric(df[phenotype]).fillna(0)
+            if phenotype
+            else pd.Series(0.0, index=df.index)
+        )
+        disease_values = (
+            numeric(df[disease]).fillna(0)
+            if disease
+            else pd.Series(0.0, index=df.index)
+        )
+        return (
+            phenotype_values + disease_values,
+            "phenotype + curated gene-disease evidence",
+        )
+
     direct = first_existing(
         df,
-        [
-            "GENE_RELEVANCE_SCORE",
-            "EVENT_GENE_RELEVANCE_SCORE",
-            "INTEGRATED_DISCOVERY_SCORE",
-            "integrated_discovery_score",
-        ],
+        ["GENE_RELEVANCE_SCORE", "EVENT_GENE_RELEVANCE_SCORE"],
     )
     if direct:
         return numeric(df[direct]).fillna(0), direct
 
-    phenotype = first_existing(df, ["PHENOTYPE_SCORE"])
-    disease = first_existing(df, ["GENE_DISEASE_EVIDENCE_SCORE"])
-
-    phenotype_values = (
-        numeric(df[phenotype]).fillna(0)
-        if phenotype
-        else pd.Series(0.0, index=df.index)
-    )
-    disease_values = (
-        numeric(df[disease]).fillna(0)
-        if disease
-        else pd.Series(0.0, index=df.index)
-    )
-    return phenotype_values + disease_values, "phenotype + gene-disease evidence"
+    return pd.Series(0.0, index=df.index), "no gene-relevance score available"
 
 
 def main():
