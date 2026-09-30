@@ -21,7 +21,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Plot integrated evidence for prioritized SV-gene pairs.")
     p.add_argument("--input", required=True, help="Integrated or extended SV-gene analysis TSV")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=16)
+    p.add_argument("--top-n", type=int, default=25)
     p.add_argument("--rare-af", type=float, default=0.01)
     p.add_argument("--title", default="Integrated evidence for prioritized SV-gene candidates")
     return p.parse_args()
