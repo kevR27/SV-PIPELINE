@@ -9,7 +9,7 @@ The per-patient Jasmine VCF is the master structural-variant (SV) callset. A dow
 ```text
 ONT BAM
 ├── mosdepth                         QC
-├── Clair3 -> WhatsHap               complementary panel SNV/indel + phasing
+├── Clair3 -> WhatsHap               complementary genome-wide SNV/indel + phasing
 ├── Sniffles2 ─┐
 ├── cuteSV ────┼─ caller evidence QC -> Jasmine -> MASTER SV VCF
 └── DELLY ─────┘                           ├── caller-support summary
@@ -29,7 +29,7 @@ Clair3 + same-patient Sniffles SV VCF + BAM -> LongPhase
 
 ## Jasmine
 
-The three genome-wide SV callers are normalized and transparently filtered before Jasmine. The input order is fixed as:
+The three genome-wide SV callers are normalized and transparently filtered before Jasmine. In the active LRS configuration, only canonical GRCh38 chromosomes (chr1-22, chrX, chrY and chrM) are retained; BND/TRA records require both breakends to resolve to canonical chromosomes. The input order is fixed as:
 
 1. Sniffles2
 2. cuteSV
@@ -78,7 +78,7 @@ The repository still contains `prepare_needlr_vcf.py` and `fix_needlrvcf_for_ann
 
 ## Methylation note
 
-The active workflow currently keeps `modkit extract calls`. A `modkit pileup`/bedMethyl branch is intentionally not enabled in this revision because current modkit 0.6.4 has open pileup correctness/stability issues on some valid inputs. Revisit bedMethyl generation after an upstream release addresses those issues and after validation on the project modBAMs.
+The active workflow uses `modkit pileup` to create tabix-indexed CpG bedMethyl output and keeps 5mC and 5hmC as separate modification classes. These measurements are used as local methylation context around SV breakpoints and for descriptive genome-wide plots; they are not treated as independent SV confirmation or as a validated disease-specific episignature.
 
 ## Recommended validation order
 
@@ -93,3 +93,14 @@ Before running the cohort, validate one known patient end-to-end:
 7. Confirm a known positive SV survives calling -> evidence QC -> Jasmine -> AnnotSV -> integrated table.
 
 Only after the single-patient validation should the same workflow be expanded across the cohort.
+
+
+## Downstream interpretation
+
+The independent post-processing workflow adds complementary computational evidence from Straglr, TLDR, LongPhase, WhatsHap, methylation and Samplot. These analyses reuse the same sequencing dataset and are not described as independent experimental validation.
+
+Large DEL/DUP calls >=100 kb receive a separate mosdepth comparison of event versus flanking depth. The result is written back into the final SV-gene candidate table. A geometric deletion/duplication label from caller coordinates is therefore kept separate from whether read depth shows the expected copy-number shift.
+
+For inversions, direct transcript breakpoints are separated from genes fully spanned by an inversion. A fully spanned gene is not automatically classified as disrupted; the workflow retains it as possible copy-neutral regulatory/3D-genome context requiring further evidence.
+
+The baseline HON gene score uses explicit HON HPO anchor matches plus curated gene-disease evidence. Overall HPO annotation count and SV count are descriptive only and do not add ranking points. Patient-specific HPO semantic similarity is optional and remains separate from SV pathogenicity interpretation.
