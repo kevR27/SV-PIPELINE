@@ -113,7 +113,7 @@ needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/needlr/re
 
 tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/teref.ont.human.fa"
 
-# Coordinate tolerances used only when attaching orthogonal evidence to the
+# Coordinate tolerances used only when attaching complementary evidence to the
 # Jasmine-defined master SV table. They do not modify SV calling or merging.
 complementary_straglr_breakpoint_tolerance: 500
 complementary_tldr_breakpoint_tolerance: 500
