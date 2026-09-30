@@ -26,7 +26,7 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--input", required=True)
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=20)
+    p.add_argument("--top-n", type=int, default=25)
     return p.parse_args()
 
 
