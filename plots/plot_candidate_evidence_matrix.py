@@ -134,10 +134,10 @@ def main():
 
     methylation_context_col = first_existing(work, ["METHYLATION_CONTEXT"])
     if methylation_context_col:
-        work["Methylation context"] = (
+        work["Methylation data available"] = (
             work[methylation_context_col].fillna("").astype(str).str.upper().eq("EVALUATED")
         ).astype(int)
-        optional_flags.append("Methylation context")
+        optional_flags.append("Methylation data available")
 
     mitocarta_encoding_col = first_existing(work, ["MITOCARTA_ENCODING"])
     if mitocarta_encoding_col:
@@ -192,7 +192,7 @@ def main():
     matrix = work[evidence_cols].astype(float).to_numpy()
     n = len(work)
     fig_h = max(7.2, 0.42 * n + 2.6)
-    fig, ax = plt.subplots(figsize=(15.5, fig_h))
+    fig, ax = plt.subplots(figsize=(17.0, fig_h))
     cmap = ListedColormap(["#F3F4F4", "#0B6E69"])
     cmap.set_bad("#AAB2BA")
     ax.imshow(matrix, aspect="auto", interpolation="nearest", cmap=cmap, vmin=0, vmax=1)
@@ -231,7 +231,7 @@ def main():
     fig.text(
         0.5,
         0.008,
-        "Order follows the available gene-discovery score (legacy fallback: phenotype score). Context presence is not SV confirmation or a pathogenicity classification.",
+        "Order follows the available gene-relevance score (fallback: phenotype score). Straglr, TLDR and phasing are complementary same-dataset analyses; methylation indicates local data availability. Context presence is not independent SV confirmation or a pathogenicity classification.",
         ha="center",
         fontsize=9,
     )
