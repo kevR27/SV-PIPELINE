@@ -152,3 +152,24 @@ plots:
 ```
 
 The existing `plots/` folder is not removed or overwritten.
+
+
+## Samplot run folders
+
+Samplot outputs are versioned by the requested number of selected SVs:
+
+```text
+<sample>/plots/13_breakpoint_evidence/
+├── top_8/
+├── top_12/
+└── top_20/
+```
+
+Changing `samplot_top_n` therefore creates a new output folder instead of
+mixing new images with older Samplot figures. The current
+`final_thesis_analysis` target includes the folder matching the configured
+`samplot_top_n`.
+
+A BND may create two breakpoint images, so the number of PNG files can be
+larger than the number of selected SVs. The manifest records both
+`requested_top_n` and `selected_sv_rank`.
