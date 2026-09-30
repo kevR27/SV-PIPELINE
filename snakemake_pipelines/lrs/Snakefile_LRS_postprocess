@@ -262,7 +262,6 @@ rule integrate_candidate_context:
         tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv"
     params:
         methylation_units=config.get("methylation_units", "percent"),
-        top_genes=THESIS_TOP_GENES,
         methylation_arg=lambda wc: (
             f"--methylation-bed {methylation_path(wc.sample)}"
             if methylation_path(wc.sample)
@@ -432,6 +431,7 @@ rule thesis_plots_sample:
         PATH + "{sample}/logs/plots/{sample}.thesis_plots.log"
     params:
         methylation_units=config.get("methylation_units", "percent"),
+        top_genes=THESIS_TOP_GENES,
         methylation_arg=lambda wc: (
             f"--methylation-region {THESIS_METHYLATION_REGION}"
             if THESIS_METHYLATION_REGION
