@@ -16,10 +16,9 @@ threads: 32
 # ============================================================
 # TARGET PANEL AND GENE REFERENCES
 # ============================================================
-# Clair3 is intentionally panel-targeted as a complementary SNV/indel arm.
-# The structural-variant callers themselves are genome-wide.  Panel-only SV
-# results are derived later from genome-wide annotation rather than during
-# calling.
+# Structural-variant callers and Clair3 are genome-wide. The BED below is
+# retained as the optic-neuropathy panel reference for panel annotation and
+# compatibility with other workflows; the active LRS Clair3 rule does not use it.
 
 bed: "/DATA/casadei7/tools/SV-PIPELINE-main/PANEL_OA/optic_neuropathy_panel.bed"
 
@@ -180,6 +179,10 @@ filter_sv_evidence_script: "/DATA/casadei7/tools/SV-PIPELINE-main/scripts/filter
 
 evidence_min_support: 2
 evidence_min_svlen: 50
+
+# Keep the LRS master SV callset on canonical GRCh38 chromosomes only.
+# BND/TRA records are retained only when both breakends are canonical.
+canonical_chromosomes_only: true
 
 # No upper SV-length hard filter in the master callset. Large events remain
 # available to Jasmine/AnnotSV/integrated analysis. needLR independently
