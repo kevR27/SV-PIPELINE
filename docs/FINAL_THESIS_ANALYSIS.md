@@ -79,14 +79,18 @@ the transparent tables.
 
 ## Large deletion/duplication depth
 
-Mosdepth is run at 10 kb base resolution with MAPQ >=20. Plotting then combines
-those base bins into median bins:
+Mosdepth is run at 10 kb base resolution with MAPQ >=20. Quantitative depth
+statistics continue to use these underlying 10 kb windows. Plotting only then
+combines them into larger median bins:
 
-- <1 Mb event: 10 kb plot bins
-- 1-10 Mb event: 50 kb plot bins
-- >=10 Mb event: 100 kb plot bins
+- 100 kb-1 Mb event: 50 kb plot bins
+- 1-10 Mb event: 100 kb plot bins
+- 10-50 Mb event: 250 kb plot bins
+- >=50 Mb event: 500 kb plot bins
 
-This suppresses isolated depth spikes without smoothing the raw BAM itself.
+The R figure also overlays a 3-bin rolling median. The larger aggregation and
+rolling median are visualization-only and do not alter the reported
+inside/flank depth ratio.
 
 The depth result reports:
 - median depth inside the SV;
