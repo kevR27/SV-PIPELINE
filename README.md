@@ -66,8 +66,7 @@ The original gene-discovery score remains available separately.
   ambiguous matches, AF parsing, HPO duplication and explicit methylation units.
 - SV phasing now uses `.longphase_SV.vcf.gz`; `.longphase.vcf.gz` remains the SNP
   output. The older `Snakefile_LRS` delegates to the canonical update workflow.
-- needLR reruns use fresh native directories rather than unverified cached results.
-  Existing results are retained on disk. Normal Snakemake up-to-date jobs still skip.
+- needLR is a separate Sniffles2-compatible population-frequency branch. The rule reuses an existing complete native `*_RESULTS.tsv` + VCF pair when present to avoid unnecessary whole-genome re-annotation. This reuse is appropriate only while the needLR query/backend configuration is unchanged; query or backend changes require explicit invalidation/recomputation.
 
 ---
 
