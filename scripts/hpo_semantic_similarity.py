@@ -197,7 +197,9 @@ def main():
         # add-one smoothing avoids infinite values for patient-only terms
         return -math.log((propagated_count.get(term, 0) + 1) / (n_genes + 1))
 
-    max_ic = max([ic(term) for term in propagated_count] or [1.0])
+    # Theoretical maximum under add-one smoothing. This also covers a valid
+    # patient HPO term not observed in the current gene-annotation background.
+    max_ic = -math.log(1 / (n_genes + 1)) if n_genes > 0 else 1.0
 
     @lru_cache(maxsize=None)
     def pair_similarity(a, b):
@@ -247,7 +249,10 @@ def main():
             "GENE_REFERENCE_HPO_COUNT": len(ref_terms),
             "HPO_EXACT_MATCH_COUNT": len(set(patient_terms) & set(ref_terms)),
             "HPO_BMA_RESNIK": round(score, 6),
-            "HPO_BMA_RESNIK_NORMALIZED": round(score / max_ic if max_ic else 0.0, 6),
+            "HPO_BMA_RESNIK_NORMALIZED": round(
+                min(1.0, score / max_ic) if max_ic else 0.0,
+                6,
+            ),
             "BEST_MATCHED_PATIENT_HPO": ";".join(best),
             "INTERPRETATION": (
                 "Phenotype-to-gene semantic similarity only; it does not establish "
