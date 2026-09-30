@@ -23,17 +23,8 @@ dt[is.na(SCORE_NUM), SCORE_NUM := 0]
 dt[, RARE_FLAG := as.integer(POPULATION_CLASS == "LOW_FREQUENCY_BY_NEEDLR")]
 dt[, PANEL_FLAG := as.integer(PANEL_STATUS == "PANEL_GENE")]
 
-gene_rank <- dt[, .(
-  RARE_COUNT = sum(RARE_FLAG),
-  PANEL_FLAG = max(PANEL_FLAG),
-  SCORE = max(SCORE_NUM),
-  SV_COUNT = uniqueN(SV_ID)
-), by = GENE]
-setorder(gene_rank, -PANEL_FLAG, -RARE_COUNT, -SCORE, -SV_COUNT, GENE)
-selected <- head(gene_rank$GENE, top_n)
-plot_dt <- dt[GENE %in% selected]
-plot_dt[, GENE := factor(GENE, levels = rev(selected))]
-
+# Global overview is computed before top-gene selection so every gene in the
+# candidate table contributes to the population-by-effect summary.
 population_labels <- c(
   "LOW_FREQUENCY_BY_NEEDLR" = "Low frequency\nneedLR",
   "COMMON_BY_NEEDLR" = "Common\nneedLR",
@@ -54,16 +45,48 @@ effect_labels <- c(
   "OTHER_OR_UNRESOLVED" = "Other /\nunresolved"
 )
 
-plot_dt[, POP_LABEL := fifelse(
+dt[, POP_LABEL := fifelse(
   POPULATION_CLASS %in% names(population_labels),
   population_labels[POPULATION_CLASS],
   gsub("_", " ", POPULATION_CLASS)
 )]
-plot_dt[, EFFECT_LABEL := fifelse(
+dt[, EFFECT_LABEL := fifelse(
   SV_EFFECT_GROUP %in% names(effect_labels),
   effect_labels[SV_EFFECT_GROUP],
   gsub("_", " ", SV_EFFECT_GROUP)
 )]
+
+global <- unique(dt[, .(GENE, POP_LABEL, EFFECT_LABEL)])
+global <- global[, .(UNIQUE_GENES = uniqueN(GENE)), by = .(POP_LABEL, EFFECT_LABEL)]
+
+p0 <- ggplot(global, aes(EFFECT_LABEL, POP_LABEL, fill = UNIQUE_GENES)) +
+  geom_tile(colour = "white", linewidth = 0.45) +
+  geom_text(aes(label = ifelse(UNIQUE_GENES > 0, UNIQUE_GENES, "")), size = 3) +
+  scale_fill_gradient(low = "grey95", high = "grey20") +
+  labs(
+    title = "All SV-overlapping genes",
+    subtitle = "Each cell counts unique genes with at least one SV in the corresponding population-frequency and SV-effect classes.",
+    x = "SV-gene relationship",
+    y = "Population-frequency context",
+    fill = "Unique genes"
+  ) +
+  theme_thesis(9) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+    plot.subtitle = element_text(size = 8.5, margin = margin(b = 6))
+  )
+
+gene_rank <- dt[, .(
+  RARE_COUNT = sum(RARE_FLAG),
+  PANEL_FLAG = max(PANEL_FLAG),
+  SCORE = max(SCORE_NUM),
+  SV_COUNT = uniqueN(SV_ID)
+), by = GENE]
+setorder(gene_rank, -PANEL_FLAG, -RARE_COUNT, -SCORE, -SV_COUNT, GENE)
+selected <- head(gene_rank$GENE, top_n)
+plot_dt <- dt[GENE %in% selected]
+plot_dt[, GENE := factor(GENE, levels = rev(selected))]
+
 
 pop <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, POP_LABEL)]
 effect <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, EFFECT_LABEL)]
@@ -99,7 +122,8 @@ p2 <- ggplot(effect, aes(EFFECT_LABEL, GENE, fill = N)) +
     legend.position = "right"
   )
 
-combined <- p1 + p2 +
+combined <- p0 / (p1 + p2) +
+  plot_layout(heights = c(1.0, 1.7)) +
   plot_annotation(
     title = "Population context and structural-variant effects by gene",
     subtitle = paste(
@@ -108,7 +132,7 @@ combined <- p1 + p2 +
     )
   )
 
-height <- max(8, 0.28 * length(selected) + 3.2)
+height <- max(11, 0.28 * length(selected) + 6.0)
 ggsave(pdf_file, combined, width = 16, height = height, device = cairo_pdf)
 ggsave(png_file, combined, width = 16, height = height, dpi = 400)
 ggsave(svg_file, combined, width = 16, height = height, device = svglite)
