@@ -11,6 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import assess_sv_alleles as allele
+import rank_sv_gene_events as event_rank
 
 
 def table(path, data, columns=None):
@@ -93,12 +94,20 @@ class ScoreReportingTests(unittest.TestCase):
     def test_absent_complementary_sources_are_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp);table(d/'input.tsv',[{'SV_ID':'v','GENES':'A','CHROM':'chr1','START':'100','END':'200','SVTYPE':'DEL'}])
-            self.command('plots/intersect_orthogonal_sv_evidence.py','--integrated',d/'input.tsv','--output',d/'out.tsv')
+            self.command('plots/intersect_complementary_sv_evidence.py','--integrated',d/'input.tsv','--output',d/'out.tsv')
             r=read(d/'out.tsv')[0]
             for name in ['STRAGLR_MATCH','TLDR_MATCH','LONGPHASE_MATCH','LONGPHASE_PHASED']:
                 self.assertEqual(r[name],'NOT_AVAILABLE')
             self.command('plots/build_gene_evidence_summary.py','--integrated',d/'out.tsv','--output',d/'summary.tsv')
             self.assertEqual(read(d/'summary.tsv')[0]['longphase_match_unavailable_SV_count'],'1')
+
+    def test_missing_population_evidence_is_neutral(self):
+        priority = event_rank.POPULATION_PRIORITY
+        self.assertGreater(priority["RARE_AF_LE_0.01"], priority["NO_MATCH"])
+        self.assertEqual(priority["NO_MATCH"], priority["UNKNOWN_OR_MISSING"])
+        self.assertEqual(priority["NOT_EVALUABLE_BND"], priority["UNKNOWN_OR_MISSING"])
+        self.assertEqual(priority["NOT_EVALUABLE_GE10MB"], priority["UNKNOWN_OR_MISSING"])
+        self.assertGreater(priority["UNKNOWN_OR_MISSING"], priority["COMMON_AF_GT_0.01"])
 
     def test_matrix_keeps_distinct_ids_and_follows_gene_score(self):
         with tempfile.TemporaryDirectory() as tmp:
