@@ -21,6 +21,7 @@ def parse_args():
     p.add_argument("--sample", required=True)
     p.add_argument("--platform", choices=["lrs", "srs"], default="lrs")
     p.add_argument("--candidate-table", default=None, help="Optional mechanism-aware *_ranked_SV_gene_events.tsv")
+    p.add_argument("--top-genes", type=int, default=25, help="Number of top genes/candidate rows shown in thesis figures")
     p.add_argument("--out-dir", default=None, help="Default: <root>/<sample>/plots")
     p.add_argument("--methylation-region", default=None, help="Optional chr:start-end for methylation plot")
     p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
@@ -220,6 +221,7 @@ def main():
                     py, str(HERE / "plot_candidate_evidence_matrix.py"),
                     "--input", str(integrated),
                     "--out-prefix", str(folders["candidates"] / f"{s}_candidate_evidence"),
+                    "--top-n", str(args.top_genes),
                 ],
                 [integrated],
             ),
@@ -228,6 +230,7 @@ def main():
                     py, str(HERE / "plot_candidate_genes.py"),
                     "--input", str(ranked),
                     "--out-prefix", str(folders["candidates"] / f"{s}_candidate_genes"),
+                    "--top-n", str(args.top_genes),
                 ],
                 [ranked],
             ),
@@ -236,6 +239,7 @@ def main():
                     py, str(HERE / "plot_gene_sv_spectrum.py"),
                     "--input", str(candidate_source),
                     "--out-prefix", str(folders["candidates"] / f"{s}_gene_sv_spectrum"),
+                    "--top-n", str(args.top_genes),
                 ],
                 [candidate_source],
             ),
@@ -269,6 +273,7 @@ def main():
                     "--input", str(phenotypes),
                     "--ranking", str(ranked),
                     "--out-prefix", str(folders["phenotype"] / f"{s}_gene_hpo"),
+                    "--top-genes", str(args.top_genes),
                 ],
                 [phenotypes, ranked],
             ),
@@ -285,6 +290,7 @@ def main():
                     py, str(HERE / "plot_mitocarta_sv_genes.py"),
                     "--input", str(integrated),
                     "--out-prefix", str(folders["mitochondrial"] / f"{s}_mitocarta_sv_genes"),
+                    "--top-n", str(args.top_genes),
                 ],
                 [integrated],
             ),
@@ -367,6 +373,8 @@ def main():
             str(gene_bed),
             "--out-dir",
             str(folders["loci"]),
+            "--top-n",
+            str(args.top_genes),
         ]
         locus_required = [candidate_source, gene_bed]
         if args.platform == "lrs" and methylation:
