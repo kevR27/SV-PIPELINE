@@ -16,7 +16,17 @@ dir.create(dirname(pdf_file), recursive = TRUE, showWarnings = FALSE)
 
 bins <- fread(bins_file, na.strings = c("", ".", "NA"))
 summary <- fread(summary_file, na.strings = c("", ".", "NA"))
-if (nrow(bins) == 0 || nrow(summary) == 0) stop("No large SV depth results available.")
+if (nrow(bins) == 0 || nrow(summary) == 0) {
+  empty_plot <- ggplot() +
+    annotate("text", x = 0, y = 0, label = "No DEL/DUP >= configured size threshold", size = 5) +
+    xlim(-1, 1) + ylim(-1, 1) +
+    labs(title = "Read-depth support for large copy-number-changing SVs") +
+    theme_void()
+  ggsave(pdf_file, empty_plot, width = 10, height = 4.5)
+  ggsave(png_file, empty_plot, width = 10, height = 4.5, dpi = 400)
+  ggsave(svg_file, empty_plot, width = 10, height = 4.5, device = svglite)
+  quit(save = "no", status = 0)
+}
 
 summary[, SIZE_MB := SV_SIZE_BP / 1e6]
 summary <- head(summary[order(-SIZE_MB)], top_n)
