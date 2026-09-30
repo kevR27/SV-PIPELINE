@@ -9,7 +9,7 @@ configfile: "config_lrs.yaml"
 #
 # This workflow intentionally does NOT perform variant calling.
 # Run Snakefile_LRS_update first. This Snakefile only:
-#   1. attaches orthogonal Straglr/TLDR evidence to the completed
+#   1. attaches complementary Straglr/TLDR evidence to the completed
 #      integrated Jasmine SV-gene table; and
 #   2. generates thesis plots on request.
 #
@@ -24,17 +24,17 @@ CONDAENV = config["condaenv"]
 SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
 PLOTS = os.path.abspath(os.path.join(workflow.basedir, "../../plots"))
 
-ORTHOGONAL_STRAGLR_BP_TOL = config.get(
-    "orthogonal_straglr_breakpoint_tolerance",
-    500,
+COMPLEMENTARY_STRAGLR_BP_TOL = config.get(
+    "complementary_straglr_breakpoint_tolerance",
+    config.get("orthogonal_straglr_breakpoint_tolerance", 500),
 )
-ORTHOGONAL_TLDR_BP_TOL = config.get(
-    "orthogonal_tldr_breakpoint_tolerance",
-    500,
+COMPLEMENTARY_TLDR_BP_TOL = config.get(
+    "complementary_tldr_breakpoint_tolerance",
+    config.get("orthogonal_tldr_breakpoint_tolerance", 500),
 )
-ORTHOGONAL_LONGPHASE_BP_TOL = config.get(
-    "orthogonal_longphase_breakpoint_tolerance",
-    500,
+COMPLEMENTARY_LONGPHASE_BP_TOL = config.get(
+    "complementary_longphase_breakpoint_tolerance",
+    config.get("orthogonal_longphase_breakpoint_tolerance", 500),
 )
 
 THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
@@ -54,7 +54,7 @@ THESIS_TOP_GENES = config.get("thesis_top_genes", 25)
 
 
 def integration_source_files(sample):
-    """Files required to build the extended orthogonal-evidence table."""
+    """Files required to build the extended complementary-evidence table."""
     return [
         PATH + f"{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
         PATH + f"{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
@@ -66,7 +66,7 @@ def extended_table(sample):
     return (
         PATH
         + f"{sample}/gene_discovery/"
-        + f"{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv"
+        + f"{sample}_integrated_SV_gene_with_complementary_evidence.tsv"
     )
 
 
@@ -74,7 +74,7 @@ def independent_findings_table(sample):
     return (
         PATH
         + f"{sample}/gene_discovery/"
-        + f"{sample}_independent_orthogonal_findings.tsv"
+        + f"{sample}_independent_complementary_findings.tsv"
     )
 
 
@@ -183,11 +183,11 @@ if SKIPPED_POSTPROCESS_SAMPLES:
 rule all:
     input:
         expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_complementary_evidence.tsv",
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
-            PATH + "{sample}/gene_discovery/{sample}_independent_orthogonal_findings.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_independent_complementary_findings.tsv",
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
@@ -209,24 +209,24 @@ rule all:
 
 
 ############################################################
-# Orthogonal evidence integration                          #
+# Complementary evidence integration                          #
 ############################################################
 
-rule integrate_orthogonal_sv_evidence:
+rule integrate_complementary_sv_evidence:
     input:
         integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
         longphase=lambda wc: [longphase_path(wc.sample)] if longphase_path(wc.sample) else [],
         common=SCRIPTS + "/sv_evidence_common.py",
         straglr=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
         tldr=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",
-        script=PLOTS + "/intersect_orthogonal_sv_evidence.py"
+        script=PLOTS + "/intersect_complementary_sv_evidence.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv",
-        independent=PATH + "{sample}/gene_discovery/{sample}_independent_orthogonal_findings.tsv"
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_complementary_evidence.tsv",
+        independent=PATH + "{sample}/gene_discovery/{sample}_independent_complementary_findings.tsv"
     params:
-        straglr_tol=ORTHOGONAL_STRAGLR_BP_TOL,
-        tldr_tol=ORTHOGONAL_TLDR_BP_TOL,
-        longphase_tol=ORTHOGONAL_LONGPHASE_BP_TOL,
+        straglr_tol=COMPLEMENTARY_STRAGLR_BP_TOL,
+        tldr_tol=COMPLEMENTARY_TLDR_BP_TOL,
+        longphase_tol=COMPLEMENTARY_LONGPHASE_BP_TOL,
         longphase_arg=lambda wc: longphase_arg(wc.sample)
     conda:
         CONDAENV + "plots.yaml"
@@ -253,7 +253,7 @@ rule integrate_orthogonal_sv_evidence:
 
 rule integrate_candidate_context:
     input:
-        integrated=rules.integrate_orthogonal_sv_evidence.output.tsv,
+        integrated=rules.integrate_complementary_sv_evidence.output.tsv,
         script=PLOTS + "/integrate_candidate_context.py",
         methylation=lambda wc: [methylation_path(wc.sample)] if methylation_path(wc.sample) else [],
         whatshap=lambda wc: [whatshap_path(wc.sample)] if whatshap_path(wc.sample) else [],
