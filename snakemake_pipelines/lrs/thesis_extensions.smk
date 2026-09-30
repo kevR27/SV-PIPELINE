@@ -325,6 +325,42 @@ rule r_population_gene_effect:
         "../../r_plots/plot_population_gene_effect.R"
 
 
+rule build_population_evidence_tables:
+    input:
+        candidates=rules.integrate_depth_into_final_candidates.output.sv,
+        script=SCRIPTS + "/build_population_evidence_table.py"
+    output:
+        sv=PATH + "{sample}/gene_discovery/final/{sample}_population_sv_gene.tsv",
+        genes=PATH + "{sample}/gene_discovery/final/{sample}_population_gene_summary.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --candidates {input.candidates} \
+            --sv-output {output.sv} \
+            --gene-output {output.genes}
+        test -s {output.sv}
+        test -s {output.genes}
+        """
+
+
+rule r_population_gene_evidence:
+    input:
+        genes=rules.build_population_evidence_tables.output.genes
+    output:
+        pdf=PATH + "{sample}/plots_r/population/{sample}_population_gene_evidence.pdf",
+        png=PATH + "{sample}/plots_r/population/{sample}_population_gene_evidence.png",
+        svg=PATH + "{sample}/plots_r/population/{sample}_population_gene_evidence.svg"
+    params:
+        top_n=THESIS_TOP_GENES
+    conda:
+        CONDAENV + "r_thesis_plots.yaml"
+    script:
+        "../../r_plots/plot_population_gene_evidence.R"
+
+
 rule r_candidate_evidence_heatmap:
     input:
         candidates=rules.integrate_depth_into_final_candidates.output.sv
@@ -483,6 +519,18 @@ FINAL_THESIS_OUTPUTS = [
     ),
     *expand(
         PATH + "{sample}/plots_r/population_gene_effect/{sample}_population_gene_effect.pdf",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_population_sv_gene.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_population_gene_summary.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/plots_r/population/{sample}_population_gene_evidence.pdf",
         sample=POSTPROCESS_SAMPLES,
     ),
     *expand(
