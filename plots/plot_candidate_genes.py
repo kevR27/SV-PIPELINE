@@ -48,14 +48,14 @@ def main():
     else:
         work["_panel"] = False
 
-    work = work.sort_values(["_score", "_anchor", "_sv_count"], ascending=False).head(args.top_n).copy()
+    work = work.sort_values(["_score", "_anchor", gene_col], ascending=[False, False, True]).head(args.top_n).copy()
     work = work.iloc[::-1].reset_index(drop=True)
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work.to_csv(prefix.with_name(prefix.name + "_top_candidates.tsv"), sep="\t", index=False)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14.2, max(7.2, 0.36 * len(work) + 2.4)), gridspec_kw={"width_ratios": [1.55, 1.05]})
+    fig, axes = plt.subplots(1, 2, figsize=(15.8, max(7.6, 0.38 * len(work) + 2.6)), gridspec_kw={"width_ratios": [1.55, 1.05]})
     ax1, ax2 = axes
     y = np.arange(len(work))
 
@@ -74,6 +74,11 @@ def main():
     x_anchor = work["_anchor"].values
     ax2.scatter(x_sv, x_anchor, s=sizes, c=colors, edgecolor="white", linewidth=0.5)
     panel_indices = [i for i in range(len(work)) if bool(work["_panel"].iloc[i])]
+    panel_indices = sorted(
+        panel_indices,
+        key=lambda i: (x_anchor[i], x_sv[i], str(work[gene_col].iloc[i])),
+        reverse=True,
+    )[:8]
     panel_offsets = [(7, 7), (7, -14), (12, 16), (12, -22), (18, 8), (18, -18)]
     for j, i in enumerate(panel_indices):
         ax2.annotate(
