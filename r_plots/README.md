@@ -1,4 +1,4 @@
-# R thesis plots
+# R plots
 
 These plots are an additional publication-style layer. Existing Python figures
 under `plots/` remain available.
@@ -6,7 +6,7 @@ under `plots/` remain available.
 The R environment is defined in:
 
 ```text
-envs/r_thesis_plots.yaml
+envs/r_plots.yaml
 ```
 
 Current figures:
