@@ -1,4 +1,4 @@
-name: r-thesis-plots
+name: r-plots
 channels:
   - conda-forge
   - bioconda
