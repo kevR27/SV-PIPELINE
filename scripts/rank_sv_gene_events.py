@@ -160,6 +160,8 @@ def classify_gene_relationship(
         ):
             lo, hi = sorted((start, pos2))
             if hi >= gene_start and lo <= gene_end:
+                if svtype == "INV" and lo <= gene_start and hi >= gene_end:
+                    return "INVERSION_SPANS_INTACT_GENE", min_distance
                 return "INTERVAL_CONTEXT_ONLY", min_distance
 
         return "BREAKPOINT_RELATIONSHIP_UNRESOLVED", min_distance
@@ -285,6 +287,9 @@ def event_bucket(svtype: str, size, relationship: str) -> str:
         if relationship in DIRECT_RELATIONSHIPS | PROXIMAL_RELATIONSHIPS:
             return "BREAKPOINT_GENE_CANDIDATE"
 
+        if relationship == "INVERSION_SPANS_INTACT_GENE":
+            return "INVERSION_SPANNED_GENE_CONTEXT"
+
         if relationship == "INTERVAL_CONTEXT_ONLY":
             return (
                 "LARGE_COMPLEX_INTERVAL_CONTEXT"
@@ -315,6 +320,9 @@ def interpretation_scope(relationship: str) -> str:
         "INSERTION_PROXIMAL_TO_GENE": "INSERTION_PROXIMAL_CONTEXT",
         "BREAKPOINT_WITHIN_TRANSCRIPT": "DIRECT_BREAKPOINT_GENE_REVIEW",
         "BREAKPOINT_PROXIMAL_TO_GENE": "BREAKPOINT_PROXIMAL_GENE_REVIEW",
+        "INVERSION_SPANS_INTACT_GENE": (
+            "COPY_NEUTRAL_GENE_ORIENTATION_CHANGE_REGULATORY_POSITION_EFFECT_REVIEW"
+        ),
         "INTERVAL_CONTEXT_ONLY": "INTERVAL_CONTEXT_ONLY_NOT_DIRECT_DISRUPTION",
     }
     return mapping.get(
@@ -520,7 +528,7 @@ def main():
                 if value in PROXIMAL_RELATIONSHIPS
                 else (
                     1
-                    if value == "INTERVAL_CONTEXT_ONLY"
+                    if value in {"INTERVAL_CONTEXT_ONLY", "INVERSION_SPANS_INTACT_GENE"}
                     else 0
                 )
             )
