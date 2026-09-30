@@ -12,6 +12,8 @@ svg_file <- snakemake@output[["svg"]]
 top_genes <- as.integer(snakemake@params[["top_genes"]])
 top_hpo <- as.integer(snakemake@params[["top_hpo"]])
 
+dir.create(dirname(pdf_file), recursive = TRUE, showWarnings = FALSE)
+
 pheno <- fread(phenotype_file, na.strings = c("", ".", "NA"))
 genes <- fread(genes_file, na.strings = c("", ".", "NA"))
 genes[, SCORE := suppressWarnings(as.numeric(GENE_RELEVANCE_SCORE))]
