@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from sv_gene_effects import get_sv_gene_effect
+from sv_gene_effects import get_functional_context, get_sv_gene_effect
 
 
 def make_row(svtype, start, end, tx_start, tx_end, location="intron", chrom="chr1"):
@@ -35,8 +35,12 @@ class TestSVGeneEffects(unittest.TestCase):
             make_row("INV", 100, 100000, 40000, 60000),
             "TEST",
         )
-        self.assertEqual(effect, "GENE_INSIDE_INVERSION")
+        self.assertEqual(effect, "GENE_FULLY_SPANNED_BY_INVERSION")
         self.assertEqual(distance, 39900)
+        self.assertEqual(
+            get_functional_context("INV", effect),
+            "GENE_ORIENTATION_CHANGED_COPY_NEUTRAL_REGULATORY_CONTEXT",
+        )
 
     def test_inversion_breakpoint_in_exon(self):
         effect, distance = get_sv_gene_effect(
@@ -45,6 +49,10 @@ class TestSVGeneEffects(unittest.TestCase):
         )
         self.assertEqual(effect, "INVERSION_BREAKPOINT_IN_EXON")
         self.assertEqual(distance, 0)
+        self.assertEqual(
+            get_functional_context("INV", effect),
+            "DIRECT_TRANSCRIPT_DISRUPTION_POSSIBLE",
+        )
 
     def test_inversion_breakpoint_in_intron(self):
         effect, distance = get_sv_gene_effect(
