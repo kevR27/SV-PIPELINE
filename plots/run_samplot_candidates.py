@@ -359,42 +359,70 @@ def main():
                         )
 
         else:
-            main_success = add_plot(
-                run_one(
-                    rank, sv_id, primary_gene, genes, chrom,
-                    start, end, svtype,
-                ),
-                "SV_SIGNAL_PLOT",
-            )
+            span = abs(end - start)
 
-            # If the whole-event plot cannot be drawn, do not discard the SV.
-            # For large DEL/DUP/INV events, local breakpoint views preserve the
-            # read-level evidence that is most useful for manual review.
-            if not main_success and svtype in {"DEL", "DUP", "INV"}:
+            # Whole-event Samplot views become visually compressed and can
+            # produce unreadable axes for multi-megabase events. For large
+            # DEL/DUP/INV calls, show both breakpoints locally by default.
+            if svtype in {"DEL", "DUP", "INV"} and span >= args.large_sv_threshold:
                 bp1_success = add_plot(
                     run_one(
                         rank, sv_id, primary_gene, genes, chrom,
-                        max(1, start - args.window),
-                        start + args.window,
-                        svtype, "_bp1_fallback", True,
+                        max(1, start - args.zoom),
+                        start + args.zoom,
+                        svtype, "_bp1_large", True,
                     ),
-                    "BREAKPOINT_1_FALLBACK",
+                    "BREAKPOINT_1_LARGE_SV",
                 )
                 bp2_success = add_plot(
                     run_one(
                         rank, sv_id, primary_gene, genes, chrom,
-                        max(1, end - args.window),
-                        end + args.window,
-                        svtype, "_bp2_fallback", True,
+                        max(1, end - args.zoom),
+                        end + args.zoom,
+                        svtype, "_bp2_large", True,
                     ),
-                    "BREAKPOINT_2_FALLBACK",
+                    "BREAKPOINT_2_LARGE_SV",
                 )
-
                 if not bp1_success and not bp2_success:
                     raise RuntimeError(
-                        f"Samplot could not create a whole-event or breakpoint "
-                        f"plot for {sv_id}: " + " | ".join(failures)
+                        f"Samplot could not create local breakpoint views for "
+                        f"large event {sv_id}: " + " | ".join(failures)
                     )
+            else:
+                main_success = add_plot(
+                    run_one(
+                        rank, sv_id, primary_gene, genes, chrom,
+                        start, end, svtype,
+                    ),
+                    "SV_SIGNAL_PLOT",
+                )
+
+                # If the whole-event plot cannot be drawn, do not discard the SV.
+                if not main_success and svtype in {"DEL", "DUP", "INV"}:
+                    bp1_success = add_plot(
+                        run_one(
+                            rank, sv_id, primary_gene, genes, chrom,
+                            max(1, start - args.window),
+                            start + args.window,
+                            svtype, "_bp1_fallback", True,
+                        ),
+                        "BREAKPOINT_1_FALLBACK",
+                    )
+                    bp2_success = add_plot(
+                        run_one(
+                            rank, sv_id, primary_gene, genes, chrom,
+                            max(1, end - args.window),
+                            end + args.window,
+                            svtype, "_bp2_fallback", True,
+                        ),
+                        "BREAKPOINT_2_FALLBACK",
+                    )
+
+                    if not bp1_success and not bp2_success:
+                        raise RuntimeError(
+                            f"Samplot could not create a whole-event or breakpoint "
+                            f"plot for {sv_id}: " + " | ".join(failures)
+                        )
 
         if not outputs:
             raise RuntimeError(
