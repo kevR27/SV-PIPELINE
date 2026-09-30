@@ -99,9 +99,18 @@ def main():
     phase = read_phase(args.phased_vcf)
     vep = read_vep(args.vep)
 
+    output_columns = [
+        "GENE", "SMALL_VARIANT", "CHROM", "POS", "ALT", "CONSEQUENCE",
+        "IMPACT", "CLINVAR_OR_EXISTING_ID", "SMALL_GT", "SMALL_PS",
+        "SMALL_PHASED", "SMALL_ALT_HAPLOTYPE", "SV_ID", "SVTYPE",
+        "SV_GENE_EFFECT", "SV_POPULATION_STATUS", "SV_CALL_SUPPORT",
+        "SV_GT", "SV_PS", "SV_ALT_HAPLOTYPE", "PHASE_RELATION",
+        "INTERPRETATION",
+    ]
+
     if vep.empty:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame().to_csv(args.output, sep="\t", index=False)
+        pd.DataFrame(columns=output_columns).to_csv(args.output, sep="\t", index=False)
         return
 
     small_rows = []
@@ -176,7 +185,7 @@ def main():
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(output_rows).to_csv(output, sep="\t", index=False)
+    pd.DataFrame(output_rows, columns=output_columns).to_csv(output, sep="\t", index=False)
     print(f"[OK] snv_sv_pairs={len(output_rows)} output={output}")
 
 
