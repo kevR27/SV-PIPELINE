@@ -130,8 +130,8 @@ def main():
             "SV_ID": sv_id,
             "GENE": sv.get("GENE", "."),
             "LEAD_GENE": sv.get("GENE", "."),
-            "GENE_COUNT": len(genes),
-            "GENES_IN_SV": ";".join(genes) if genes else ".",
+            "CANDIDATE_GENE_COUNT": len(genes),
+            "CANDIDATE_GENES_IN_SV": ";".join(genes) if genes else ".",
             "PANEL_GENES_IN_SV": ";".join(panel_genes) if panel_genes else ".",
             "MITOCARTA_GENES_IN_SV": ";".join(mito_genes) if mito_genes else ".",
             "TOP_RELEVANT_GENES": ";".join(top_genes) if top_genes else ".",
@@ -169,7 +169,7 @@ def main():
     summary = pd.DataFrame(
         summary_rows,
         columns=[
-            "SV_ID", "GENE", "LEAD_GENE", "GENE_COUNT", "GENES_IN_SV",
+            "SV_ID", "GENE", "LEAD_GENE", "CANDIDATE_GENE_COUNT", "CANDIDATE_GENES_IN_SV",
             "PANEL_GENES_IN_SV", "MITOCARTA_GENES_IN_SV", "TOP_RELEVANT_GENES",
             "CHROM", "START", "END", "SVTYPE",
             "SV_SIZE_BP", "MEDIAN_DEPTH_INSIDE", "MEDIAN_DEPTH_FLANKS",
