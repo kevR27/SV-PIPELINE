@@ -13,7 +13,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from sv_gene_effects import get_analysis_group, get_sv_gene_effect, number
+from sv_gene_effects import (
+    get_analysis_group,
+    get_functional_context,
+    get_sv_gene_effect,
+    number,
+)
 
 
 MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
@@ -158,6 +163,7 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "SV_SPAN_BP": sv_size if sv_size is not None else ".",
             "SV_SIZE_GROUP": size_group(sv_size, svtype),
             "SV_GENE_EFFECT": effect,
+            "SV_FUNCTIONAL_CONTEXT": get_functional_context(svtype, effect),
             "BREAKPOINT_DISTANCE_BP": distance if distance is not None else ".",
             "SV_ANALYSIS_GROUP": get_analysis_group(svtype, sv_size, effect),
             "GENES_AFFECTED": text_value(source, ["SV_GENE_COUNT"], default="."),
