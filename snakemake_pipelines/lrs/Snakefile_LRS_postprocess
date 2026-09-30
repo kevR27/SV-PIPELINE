@@ -42,7 +42,8 @@ GENE_BED = config.get("gene_bed")
 MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS_FILE = config.get("mitocarta_pathways_file")
 
-SAMPLOT_TOP_N = config.get("samplot_top_n", 8)
+SAMPLOT_TOP_N = config.get("samplot_top_n", 20)
+SAMPLOT_RUN_NAME = f"top_{SAMPLOT_TOP_N}"
 SAMPLOT_MIN_MAPQ = config.get("samplot_min_mapq", 20)
 SAMPLOT_LONG_READ_MIN = config.get("samplot_long_read_min_length", 1000)
 SAMPLOT_ZOOM_BP = config.get("samplot_zoom_bp", 20000)
@@ -471,10 +472,10 @@ rule samplot_candidate_breakpoints:
         bam=lambda wc: BAMS[wc.sample],
         script=PLOTS + "/run_samplot_candidates.py"
     output:
-        manifest=PATH + "{sample}/plots/13_breakpoint_evidence/samplot_manifest.tsv",
-        marker=touch(PATH + "{sample}/plots/13_breakpoint_evidence/.samplot.done")
+        manifest=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/samplot_manifest.tsv",
+        marker=touch(PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done")
     params:
-        outdir=PATH + "{sample}/plots/13_breakpoint_evidence",
+        outdir=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME,
         top_n=SAMPLOT_TOP_N,
         min_mapq=SAMPLOT_MIN_MAPQ,
         long_read_min=SAMPLOT_LONG_READ_MIN,
@@ -573,7 +574,7 @@ rule all_thesis_plots:
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
-            PATH + "{sample}/plots/13_breakpoint_evidence/.samplot.done",
+            PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done",
             sample=POSTPROCESS_SAMPLES,
         ),
         COHORT_PLOT_OUTPUTS
