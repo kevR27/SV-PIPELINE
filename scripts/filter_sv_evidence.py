@@ -234,7 +234,9 @@ def main() -> int:
                         fail_reasons.append("NON_CANONICAL_CHROM")
                     if svtype in {"BND", "TRA"}:
                         chrom2 = normalize_chrom(row.get("CHR2"))
-                        if chrom2 is not None and chrom2 not in CANONICAL_CHROMS:
+                        if chrom2 is None:
+                            fail_reasons.append("UNRESOLVED_BREAKEND_CHROM")
+                        elif chrom2 not in CANONICAL_CHROMS:
                             fail_reasons.append("NON_CANONICAL_BREAKEND_CHROM")
 
                 if svtype in {"BND", "TRA"}:
