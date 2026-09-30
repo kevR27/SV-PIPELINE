@@ -81,6 +81,11 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--genes", required=True, help="Gene candidate table")
     p.add_argument("--reference", required=True, help="HON gene-disease-HPO reference")
+    p.add_argument(
+        "--gene-phenotypes",
+        required=True,
+        help="Full Monarch gene-HPO table for the SV-overlapping genes",
+    )
     p.add_argument("--edges", required=True, help="Monarch KG edges for HPO hierarchy")
     p.add_argument("--patient-hpo", default=None)
     p.add_argument("--output", required=True)
@@ -88,6 +93,12 @@ def main():
 
     genes_df = pd.read_csv(args.genes, sep="\t", dtype=str, low_memory=False)
     reference = pd.read_csv(args.reference, sep="\t", dtype=str, low_memory=False)
+    gene_pheno = pd.read_csv(
+        args.gene_phenotypes,
+        sep="\t",
+        dtype=str,
+        low_memory=False,
+    )
     genes = sorted(set(genes_df["GENE"].dropna().astype(str)))
     patient_terms = load_patient_terms(args.patient_hpo)
 
@@ -106,7 +117,24 @@ def main():
                 "HPO_SEMANTIC_STATUS": "PATIENT_HPO_NOT_AVAILABLE",
                 "PATIENT_HPO_COUNT": 0,
                 "GENE_REFERENCE_HPO_COUNT": int(
-                    reference.loc[reference["ASSOCIATED_GENE"].eq(gene), "HPO_ID"].nunique()
+                    len(
+                        set(
+                            gene_pheno.loc[
+                                gene_pheno["gene_symbol"].eq(gene),
+                                "hpo_id",
+                            ]
+                            .dropna()
+                            .astype(str)
+                        )
+                        | set(
+                            reference.loc[
+                                reference["ASSOCIATED_GENE"].eq(gene),
+                                "HPO_ID",
+                            ]
+                            .dropna()
+                            .astype(str)
+                        )
+                    )
                 ),
                 "HPO_EXACT_MATCH_COUNT": ".",
                 "HPO_BMA_RESNIK": ".",
@@ -136,6 +164,16 @@ def main():
         return frozenset(result)
 
     gene_terms = defaultdict(set)
+
+    # Primary phenotype reference: all human Monarch gene-HPO associations for
+    # genes actually intersected by the sample's SVs.
+    for _, row in gene_pheno.iterrows():
+        gene = str(row.get("gene_symbol", "")).strip()
+        hp = str(row.get("hpo_id", "")).strip()
+        if gene and hp.startswith("HP:"):
+            gene_terms[gene].add(hp)
+
+    # Supplement with the richer HON panel disease-HPO reference.
     for _, row in reference.iterrows():
         gene = str(row.get("ASSOCIATED_GENE", "")).strip()
         hp = str(row.get("HPO_ID", "")).strip()
