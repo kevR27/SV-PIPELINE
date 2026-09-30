@@ -134,7 +134,7 @@ def main():
         index=False,
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(14.8, 7.4))
+    fig, axes = plt.subplots(1, 2, figsize=(17.0, 8.6))
     ax1, ax2 = axes
 
     sizes = 35 + 24 * np.log10(work["_svlen"].clip(lower=50))
@@ -173,16 +173,21 @@ def main():
             ascending=[True, False, False, False, False],
         )
         .drop_duplicates("_gene")
-        .head(min(8, len(work)))
+        .head(min(20, work["_gene"].nunique()))
     )
-    offsets = [(7, 8), (7, -15), (12, 18), (12, -25), (18, 6), (18, -18), (24, 16), (24, -28)]
+    offsets = [
+        (6, 8), (6, -13), (10, 17), (10, -22), (14, 5),
+        (14, -17), (18, 13), (18, -27), (22, 3), (22, -12),
+        (26, 18), (26, -23), (30, 8), (30, -17), (34, 15),
+        (34, -28), (38, 4), (38, -13), (42, 20), (42, -22),
+    ]
     for j, (_, row) in enumerate(label_rows.iterrows()):
         ax1.annotate(
             str(row["_gene"]),
             (row["_caller_count"], row["_priority"]),
             xytext=offsets[j % len(offsets)],
             textcoords="offset points",
-            fontsize=8,
+            fontsize=7.2,
             arrowprops={"arrowstyle": "-", "linewidth": 0.5, "alpha": 0.55},
         )
     ax1.set_xlabel("Caller count")
@@ -216,7 +221,7 @@ def main():
             (row["_phenotype"], row["_disease"]),
             xytext=offsets[j % len(offsets)],
             textcoords="offset points",
-            fontsize=8,
+            fontsize=7.2,
             arrowprops={"arrowstyle": "-", "linewidth": 0.5, "alpha": 0.55},
         )
     ax2.set_xlabel("Phenotype relevance score")
@@ -228,7 +233,7 @@ def main():
     fig.text(
         0.5,
         0.012,
-        "Each point is one master SV-gene pair. Point size scales with SV span. Hollow grey points are genes that lie inside an INV/BND interval without breakpoint overlap and are retained as context, not direct disruption. Right: blue=panel gene, orange=non-panel gene. Scores are research-prioritization variables, not pathogenicity probabilities.",
+        "Each point is one merged SV-gene pair. Point size scales with SV span. Hollow grey points are genes that lie inside an INV/BND interval without breakpoint overlap and are retained as context, not direct disruption. Right: blue=panel gene, orange=non-panel gene. Scores are research-prioritization variables, not pathogenicity probabilities.",
         ha="center",
         fontsize=8.5,
         wrap=True,
