@@ -360,10 +360,10 @@ def main() -> int:
             3.0, p["hpo_count"] / 20.0
         )
 
-        # Repeated SV calls in the same gene are weak supporting evidence, not
-        # a proxy for pathogenicity. Their weight is therefore deliberately
-        # small and capped at 2 points.
-        sv_component = min(2.0, float(sv_count) * 0.5)
+        # SV count is descriptive only. Repeated calls in one gene can reflect
+        # large rearrangements, repetitive regions or caller behavior and must
+        # not increase gene relevance.
+        sv_component = 0.0
 
         has_omim = bool(a["omim"]) or any(
             is_positive_flag(value)
@@ -413,12 +413,11 @@ def main() -> int:
         )
 
         # Research-priority score only:
-        # phenotype (0-13) + curated gene-disease evidence (0-4)
-        # + limited SV-count contribution (0-2).
+        # phenotype (0-13) + curated gene-disease evidence (0-4).
+        # SV burden is retained in separate descriptive columns.
         integrated_discovery_score = (
             phenotype_component
             + gene_disease_component
-            + sv_component
         )
 
         has_disease_evidence = (
@@ -489,7 +488,7 @@ def main() -> int:
                 ),
                 "candidate_group": candidate_group,
                 "classification": candidate_group,
-                "ranking_model": "phenotype13_geneDisease4_sv2_v2.2_eventSpectrum",
+                "ranking_model": "phenotype13_geneDisease4_v3_noSVcount",
                 "interpretation": (
                     "Research-priority score only. The gene-disease component "
                     "summarizes curated evidence and is not a gene pathogenicity "
@@ -508,7 +507,6 @@ def main() -> int:
             -float(row["integrated_discovery_score"]),
             -float(row["gene_disease_evidence_score"]),
             -int(row["optic_neuropathy_anchor_HPO_count"]),
-            -int(row["SV_count"]),
             row["gene"],
         )
     )
