@@ -580,3 +580,7 @@ rule all_thesis_plots:
 
 
 include: "../common/allele_assessment.smk"
+
+
+# Optional additive thesis-analysis layer. Existing rules/outputs are preserved.
+include: "thesis_extensions.smk"
