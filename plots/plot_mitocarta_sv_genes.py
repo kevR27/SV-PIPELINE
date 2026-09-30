@@ -403,10 +403,10 @@ def main():
             ax2.barh(np.arange(len(cs)), cs["unique_genes"])
             ax2.set_yticks(np.arange(len(cs)))
             compartment_labels = [
-            str(value).replace("_", " ")
-            for value in cs["subcompartment"]
-        ]
-        ax2.set_yticklabels(compartment_labels, fontsize=8.5)
+                str(value).replace("_", " ")
+                for value in cs["subcompartment"]
+            ]
+            ax2.set_yticklabels(compartment_labels, fontsize=8.5)
             ax2.set_xlabel("Unique mitochondrial genes")
             ax2.set_title("MitoCarta sub-mitochondrial localization")
             style_axis(ax2, "x")
