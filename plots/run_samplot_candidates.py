@@ -239,13 +239,29 @@ def main():
             command += ["--zoom", str(args.zoom)]
         elif not context_only:
             command += ["--window", str(args.window)]
-        subprocess.run(command, check=True)
-        if not output.exists() or output.stat().st_size == 0:
-            raise RuntimeError(
-                "Samplot finished without creating a valid image: "
-                f"{output}"
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
             )
-        return output, "BREAKPOINT_CONTEXT_ONLY" if context_only else "SV_SIGNAL_PLOT"
+        except Exception as exc:
+            return None, f"SAMPLOT_EXECUTION_ERROR: {exc}"
+
+        valid_output = output.exists() and output.stat().st_size > 0
+        if completed.returncode != 0 or not valid_output:
+            if output.exists() and output.stat().st_size == 0:
+                output.unlink()
+            message = (completed.stdout or "").strip().splitlines()
+            last_message = message[-1] if message else "Samplot did not create an image"
+            return None, f"SAMPLOT_FAILED: {last_message}"
+
+        return (
+            output,
+            "BREAKPOINT_CONTEXT_ONLY" if context_only else "SV_SIGNAL_PLOT",
+        )
 
     for rank, (_, row) in enumerate(cand.iterrows(), 1):
         sv_id = str(row[id_col])
@@ -263,37 +279,128 @@ def main():
             end = start + 1
 
         outputs = []
+        failures = []
+
+        def add_plot(result, requested_scope):
+            out, scope_or_error = result
+            if out is not None:
+                outputs.append((str(out), requested_scope or scope_or_error))
+                return True
+            failures.append(scope_or_error)
+            return False
+
         if svtype == "INS":
             region_start = max(1, start - args.window)
             region_end = start + args.window
-            out, _scope = run_one(
-                rank, sv_id, primary_gene, genes, chrom, region_start, region_end,
-                svtype, "_insertion_context", True,
+            success = add_plot(
+                run_one(
+                    rank, sv_id, primary_gene, genes, chrom,
+                    region_start, region_end, svtype,
+                    "_insertion_context", True,
+                ),
+                "INSERTION_BREAKPOINT_CONTEXT",
             )
-            outputs.append((str(out), "INSERTION_BREAKPOINT_CONTEXT"))
+            if not success:
+                add_plot(
+                    run_one(
+                        rank, sv_id, primary_gene, genes, chrom,
+                        max(1, start - 2 * args.window),
+                        start + 2 * args.window,
+                        svtype,
+                        "_insertion_context_retry",
+                        True,
+                    ),
+                    "INSERTION_BREAKPOINT_CONTEXT_RETRY",
+                )
+
         elif svtype in {"BND", "TRA"}:
-            region_start = max(1, start - args.window)
-            region_end = start + args.window
-            out1, _scope1 = run_one(
-                rank, sv_id, primary_gene, genes, chrom, region_start, region_end,
-                svtype, "_bp1", True,
+            bp1_success = add_plot(
+                run_one(
+                    rank, sv_id, primary_gene, genes, chrom,
+                    max(1, start - args.window),
+                    start + args.window,
+                    svtype, "_bp1", True,
+                ),
+                "BREAKPOINT_1_CONTEXT",
             )
-            outputs.append((str(out1), "BREAKPOINT_CONTEXT_ONLY"))
+            if not bp1_success:
+                add_plot(
+                    run_one(
+                        rank, sv_id, primary_gene, genes, chrom,
+                        max(1, start - 2 * args.window),
+                        start + 2 * args.window,
+                        svtype, "_bp1_retry", True,
+                    ),
+                    "BREAKPOINT_1_CONTEXT_RETRY",
+                )
+
             if chr2_col and pos2_col:
                 chr2 = str(row.get(chr2_col, "."))
                 pos2 = number(row.get(pos2_col))
                 if chr2 not in {"", ".", "nan", "None"} and pos2 is not None:
-                    out2, _scope2 = run_one(
-                        rank, sv_id, primary_gene, genes, chr2,
-                        max(1, pos2 - args.window), pos2 + args.window,
-                        svtype, "_bp2", True,
+                    bp2_success = add_plot(
+                        run_one(
+                            rank, sv_id, primary_gene, genes, chr2,
+                            max(1, pos2 - args.window),
+                            pos2 + args.window,
+                            svtype, "_bp2", True,
+                        ),
+                        "BREAKPOINT_2_CONTEXT",
                     )
-                    outputs.append((str(out2), "BREAKPOINT_CONTEXT_ONLY"))
+                    if not bp2_success:
+                        add_plot(
+                            run_one(
+                                rank, sv_id, primary_gene, genes, chr2,
+                                max(1, pos2 - 2 * args.window),
+                                pos2 + 2 * args.window,
+                                svtype, "_bp2_retry", True,
+                            ),
+                            "BREAKPOINT_2_CONTEXT_RETRY",
+                        )
+
         else:
-            out, scope = run_one(
-                rank, sv_id, primary_gene, genes, chrom, start, end, svtype
+            main_success = add_plot(
+                run_one(
+                    rank, sv_id, primary_gene, genes, chrom,
+                    start, end, svtype,
+                ),
+                "SV_SIGNAL_PLOT",
             )
-            outputs.append((str(out), scope))
+
+            # If the whole-event plot cannot be drawn, do not discard the SV.
+            # For large DEL/DUP/INV events, local breakpoint views preserve the
+            # read-level evidence that is most useful for manual review.
+            if not main_success and svtype in {"DEL", "DUP", "INV"}:
+                bp1_success = add_plot(
+                    run_one(
+                        rank, sv_id, primary_gene, genes, chrom,
+                        max(1, start - args.window),
+                        start + args.window,
+                        svtype, "_bp1_fallback", True,
+                    ),
+                    "BREAKPOINT_1_FALLBACK",
+                )
+                bp2_success = add_plot(
+                    run_one(
+                        rank, sv_id, primary_gene, genes, chrom,
+                        max(1, end - args.window),
+                        end + args.window,
+                        svtype, "_bp2_fallback", True,
+                    ),
+                    "BREAKPOINT_2_FALLBACK",
+                )
+
+                if not bp1_success and not bp2_success:
+                    raise RuntimeError(
+                        f"Samplot could not create a whole-event or breakpoint "
+                        f"plot for {sv_id}: " + " | ".join(failures)
+                    )
+
+        if not outputs:
+            raise RuntimeError(
+                f"No Samplot figure was created for {sv_id}: "
+                + " | ".join(failures)
+            )
 
         for output, scope in outputs:
             manifest.append({
@@ -314,6 +421,12 @@ def main():
                 "population_tier": row.get("EVENT_POPULATION_TIER", "."),
                 "contains_panel_gene": "YES" if bool(row.get("_has_panel_event", False)) else "NO",
                 "plot_scope": scope,
+                "plot_status": (
+                    "FALLBACK"
+                    if "FALLBACK" in scope or "RETRY" in scope
+                    else "PRIMARY"
+                ),
+                "failed_attempts": " | ".join(failures) if failures else ".",
                 "output": output,
             })
 
