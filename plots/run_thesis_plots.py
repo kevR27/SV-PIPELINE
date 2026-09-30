@@ -90,7 +90,7 @@ def main():
         "methylation": out / "09_methylation",
         "integration": out / "10_integrated_evidence",
         "associations": out / "11_sv_gene_associations",
-        "loci": out / "12_candidate_loci",
+        "loci": out / "12_candidate_loci" / f"top_{args.top_genes}",
         "mitochondrial": out / "14_mitochondrial_context",
     }
     for folder in folders.values():
