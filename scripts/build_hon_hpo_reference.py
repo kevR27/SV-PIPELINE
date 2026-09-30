@@ -47,10 +47,24 @@ def split_tokens(value):
     return [x.strip() for x in re.split(r"[|;,]", text) if x.strip()]
 
 
-def provenance(edge):
+def publication_support(edge):
+    values = []
+    for token in split_tokens(edge.get("publications", "")):
+        upper = token.upper()
+        if (
+            upper.startswith("PMID:")
+            or upper.startswith("PMCID:")
+            or upper.startswith("DOI:")
+            or token.lower().startswith("http://doi.org/")
+            or token.lower().startswith("https://doi.org/")
+        ):
+            values.append(token)
+    return sorted(set(values))
+
+
+def knowledge_sources(edge):
     values = []
     for key in (
-        "publications",
         "primary_knowledge_source",
         "aggregator_knowledge_source",
         "provided_by",
@@ -139,7 +153,8 @@ def main():
                 gene_disease[subject].append(
                     {
                         "disease_id": obj,
-                        "provenance": provenance(edge),
+                        "publications": publication_support(edge),
+                        "knowledge_sources": knowledge_sources(edge),
                         "predicate": predicate,
                     }
                 )
@@ -150,7 +165,8 @@ def main():
                 direct_gene_hpo[subject].append(
                     {
                         "hpo_id": obj,
-                        "provenance": provenance(edge),
+                        "publications": publication_support(edge),
+                        "knowledge_sources": knowledge_sources(edge),
                         "predicate": predicate,
                     }
                 )
@@ -178,7 +194,8 @@ def main():
                     disease_hpo[subject].append(
                         {
                             "hpo_id": obj,
-                            "provenance": provenance(edge),
+                            "publications": publication_support(edge),
+                        "knowledge_sources": knowledge_sources(edge),
                             "predicate": edge.get("predicate", ""),
                         }
                     )
@@ -204,9 +221,9 @@ def main():
         visual_terms = {x for x in terms if visual(x)}
         nonvisual_terms = terms - visual_terms
         if visual_terms and nonvisual_terms:
-            disease_class[disease] = "SYNDROMIC_OR_MULTISYSTEM"
+            disease_class[disease] = "LIKELY_SYNDROMIC_BY_HPO_BREADTH"
         elif visual_terms:
-            disease_class[disease] = "APPARENTLY_ISOLATED_OCULAR"
+            disease_class[disease] = "PREDOMINANTLY_OCULAR_BY_HPO_BREADTH"
         else:
             disease_class[disease] = "UNRESOLVED"
 
@@ -215,7 +232,12 @@ def main():
     for hgnc, gene in sorted(hgnc_to_gene.items(), key=lambda x: x[1]):
         diseases = gene_disease.get(hgnc, [])
         if not diseases:
-            diseases = [{"disease_id": ".", "provenance": [], "predicate": "."}]
+            diseases = [{
+                "disease_id": ".",
+                "publications": [],
+                "knowledge_sources": [],
+                "predicate": ".",
+            }]
 
         for gd in diseases:
             disease = gd["disease_id"]
@@ -223,9 +245,19 @@ def main():
             if not annotations:
                 annotations = direct_gene_hpo.get(hgnc, [])
 
+            if not annotations:
+                annotations = [{
+                    "hpo_id": ".",
+                    "publications": [],
+                    "knowledge_sources": [],
+                    "predicate": ".",
+                }]
+
             for hp in annotations:
                 hpo_id = hp["hpo_id"]
-                if hpo_id in seeds:
+                if hpo_id == ".":
+                    hon_relevance = "NO_HPO_ASSOCIATION_AVAILABLE"
+                elif hpo_id in seeds:
                     hon_relevance = "CORE_HON"
                 elif visual(hpo_id):
                     hon_relevance = "VISUAL_SYSTEM_RELATED"
@@ -237,7 +269,14 @@ def main():
                 else:
                     hon_relevance = "PANEL_GENE_DISEASE_CONTEXT"
 
-                literature = sorted(set(gd.get("provenance", [])) | set(hp.get("provenance", [])))
+                literature = sorted(
+                    set(gd.get("publications", []))
+                    | set(hp.get("publications", []))
+                )
+                sources = sorted(
+                    set(gd.get("knowledge_sources", []))
+                    | set(hp.get("knowledge_sources", []))
+                )
                 key = (gene, disease, hpo_id)
                 if key in seen:
                     continue
@@ -245,7 +284,7 @@ def main():
                 rows.append(
                     {
                         "HPO_ID": hpo_id,
-                        "HPO_NAME": hpo_name.get(hpo_id, ""),
+                        "HPO_NAME": hpo_name.get(hpo_id, "") if hpo_id != "." else ".",
                         "HON_RELEVANCE": hon_relevance,
                         "ASSOCIATED_DISEASE_ID": disease,
                         "ASSOCIATED_DISEASE": node_name.get(disease, "") if disease != "." else ".",
@@ -259,10 +298,32 @@ def main():
                         ),
                         "MITOCHONDRIAL_PATHWAY": ";".join(sorted(mito.get(gene, set()))) or ".",
                         "LITERATURE_SUPPORT": ";".join(literature) or ".",
+                        "KNOWLEDGE_SOURCE": ";".join(sources) or ".",
+                        "GENE_MAPPING_STATUS": "HGNC_MAPPED",
                         "GENE_DISEASE_PREDICATE": gd.get("predicate", "."),
                         "PHENOTYPE_PREDICATE": hp.get("predicate", "."),
                     }
                 )
+
+    mapped_panel_genes = set(hgnc_to_gene.values())
+    for gene in sorted(panel - mapped_panel_genes):
+        rows.append({
+            "HPO_ID": ".",
+            "HPO_NAME": ".",
+            "HON_RELEVANCE": "NO_HGNC_MAPPING",
+            "ASSOCIATED_DISEASE_ID": ".",
+            "ASSOCIATED_DISEASE": ".",
+            "ASSOCIATED_GENE": gene,
+            "PANEL_GENE": "YES",
+            "ISOLATED_SYNDROMIC": "UNRESOLVED",
+            "ISOLATED_SYNDROMIC_BASIS": "NO_HGNC_MAPPING",
+            "MITOCHONDRIAL_PATHWAY": ";".join(sorted(mito.get(gene, set()))) or ".",
+            "LITERATURE_SUPPORT": ".",
+            "KNOWLEDGE_SOURCE": ".",
+            "GENE_MAPPING_STATUS": "NO_HGNC_MAPPING",
+            "GENE_DISEASE_PREDICATE": ".",
+            "PHENOTYPE_PREDICATE": ".",
+        })
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -270,8 +331,8 @@ def main():
         "HPO_ID", "HPO_NAME", "HON_RELEVANCE", "ASSOCIATED_DISEASE_ID",
         "ASSOCIATED_DISEASE", "ASSOCIATED_GENE", "PANEL_GENE",
         "ISOLATED_SYNDROMIC", "ISOLATED_SYNDROMIC_BASIS",
-        "MITOCHONDRIAL_PATHWAY", "LITERATURE_SUPPORT",
-        "GENE_DISEASE_PREDICATE", "PHENOTYPE_PREDICATE",
+        "MITOCHONDRIAL_PATHWAY", "LITERATURE_SUPPORT", "KNOWLEDGE_SOURCE",
+        "GENE_MAPPING_STATUS", "GENE_DISEASE_PREDICATE", "PHENOTYPE_PREDICATE",
     ]
     with output.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
