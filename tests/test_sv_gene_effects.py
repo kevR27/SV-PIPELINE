@@ -32,11 +32,11 @@ def make_row(svtype, start, end, tx_start, tx_end, location="intron", chrom="chr
 class TestSVGeneEffects(unittest.TestCase):
     def test_gene_only_inside_inversion(self):
         effect, distance = get_sv_gene_effect(
-            make_row("INV", 100, 1000, 400, 600),
+            make_row("INV", 100, 100000, 40000, 60000),
             "TEST",
         )
         self.assertEqual(effect, "GENE_INSIDE_INVERSION")
-        self.assertEqual(distance, 300)
+        self.assertEqual(distance, 39900)
 
     def test_inversion_breakpoint_in_exon(self):
         effect, distance = get_sv_gene_effect(
