@@ -109,9 +109,12 @@ ht <- Heatmap(
   row_names_gp = gpar(fontsize = 8),
   column_names_gp = gpar(fontsize = 8.5),
   column_names_rot = 40,
-  row_title_gp = gpar(fontsize = 9, fontface = "bold"),
+  row_title_gp = gpar(fontsize = 8.5, fontface = "bold"),
+  row_title_rot = 0,
+  row_gap = unit(3.5, "mm"),
   rect_gp = gpar(col = "white", lwd = 0.8),
   left_annotation = row_ha,
+  row_names_max_width = unit(62, "mm"),
   heatmap_legend_param = list(at = c(0, 1), labels = c("No", "Yes")),
   column_title = "SV candidate evidence",
   column_title_gp = gpar(fontface = "bold", fontsize = 13)
