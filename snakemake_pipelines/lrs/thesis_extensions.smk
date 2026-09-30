@@ -14,6 +14,10 @@ HON_HPO_SEEDS = config.get(
     "hon_hpo_seed_terms",
     os.path.abspath(os.path.join(workflow.basedir, "../../reference/hon_hpo_seed_terms.tsv")),
 )
+HON_PANEL_FILE = config["candidate_genes_list"]
+MONARCH_NODES_EXT = config["monarch_nodes"]
+MONARCH_EDGES_EXT = config["monarch_edges"]
+GENE_BED_EXT = config["gene_bed"]
 PATIENT_HPO_FILES = config.get("patient_hpo_files", {}) or {}
 
 
@@ -36,9 +40,9 @@ SNV_SV_SAMPLES = [
 
 rule build_hon_hpo_reference:
     input:
-        panel=GENE_LIST,
-        nodes=MONARCH_NODES,
-        edges=MONARCH_EDGES,
+        panel=HON_PANEL_FILE,
+        nodes=MONARCH_NODES_EXT,
+        edges=MONARCH_EDGES_EXT,
         seeds=HON_HPO_SEEDS,
         pathways=MITOCARTA_PATHWAYS_FILE,
         script=SCRIPTS + "/build_hon_hpo_reference.py"
@@ -70,7 +74,7 @@ rule hpo_semantic_similarity:
     input:
         genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.pre_depth.tsv",
         reference=rules.build_hon_hpo_reference.output.tsv,
-        edges=MONARCH_EDGES,
+        edges=MONARCH_EDGES_EXT,
         patient=hpo_optional_input,
         script=SCRIPTS + "/hpo_semantic_similarity.py"
     output:
@@ -184,7 +188,7 @@ rule build_large_sv_gene_context:
     input:
         candidates=rules.build_final_candidate_tables.output.sv,
         depth=rules.summarize_large_sv_depth.output.summary,
-        gene_bed=GENEBED,
+        gene_bed=GENE_BED_EXT,
         script=SCRIPTS + "/build_large_sv_gene_context.py"
     output:
         tsv=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_genes.tsv"
