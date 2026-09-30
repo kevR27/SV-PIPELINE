@@ -31,8 +31,8 @@ rule build_final_candidate_tables:
         script=SCRIPTS + "/build_candidate_tables.py",
         effects=SCRIPTS + "/sv_gene_effects.py"
     output:
-        genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.tsv",
-        sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.tsv"
+        genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.pre_depth.tsv",
+        sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.pre_depth.tsv"
     params:
         breakpoint_near=SV_GENE_BREAKPOINT_TOLERANCE
     conda:
@@ -108,6 +108,56 @@ rule summarize_large_sv_depth:
         """
 
 
+rule build_large_sv_gene_context:
+    input:
+        candidates=rules.build_final_candidate_tables.output.sv,
+        depth=rules.summarize_large_sv_depth.output.summary,
+        gene_bed=GENEBED,
+        script=SCRIPTS + "/build_large_sv_gene_context.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_genes.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --candidates {input.candidates} \
+            --depth-summary {input.depth} \
+            --gene-bed {input.gene_bed} \
+            --output {output.tsv}
+        test -e {output.tsv}
+        """
+
+
+rule integrate_depth_into_final_candidates:
+    input:
+        genes=rules.build_final_candidate_tables.output.genes,
+        sv=rules.build_final_candidate_tables.output.sv,
+        depth=rules.summarize_large_sv_depth.output.summary,
+        script=SCRIPTS + "/integrate_depth_into_candidates.py"
+    output:
+        genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.tsv",
+        sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.tsv"
+    params:
+        min_size=LARGE_SV_DEPTH_MIN_SIZE
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --gene-candidates {input.genes} \
+            --sv-candidates {input.sv} \
+            --depth-summary {input.depth} \
+            --gene-output {output.genes} \
+            --sv-output {output.sv} \
+            --min-size {params.min_size}
+        test -s {output.genes}
+        test -s {output.sv}
+        """
+
+
 rule vep_small_variants:
     input:
         vcf=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
@@ -143,7 +193,7 @@ rule build_snv_sv_candidates:
     input:
         vep=rules.vep_small_variants.output.txt,
         phased=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
-        sv=rules.build_final_candidate_tables.output.sv,
+        sv=rules.integrate_depth_into_final_candidates.output.sv,
         script=SCRIPTS + "/build_snv_sv_candidates.py"
     output:
         tsv=PATH + "{sample}/gene_discovery/final/{sample}_snv_sv_candidates.tsv"
@@ -163,7 +213,7 @@ rule build_snv_sv_candidates:
 
 rule r_candidate_evidence_heatmap:
     input:
-        candidates=rules.build_final_candidate_tables.output.sv
+        candidates=rules.integrate_depth_into_final_candidates.output.sv
     output:
         pdf=PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.pdf",
         png=PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.png",
@@ -179,7 +229,7 @@ rule r_candidate_evidence_heatmap:
 rule r_hpo_heatmap:
     input:
         phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
-        genes=rules.build_final_candidate_tables.output.genes
+        genes=rules.integrate_depth_into_final_candidates.output.genes
     output:
         pdf=PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.pdf",
         png=PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.png",
@@ -196,7 +246,8 @@ rule r_hpo_heatmap:
 rule r_large_sv_depth:
     input:
         bins=rules.summarize_large_sv_depth.output.bins,
-        summary=rules.summarize_large_sv_depth.output.summary
+        summary=rules.summarize_large_sv_depth.output.summary,
+        genes=rules.build_large_sv_gene_context.output.tsv
     output:
         pdf=PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.pdf",
         png=PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.png",
@@ -293,6 +344,10 @@ FINAL_THESIS_OUTPUTS = [
     ),
     *expand(
         PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_large_sv_genes.tsv",
         sample=POSTPROCESS_SAMPLES,
     ),
     *expand(
