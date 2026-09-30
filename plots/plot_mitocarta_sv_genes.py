@@ -101,22 +101,24 @@ def main():
         "unique_nuclear_mito_genes": int(nuclear[gene_col].nunique()) if not nuclear.empty else 0,
         "rows_with_pathway": (
             int(
-                ~work["MITOCARTA_MITOPATHWAYS"]
-                .fillna(".")
-                .astype(str)
-                .isin([".", "", "nan", "None"])
-            .sum()
+                (
+                    ~work["MITOCARTA_MITOPATHWAYS"]
+                    .fillna(".")
+                    .astype(str)
+                    .isin([".", "", "nan", "None"])
+                ).sum()
             )
             if "MITOCARTA_MITOPATHWAYS" in work
             else 0
         ),
         "rows_with_subcompartment": (
             int(
-                ~work["MITOCARTA_SUBCOMPARTMENT"]
-                .fillna(".")
-                .astype(str)
-                .isin([".", "", "nan", "None"])
-            .sum()
+                (
+                    ~work["MITOCARTA_SUBCOMPARTMENT"]
+                    .fillna(".")
+                    .astype(str)
+                    .isin([".", "", "nan", "None"])
+                ).sum()
             )
             if "MITOCARTA_SUBCOMPARTMENT" in work
             else 0
