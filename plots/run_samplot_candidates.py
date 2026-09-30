@@ -59,6 +59,11 @@ def main():
     p.add_argument("--zoom", type=int, default=20000)
     p.add_argument("--window", type=int, default=5000, help="Local context on each side for small/breakpoint events")
     p.add_argument("--large-sv-threshold", type=int, default=1000000)
+    p.add_argument(
+        "--gene-annotation",
+        default=None,
+        help="Optional tabix-indexed BED/GFF gene annotation track for Samplot.",
+    )
     args = p.parse_args()
 
     df = pd.read_csv(args.input, sep="\t", dtype=str, low_memory=False)
@@ -232,6 +237,12 @@ def main():
             "-q", str(args.min_mapq),
             "--long_read", str(args.long_read_min),
         ]
+        if args.gene_annotation:
+            command += [
+                "-A", args.gene_annotation,
+                "--annotation_filenames", "Genes",
+                "--annotation_fontsize", "7",
+            ]
         if not context_only and svtype in {"DEL", "DUP", "INV"}:
             command += ["-t", svtype]
         span = abs(int(end) - int(start))
