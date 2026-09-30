@@ -17,7 +17,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Plot prioritized SV-associated genes.")
     p.add_argument("--input", required=True, help="*_ranked_candidates.tsv")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=20)
+    p.add_argument("--top-n", type=int, default=25)
     p.add_argument("--title", default="Genome-wide SV-associated gene prioritization")
     return p.parse_args()
 
