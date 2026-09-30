@@ -54,12 +54,44 @@ def main():
     large = candidates[
         candidates["SVTYPE"].isin(["DEL", "DUP"])
         & candidates["SVLEN_NUM"].ge(args.min_size)
-    ].drop_duplicates("SV_ID")
+    ].copy()
 
     summary_rows = []
     bin_rows = []
 
-    for _, sv in large.iterrows():
+    for sv_id, event_rows in large.groupby("SV_ID", sort=False):
+        event_rows = event_rows.copy()
+        score = pd.to_numeric(
+            event_rows.get("GENE_RELEVANCE_SCORE", pd.Series(index=event_rows.index, dtype=float)),
+            errors="coerce",
+        ).fillna(0)
+        panel = (
+            event_rows.get("PANEL_STATUS", pd.Series("", index=event_rows.index))
+            .fillna("")
+            .astype(str)
+            .eq("PANEL_GENE")
+        )
+        mito = (
+            event_rows.get("MITOCARTA", pd.Series("", index=event_rows.index))
+            .fillna("")
+            .astype(str)
+            .isin(["NUCLEAR_MITOCHONDRIAL_GENE", "MTDNA_ENCODED_GENE"])
+        )
+        event_rows["_display_priority"] = panel.astype(int) * 100 + mito.astype(int) * 10 + score
+        event_rows = event_rows.sort_values(
+            ["_display_priority", "GENE"],
+            ascending=[False, True],
+        )
+        sv = event_rows.iloc[0]
+        genes = sorted({
+            str(x)
+            for x in event_rows["GENE"].dropna().astype(str)
+            if str(x) not in {"", ".", "nan", "None"}
+        })
+        panel_genes = sorted(set(event_rows.loc[panel, "GENE"].dropna().astype(str)))
+        mito_genes = sorted(set(event_rows.loc[mito, "GENE"].dropna().astype(str)))
+        top_genes = event_rows["GENE"].dropna().astype(str).drop_duplicates().head(12).tolist()
+
         chrom = sv["CHROM"]
         start = int(sv["START_NUM"])
         end = int(sv["END_NUM"])
@@ -95,8 +127,14 @@ def main():
             pattern = "CONSISTENT_WITH_GAIN" if pd.notna(depth_ratio) and depth_ratio > 1.25 else "NOT_CLEAR"
 
         summary_rows.append({
-            "SV_ID": sv["SV_ID"],
+            "SV_ID": sv_id,
             "GENE": sv.get("GENE", "."),
+            "LEAD_GENE": sv.get("GENE", "."),
+            "GENE_COUNT": len(genes),
+            "GENES_IN_SV": ";".join(genes) if genes else ".",
+            "PANEL_GENES_IN_SV": ";".join(panel_genes) if panel_genes else ".",
+            "MITOCARTA_GENES_IN_SV": ";".join(mito_genes) if mito_genes else ".",
+            "TOP_RELEVANT_GENES": ";".join(top_genes) if top_genes else ".",
             "CHROM": chrom,
             "START": start,
             "END": end,
@@ -115,8 +153,9 @@ def main():
             .agg(DEPTH=("DEPTH", "median"))
         )
         grouped["PLOT_END"] = grouped["PLOT_START"] + plot_bin
-        grouped["SV_ID"] = sv["SV_ID"]
+        grouped["SV_ID"] = sv_id
         grouped["GENE"] = sv.get("GENE", ".")
+        grouped["LEAD_GENE"] = sv.get("GENE", ".")
         grouped["SVTYPE"] = sv["SVTYPE"]
         grouped["SV_START"] = start
         grouped["SV_END"] = end
@@ -130,7 +169,9 @@ def main():
     summary = pd.DataFrame(
         summary_rows,
         columns=[
-            "SV_ID", "GENE", "CHROM", "START", "END", "SVTYPE",
+            "SV_ID", "GENE", "LEAD_GENE", "GENE_COUNT", "GENES_IN_SV",
+            "PANEL_GENES_IN_SV", "MITOCARTA_GENES_IN_SV", "TOP_RELEVANT_GENES",
+            "CHROM", "START", "END", "SVTYPE",
             "SV_SIZE_BP", "MEDIAN_DEPTH_INSIDE", "MEDIAN_DEPTH_FLANKS",
             "DEPTH_RATIO", "DEPTH_PATTERN", "PLOT_BIN_BP",
         ],
@@ -138,7 +179,7 @@ def main():
     bins = pd.DataFrame(
         bin_rows,
         columns=[
-            "CHROM", "PLOT_START", "DEPTH", "PLOT_END", "SV_ID", "GENE",
+            "CHROM", "PLOT_START", "DEPTH", "PLOT_END", "SV_ID", "GENE", "LEAD_GENE",
             "SVTYPE", "SV_START", "SV_END", "NORMALIZED_DEPTH",
         ],
     )
