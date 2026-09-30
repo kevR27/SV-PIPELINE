@@ -47,21 +47,34 @@ def load_patient_terms(path):
     return sorted(set(terms))
 
 
-def load_parent_graph(edges_path):
+def load_hpo_background(edges_path):
+    """Read HPO hierarchy and all human gene-HPO annotations in one pass."""
     parents = defaultdict(set)
+    all_gene_terms = defaultdict(set)
+
     with open(edges_path, encoding="utf-8") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         for edge in reader:
             subject = edge.get("subject", "")
             obj = edge.get("object", "")
             predicate = edge.get("predicate", "")
+            category = edge.get("category", "")
+
             if (
                 subject.startswith("HP:")
                 and obj.startswith("HP:")
                 and "subclass" in predicate.lower()
             ):
                 parents[subject].add(obj)
-    return parents
+
+            if (
+                subject.startswith("HGNC:")
+                and obj.startswith("HP:")
+                and "GeneToPhenotypicFeatureAssociation" in category
+            ):
+                all_gene_terms[subject].add(obj)
+
+    return parents, all_gene_terms
 
 
 def main():
@@ -108,7 +121,7 @@ def main():
         print(f"[OK] genes={len(out)} patient_hpo=0 output={args.output}")
         return
 
-    parents = load_parent_graph(args.edges)
+    parents, all_gene_terms = load_hpo_background(args.edges)
 
     @lru_cache(maxsize=None)
     def ancestors(term):
@@ -129,18 +142,18 @@ def main():
         if gene and hp.startswith("HP:"):
             gene_terms[gene].add(hp)
 
-    # Information content based on the proportion of reference genes annotated
-    # to a term or one of its descendants after ancestor propagation.
-    reference_genes = sorted(gene_terms)
+    # Information content uses the full human gene-HPO annotation corpus from
+    # Monarch, not only the HON panel. Restricting IC to the panel would make
+    # common HON terms artificially informative.
     propagated_count = defaultdict(int)
-    for gene in reference_genes:
+    for hgnc, terms_for_gene in all_gene_terms.items():
         propagated = set()
-        for term in gene_terms[gene]:
+        for term in terms_for_gene:
             propagated.update(ancestors(term))
         for term in propagated:
             propagated_count[term] += 1
 
-    n_genes = max(len(reference_genes), 1)
+    n_genes = max(len(all_gene_terms), 1)
 
     def ic(term):
         # add-one smoothing avoids infinite values for patient-only terms
@@ -213,6 +226,7 @@ def main():
     out.to_csv(output, sep="\t", index=False)
     print(
         f"[OK] genes={len(out)} patient_hpo={len(patient_terms)} "
+        f"background_genes={len(all_gene_terms)} "
         f"evaluated={(out['HPO_SEMANTIC_STATUS'] == 'EVALUATED').sum()} output={output}"
     )
 
