@@ -185,7 +185,7 @@ rule r_hpo_heatmap:
         png=PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.png",
         svg=PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.svg"
     params:
-        top_genes=25,
+        top_genes=THESIS_TOP_GENES,
         top_hpo=R_TOP_HPO
     conda:
         CONDAENV + "r_thesis_plots.yaml"
