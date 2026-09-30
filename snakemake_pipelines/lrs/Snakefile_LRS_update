@@ -39,7 +39,7 @@ MONARCH_NODES = config["monarch_nodes"]
 MONARCH_EDGES = config["monarch_edges"]
 DISCOVERY_HPO_FILE = config.get(
     "discovery_hpo_file",
-    "reference/optic_neuropathy_hpo_terms.tsv",
+    os.path.join(REPO_ROOT, "reference", "hon_hpo_seed_terms.tsv"),
 )
 
 # AnnotSV.
