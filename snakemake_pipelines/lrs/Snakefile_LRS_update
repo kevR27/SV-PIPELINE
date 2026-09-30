@@ -83,6 +83,8 @@ EVIDENCE_MIN_SVLEN = config.get("evidence_min_svlen", 50)
 EVIDENCE_MAX_SVLEN = config.get("evidence_max_svlen")
 EVIDENCE_MIN_GQ = config.get("evidence_min_gq")
 EVIDENCE_BLACKLIST_BED = config.get("evidence_blacklist_bed")
+EVIDENCE_CANONICAL_ONLY = config.get("canonical_chromosomes_only", True)
+EVIDENCE_CANONICAL_FLAG = "--canonical-only" if EVIDENCE_CANONICAL_ONLY else ""
 
 # Companion multi-caller evidence set. The complete Jasmine callset remains
 # the master SV universe regardless of caller count.
@@ -217,8 +219,7 @@ rule clair3_snp_calling:
             -t {threads} \
             -p ont \
             -o {PATH}{wildcards.sample}/snp_clair3 \
-            --model_path={CLAIRENV} \
-            --bed_fn={BED}
+            --model_path={CLAIRENV}
 
         cp {PATH}{wildcards.sample}/snp_clair3/merge_output.vcf.gz {output.vcf}
         tabix -f -p vcf {output.vcf}
@@ -445,6 +446,7 @@ rule filter_sniffles_sv:
             {params.max_svlen} \
             {params.min_gq} \
             {params.blacklist} \
+            {EVIDENCE_CANONICAL_FLAG} \
             --output-tsv {output.tsv} \
             --output-ids {output.ids}
 
@@ -481,6 +483,7 @@ rule filter_cutesv_sv:
             {params.max_svlen} \
             {params.min_gq} \
             {params.blacklist} \
+            {EVIDENCE_CANONICAL_FLAG} \
             --output-tsv {output.tsv} \
             --output-ids {output.ids}
 
@@ -517,6 +520,7 @@ rule filter_delly_sv:
             {params.max_svlen} \
             {params.min_gq} \
             {params.blacklist} \
+            {EVIDENCE_CANONICAL_FLAG} \
             --output-tsv {output.tsv} \
             --output-ids {output.ids}
 
