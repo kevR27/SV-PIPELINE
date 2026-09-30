@@ -307,6 +307,10 @@ FINAL_THESIS_OUTPUTS = [
         PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.pdf",
         sample=POSTPROCESS_SAMPLES,
     ),
+    *expand(
+        PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done",
+        sample=POSTPROCESS_SAMPLES,
+    ),
     PATH + "cohort_analysis/sv_recurrence.tsv",
     PATH + "cohort_analysis/sv_recurrence_members.tsv",
     *expand(
