@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 """Summarize population-frequency context and SV-gene effects.
 
-needLR AF is a direct long-read population annotation. AnnotSV's benign AFmax
-can include gnomAD-SV among several benign resources and is therefore retained
-as BENIGN_DB_AFMAX rather than mislabeled as a source-specific gnomAD AF.
+This is a research-prioritization table, not a pathogenicity classifier.
+
+Frequency sources are kept distinct:
+- needLR AF: frequency from the matched long-read control resource used by needLR.
+- AnnotSV benign AFmax: maximum AF among overlapping benign SV regions reported
+  by AnnotSV. The source field may include gnomAD-SV together with DGV, 1000G,
+  ClinVar or other resources, so AFmax is not relabelled as a gnomAD-specific
+  exact-allele frequency.
 """
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 import pandas as pd
+
+
+MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
 
 
 def number(value):
@@ -19,37 +27,122 @@ def number(value):
         return None
 
 
+def needlr_class(row):
+    af = number(row.get("NEEDLR_AF"))
+    status = str(row.get("POPULATION_STATUS", "UNKNOWN")).upper()
+
+    if af is not None:
+        if af == 0:
+            return "NOT_OBSERVED_IN_NEEDLR_CONTROLS"
+        if af <= 0.001:
+            return "VERY_RARE_NEEDLR_LE_0.001"
+        if af <= 0.01:
+            return "RARE_NEEDLR_LE_0.01"
+        if af < 0.05:
+            return "COMMON_NEEDLR_GT_0.01"
+        return "VERY_COMMON_NEEDLR_GE_0.05"
+
+    if status == "NO_POPULATION_MATCH":
+        return "NO_NEEDLR_MATCH_AF_UNKNOWN"
+    if status == "NOT_EVALUABLE_GE_10MB":
+        return "NEEDLR_NOT_EVALUABLE_GE_10MB"
+    if status == "NOT_EVALUABLE_BREAKEND":
+        return "NEEDLR_NOT_EVALUABLE_BREAKEND"
+    return "NEEDLR_FREQUENCY_UNKNOWN"
+
+
+def benign_afmax_class(row):
+    af = number(
+        row.get(
+            "ANNOTSV_BENIGN_AFMAX",
+            row.get("BENIGN_DB_AFMAX"),
+        )
+    )
+    if af is None:
+        return "NO_BENIGN_REGION_AFMAX"
+    if af == 0:
+        return "BENIGN_REGION_AFMAX_ZERO"
+    if af <= 0.001:
+        return "BENIGN_REGION_AFMAX_LE_0.001"
+    if af <= 0.01:
+        return "BENIGN_REGION_AFMAX_LE_0.01"
+    if af < 0.05:
+        return "BENIGN_REGION_AFMAX_GT_0.01"
+    return "BENIGN_REGION_AFMAX_GE_0.05"
+
+
 def gnomad_context(row):
     overlap = str(row.get("GNOMAD_SV_OVERLAP", ".")).upper()
-    af = number(row.get("BENIGN_DB_AFMAX"))
-    if overlap == "YES":
-        if af is None:
-            return "GNOMAD_OVERLAP_AF_UNKNOWN"
-        return "GNOMAD_CONTEXT_RARE_AFMAX_LE_0.01" if af <= 0.01 else "GNOMAD_CONTEXT_COMMON_AFMAX_GT_0.01"
+    source = str(
+        row.get(
+            "ANNOTSV_BENIGN_DB_SOURCE",
+            row.get("BENIGN_DB_SOURCE", "."),
+        )
+    )
+
+    source_mentions = "GNOMAD" in source.upper()
+    if overlap == "YES" or source_mentions:
+        return "GNOMAD_INCLUDED_IN_ANNOTSV_BENIGN_OVERLAP"
     if overlap == "NOT_REPORTED":
-        return "GNOMAD_NOT_REPORTED_IN_ANNOTSV_OVERLAPS"
-    if overlap in {"NOT_APPLICABLE", "UNKNOWN", ".", ""}:
-        return "GNOMAD_CONTEXT_UNKNOWN"
-    return "GNOMAD_CONTEXT_UNKNOWN"
+        return "GNOMAD_NOT_REPORTED_IN_ANNOTSV_BENIGN_OVERLAP"
+    if overlap == "NOT_APPLICABLE":
+        return "GNOMAD_OVERLAP_NOT_APPLICABLE_FOR_SVTYPE"
+    return "GNOMAD_OVERLAP_CONTEXT_UNKNOWN"
 
 
-def combined_class(row):
-    needlr = str(row.get("POPULATION_STATUS", "UNKNOWN")).upper()
-    gnomad = gnomad_context(row)
+def population_class(row):
+    """Classify frequency evidence without calling an allele benign/pathogenic."""
+    nclass = needlr_class(row)
+    bclass = benign_afmax_class(row)
 
-    if needlr == "COMMON":
-        return "COMMON_NEEDLR"
-    if "COMMON_AFMAX" in gnomad:
-        if needlr == "RARE":
-            return "DISCORDANT_RARE_NEEDLR_COMMON_GNOMAD_CONTEXT"
-        return "COMMON_GNOMAD_CONTEXT"
-    if needlr == "RARE":
-        return "RARE_NEEDLR"
-    if needlr == "NO_POPULATION_MATCH":
-        return "NO_NEEDLR_MATCH"
-    if needlr.startswith("NOT_EVALUABLE"):
-        return needlr
+    if nclass in {
+        "VERY_COMMON_NEEDLR_GE_0.05",
+        "COMMON_NEEDLR_GT_0.01",
+    }:
+        return "COMMON_BY_NEEDLR"
+
+    if nclass in {
+        "NOT_OBSERVED_IN_NEEDLR_CONTROLS",
+        "VERY_RARE_NEEDLR_LE_0.001",
+        "RARE_NEEDLR_LE_0.01",
+    }:
+        return "LOW_FREQUENCY_BY_NEEDLR"
+
+    if bclass in {
+        "BENIGN_REGION_AFMAX_GE_0.05",
+        "BENIGN_REGION_AFMAX_GT_0.01",
+    }:
+        return "COMMON_BENIGN_REGION_OVERLAP_CONTEXT"
+
+    if bclass in {
+        "BENIGN_REGION_AFMAX_ZERO",
+        "BENIGN_REGION_AFMAX_LE_0.001",
+        "BENIGN_REGION_AFMAX_LE_0.01",
+    }:
+        return "LOW_AF_BENIGN_REGION_OVERLAP_CONTEXT"
+
+    if "NOT_EVALUABLE" in nclass:
+        return "POPULATION_AF_NOT_EVALUABLE"
+    if nclass == "NO_NEEDLR_MATCH_AF_UNKNOWN":
+        return "NO_NEEDLR_MATCH_AF_UNKNOWN"
     return "POPULATION_FREQUENCY_UNKNOWN"
+
+
+def population_interpretation(row):
+    cls = population_class(row)
+    if cls == "COMMON_BY_NEEDLR":
+        return "COMMON_FREQUENCY_WEAKENS_CANDIDACY_FOR_A_HIGHLY_PENETRANT_RARE_MENDELIAN_ALLELE"
+    if cls == "LOW_FREQUENCY_BY_NEEDLR":
+        return "LOW_FREQUENCY_SUPPORTS_RARITY_ONLY_NOT_PATHOGENICITY"
+    if cls == "COMMON_BENIGN_REGION_OVERLAP_CONTEXT":
+        return "COMMON_OVERLAPPING_BENIGN_SV_CONTEXT_REQUIRES_ALLELE_EQUIVALENCE_REVIEW"
+    if cls == "LOW_AF_BENIGN_REGION_OVERLAP_CONTEXT":
+        return "LOW_AF_OVERLAPPING_BENIGN_SV_CONTEXT_DOES_NOT_ESTABLISH_BENIGNITY"
+    if cls == "NO_NEEDLR_MATCH_AF_UNKNOWN":
+        return "NO_NEEDLR_MATCH_IS_NOT_EQUIVALENT_TO_AF_ZERO"
+    if cls == "POPULATION_AF_NOT_EVALUABLE":
+        return "NO_VALID_NEEDLR_AF_FOR_THIS_EVENT_CLASS"
+    return "INSUFFICIENT_POPULATION_FREQUENCY_EVIDENCE"
 
 
 def effect_group(effect, svtype):
@@ -58,9 +151,9 @@ def effect_group(effect, svtype):
     if "BREAKPOINT_IN_" in effect or "TWO_BREAKPOINTS_IN_GENE" in effect:
         return "DIRECT_BREAKPOINT"
     if "WHOLE_GENE_DELETION" in effect or "PARTIAL_GENE_DELETION" in effect:
-        return "COPY_LOSS"
+        return "COPY_LOSS_GEOMETRY"
     if "WHOLE_GENE_DUPLICATION" in effect or "PARTIAL_GENE_DUPLICATION" in effect:
-        return "COPY_GAIN"
+        return "COPY_GAIN_GEOMETRY"
     if effect.startswith("INSERTION_IN_"):
         return "INSERTION_IN_GENE"
     if "SPANNED_BY_INVERSION" in effect or "INSIDE_INVERSION" in effect:
@@ -83,21 +176,34 @@ def main():
     if df.empty:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(args.output, sep="\t", index=False)
-        pd.DataFrame().to_csv(args.gene_summary, sep="\t", index=False)
+        pd.DataFrame(
+            columns=[
+                "GENE", "GENE_RELEVANCE_SCORE", "PANEL_STATUS", "SV_COUNT",
+                "LOW_FREQUENCY_NEEDLR_COUNT", "COMMON_NEEDLR_COUNT",
+                "GNOMAD_BENIGN_OVERLAP_COUNT", "COMMON_BENIGN_REGION_CONTEXT_COUNT",
+                "POPULATION_CLASSES", "SV_EFFECTS",
+            ]
+        ).to_csv(args.gene_summary, sep="\t", index=False)
         return
 
     out = df.copy()
+    out["NEEDLR_FREQUENCY_CLASS"] = out.apply(needlr_class, axis=1)
+    out["ANNOTSV_BENIGN_AFMAX_CLASS"] = out.apply(benign_afmax_class, axis=1)
     out["GNOMAD_CONTEXT_CLASS"] = out.apply(gnomad_context, axis=1)
-    out["POPULATION_CLASS"] = out.apply(combined_class, axis=1)
+    out["POPULATION_CLASS"] = out.apply(population_class, axis=1)
+    out["POPULATION_INTERPRETATION"] = out.apply(
+        population_interpretation,
+        axis=1,
+    )
     out["SV_EFFECT_GROUP"] = [
         effect_group(effect, svtype)
         for effect, svtype in zip(out["SV_GENE_EFFECT"], out["SVTYPE"])
     ]
-    out["POPULATION_INTERPRETATION"] = (
-        "needLR AF and AnnotSV gnomAD/benign-database context are population evidence only; "
-        "common frequency can argue against a highly penetrant rare-disease allele, while rarity "
-        "alone does not establish pathogenicity. BENIGN_DB_AFMAX is not guaranteed to be a "
-        "source-specific gnomAD AF when multiple benign resources overlap."
+    out["POPULATION_EVIDENCE_SCOPE"] = (
+        "needLR is matched long-read control-frequency evidence. "
+        "AnnotSV benign AFmax is overlap-region evidence and may combine "
+        "multiple benign resources. gnomAD context indicates database-source "
+        "overlap unless a source-specific exact allele frequency is available."
     )
 
     output = Path(args.output)
@@ -109,26 +215,78 @@ def main():
     for gene, group in unique.groupby("GENE", sort=False):
         classes = group["POPULATION_CLASS"].value_counts().to_dict()
         effects = group["SV_EFFECT_GROUP"].value_counts().to_dict()
-        score = pd.to_numeric(group["GENE_RELEVANCE_SCORE"], errors="coerce").max()
+        score = pd.to_numeric(
+            group["GENE_RELEVANCE_SCORE"],
+            errors="coerce",
+        ).max()
+
+        low_needlr = group["NEEDLR_FREQUENCY_CLASS"].isin({
+            "NOT_OBSERVED_IN_NEEDLR_CONTROLS",
+            "VERY_RARE_NEEDLR_LE_0.001",
+            "RARE_NEEDLR_LE_0.01",
+        })
+        common_needlr = group["NEEDLR_FREQUENCY_CLASS"].isin({
+            "COMMON_NEEDLR_GT_0.01",
+            "VERY_COMMON_NEEDLR_GE_0.05",
+        })
+
         summary_rows.append({
             "GENE": gene,
             "GENE_RELEVANCE_SCORE": score if pd.notna(score) else ".",
-            "PANEL_STATUS": "PANEL_GENE" if (group["PANEL_STATUS"] == "PANEL_GENE").any() else "NON_PANEL",
+            "PANEL_STATUS": (
+                "PANEL_GENE"
+                if (group["PANEL_STATUS"] == "PANEL_GENE").any()
+                else "NON_PANEL"
+            ),
             "SV_COUNT": int(group["SV_ID"].nunique()),
-            "RARE_NEEDLR_COUNT": int((group["POPULATION_CLASS"] == "RARE_NEEDLR").sum()),
-            "COMMON_POPULATION_COUNT": int(group["POPULATION_CLASS"].str.startswith("COMMON").sum()),
-            "GNOMAD_OVERLAP_COUNT": int((group["GNOMAD_SV_OVERLAP"] == "YES").sum()),
-            "POPULATION_CLASSES": ";".join(f"{k}={v}" for k, v in sorted(classes.items())),
-            "SV_EFFECTS": ";".join(f"{k}={v}" for k, v in sorted(effects.items())),
+            "LOW_FREQUENCY_NEEDLR_COUNT": int(
+                group.loc[low_needlr, "SV_ID"].nunique()
+            ),
+            "COMMON_NEEDLR_COUNT": int(
+                group.loc[common_needlr, "SV_ID"].nunique()
+            ),
+            "GNOMAD_BENIGN_OVERLAP_COUNT": int(
+                group.loc[
+                    group["GNOMAD_CONTEXT_CLASS"].eq(
+                        "GNOMAD_INCLUDED_IN_ANNOTSV_BENIGN_OVERLAP"
+                    ),
+                    "SV_ID",
+                ].nunique()
+            ),
+            "COMMON_BENIGN_REGION_CONTEXT_COUNT": int(
+                group.loc[
+                    group["POPULATION_CLASS"].eq(
+                        "COMMON_BENIGN_REGION_OVERLAP_CONTEXT"
+                    ),
+                    "SV_ID",
+                ].nunique()
+            ),
+            "POPULATION_CLASSES": ";".join(
+                f"{k}={v}" for k, v in sorted(classes.items())
+            ),
+            "SV_EFFECTS": ";".join(
+                f"{k}={v}" for k, v in sorted(effects.items())
+            ),
         })
 
     summary = pd.DataFrame(summary_rows)
     if not summary.empty:
-        summary["_score"] = pd.to_numeric(summary["GENE_RELEVANCE_SCORE"], errors="coerce").fillna(0)
+        summary["_score"] = pd.to_numeric(
+            summary["GENE_RELEVANCE_SCORE"],
+            errors="coerce",
+        ).fillna(0)
         summary = summary.sort_values(
-            ["RARE_NEEDLR_COUNT", "_score", "SV_COUNT", "GENE"],
-            ascending=[False, False, False, True],
+            [
+                "PANEL_STATUS",
+                "LOW_FREQUENCY_NEEDLR_COUNT",
+                "_score",
+                "COMMON_NEEDLR_COUNT",
+                "SV_COUNT",
+                "GENE",
+            ],
+            ascending=[True, False, False, True, False, True],
         ).drop(columns="_score")
+
     summary.to_csv(args.gene_summary, sep="\t", index=False)
 
     print(
