@@ -22,8 +22,21 @@ def first_existing(df, names):
     return None
 
 
-def safe_name(value):
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("_") or "candidate"
+def safe_name(value, max_length=60):
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("_") or "candidate"
+    return name[:max_length].rstrip("_.-") or "candidate"
+
+
+def short_gene_label(primary_gene, all_genes):
+    genes = [
+        gene
+        for gene in str(all_genes).split(";")
+        if gene not in {"", ".", "nan", "None"}
+    ]
+    primary = safe_name(primary_gene, 35) if primary_gene not in {"", ".", "nan", "None"} else "gene"
+    if len(genes) <= 1:
+        return primary
+    return f"{primary}_plus{len(genes) - 1}genes"
 
 
 def number(value):
@@ -188,8 +201,25 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     manifest = []
 
-    def run_one(rank, sv_id, genes, chrom, start, end, svtype, suffix="", context_only=False):
-        output = outdir / f"{rank:02d}_{safe_name(genes)}_{safe_name(sv_id)}{suffix}.png"
+    def run_one(
+        rank,
+        sv_id,
+        primary_gene,
+        genes,
+        chrom,
+        start,
+        end,
+        svtype,
+        suffix="",
+        context_only=False,
+    ):
+        gene_label = short_gene_label(primary_gene, genes)
+        output_name = (
+            f"{rank:02d}_{safe_name(svtype, 12)}_"
+            f"{safe_name(chrom, 16)}_{int(start)}_{int(end)}_"
+            f"{safe_name(sv_id, 45)}_{gene_label}{suffix}.png"
+        )
+        output = outdir / output_name
         command = [
             "samplot", "plot",
             "-n", args.sample,
@@ -210,11 +240,17 @@ def main():
         elif not context_only:
             command += ["--window", str(args.window)]
         subprocess.run(command, check=True)
+        if not output.exists() or output.stat().st_size == 0:
+            raise RuntimeError(
+                "Samplot finished without creating a valid image: "
+                f"{output}"
+            )
         return output, "BREAKPOINT_CONTEXT_ONLY" if context_only else "SV_SIGNAL_PLOT"
 
     for rank, (_, row) in enumerate(cand.iterrows(), 1):
         sv_id = str(row[id_col])
         genes = str(row["_genes"])
+        primary_gene = str(row.get("_gene", "."))
         chrom = str(row[chrom_col])
         start = number(row["_start"])
         end = number(row["_end"])
@@ -231,7 +267,7 @@ def main():
             region_start = max(1, start - args.window)
             region_end = start + args.window
             out, _scope = run_one(
-                rank, sv_id, genes, chrom, region_start, region_end,
+                rank, sv_id, primary_gene, genes, chrom, region_start, region_end,
                 svtype, "_insertion_context", True,
             )
             outputs.append((str(out), "INSERTION_BREAKPOINT_CONTEXT"))
@@ -239,7 +275,7 @@ def main():
             region_start = max(1, start - args.window)
             region_end = start + args.window
             out1, _scope1 = run_one(
-                rank, sv_id, genes, chrom, region_start, region_end,
+                rank, sv_id, primary_gene, genes, chrom, region_start, region_end,
                 svtype, "_bp1", True,
             )
             outputs.append((str(out1), "BREAKPOINT_CONTEXT_ONLY"))
@@ -248,19 +284,22 @@ def main():
                 pos2 = number(row.get(pos2_col))
                 if chr2 not in {"", ".", "nan", "None"} and pos2 is not None:
                     out2, _scope2 = run_one(
-                        rank, sv_id, genes, chr2,
+                        rank, sv_id, primary_gene, genes, chr2,
                         max(1, pos2 - args.window), pos2 + args.window,
                         svtype, "_bp2", True,
                     )
                     outputs.append((str(out2), "BREAKPOINT_CONTEXT_ONLY"))
         else:
-            out, scope = run_one(rank, sv_id, genes, chrom, start, end, svtype)
+            out, scope = run_one(
+                rank, sv_id, primary_gene, genes, chrom, start, end, svtype
+            )
             outputs.append((str(out), scope))
 
         for output, scope in outputs:
             manifest.append({
                 "rank": rank,
                 "SV_ID": sv_id,
+                "primary_gene": primary_gene,
                 "genes": genes,
                 "SVTYPE": svtype,
                 "requested_top_n": args.top_n,
