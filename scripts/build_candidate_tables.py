@@ -174,6 +174,10 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "NEEDLR_AF": text_value(source, ["NEEDLR_AF"]),
             "POPULATION_STATUS": population_status(source),
             "GNOMAD_SV_OVERLAP": text_value(source, ["SV_DB_GNOMAD_OVERLAP"]),
+            "ANNOTSV_BENIGN_AFMAX": text_value(source, ["SV_BENIGN_DB_AFMAX"]),
+            "ANNOTSV_BENIGN_DB_SOURCE": text_value(source, ["SV_BENIGN_DB_SOURCE"]),
+            # Backward-compatible aliases. AFmax can reflect multiple benign
+            # resources; it is not necessarily a gnomAD-specific exact-allele AF.
             "BENIGN_DB_AFMAX": text_value(source, ["SV_BENIGN_DB_AFMAX"]),
             "BENIGN_DB_SOURCE": text_value(source, ["SV_BENIGN_DB_SOURCE"]),
             "ANNOTSV_CLASSIFICATION": text_value(
