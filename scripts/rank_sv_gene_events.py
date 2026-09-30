@@ -31,6 +31,15 @@ PROXIMAL_RELATIONSHIPS = {
     "BREAKPOINT_PROXIMAL_TO_GENE",
 }
 
+POPULATION_PRIORITY = {
+    "RARE_AF_LE_0.01": 2,
+    "NOT_EVALUABLE_GE10MB": 1,
+    "NOT_EVALUABLE_BND": 1,
+    "NO_MATCH": 1,
+    "UNKNOWN_OR_MISSING": 1,
+    "COMMON_AF_GT_0.01": 0,
+}
+
 
 def first_existing(df: pd.DataFrame, names: list[str]) -> str | None:
     lower = {str(c).lower(): c for c in df.columns}
@@ -537,16 +546,7 @@ def main():
 
     population_rank = (
         out["EVENT_POPULATION_TIER"]
-        .map(
-            {
-                "RARE_AF_LE_0.01": 2,
-                "NOT_EVALUABLE_GE10MB": 1,
-                "NOT_EVALUABLE_BND": 1,
-                "NO_MATCH": 1,
-                "UNKNOWN_OR_MISSING": 1,
-                "COMMON_AF_GT_0.01": 0,
-            }
-        )
+        .map(POPULATION_PRIORITY)
         .fillna(0)
     )
 
