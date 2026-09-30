@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bipartite map of prioritized master SVs and their overlapping genes."""
+"""Bipartite map of prioritized merged SVs and their overlapping genes."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def main():
         work[relationship_col]
         .fillna("")
         .astype(str)
-        .eq("INTERVAL_CONTEXT_ONLY")
+        .isin(["INTERVAL_CONTEXT_ONLY", "INVERSION_SPANS_INTACT_GENE"])
         if relationship_col
         else False
     )
@@ -123,7 +123,7 @@ def main():
         )
         ax.text(0.815, gene_y[gene], gene, ha="left", va="center", fontsize=9)
 
-    ax.text(0.2, max(list(sv_y.values())) + 1.0, "Master SV", ha="center", fontweight="bold")
+    ax.text(0.2, max(list(sv_y.values())) + 1.0, "Merged SV", ha="center", fontweight="bold")
     ax.text(0.8, max(list(gene_y.values())) + 1.0, "Overlapping gene", ha="center", fontweight="bold")
     ax.set_xlim(0, 1)
     ax.set_ylim(-1, max(max(sv_y.values()), max(gene_y.values())) + 1.5)
@@ -133,7 +133,7 @@ def main():
     fig.text(
         0.5,
         0.012,
-        "Each line is one explicit (SV_ID, gene) association. Solid edges indicate gene-directed/dosage/breakpoint context; dashed edges indicate INV/BND interval-only context without breakpoint overlap. Edge width scales with caller count. Gene nodes: blue=panel, orange=non-panel.",
+        "Each line is one explicit (SV_ID, gene) association. Solid edges indicate dosage or direct/proximal breakpoint context; dashed edges indicate inversion-spanned or rearrangement interval context without a direct transcript breakpoint. Edge width scales with caller count. Gene nodes: blue=panel, orange=non-panel.",
         ha="center",
         fontsize=9,
     )
