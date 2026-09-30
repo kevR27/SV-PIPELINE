@@ -27,29 +27,67 @@ flag <- function(x, positive) {
   ifelse(is.na(x), NA_real_, ifelse(x %in% positive, 1, 0))
 }
 
-effect_direct <- !grepl("INSIDE_INVERSION|UNRESOLVED", dt$SV_GENE_EFFECT)
+functional_context <- if ("SV_FUNCTIONAL_CONTEXT" %in% names(dt)) {
+  dt$SV_FUNCTIONAL_CONTEXT
+} else {
+  rep("", nrow(dt))
+}
+effect_direct <- grepl(
+  "DIRECT_TRANSCRIPT_DISRUPTION|COPY_LOSS_GEOMETRIC_CONTEXT|COPY_GAIN_GEOMETRIC_CONTEXT|INSERTION_SITE_CONTEXT",
+  functional_context
+)
+effect_regulatory <- grepl(
+  "REGULATORY_OR_POSITION_EFFECT|GENE_ORIENTATION_CHANGED",
+  functional_context
+)
+depth_support <- if ("DEPTH_SUPPORT_CLASS" %in% names(dt)) {
+  flag(dt$DEPTH_SUPPORT_CLASS, "SUPPORTS_CALLED_COPY_CHANGE")
+} else {
+  rep(NA_real_, nrow(dt))
+}
+
 evidence <- cbind(
   flag(dt$CALL_SUPPORT, "MULTI_CALLER"),
   flag(dt$POPULATION_STATUS, "RARE"),
   flag(dt$PANEL_STATUS, "PANEL_GENE"),
   flag(dt$MITOCARTA, c("NUCLEAR_MITOCHONDRIAL_GENE", "MTDNA_ENCODED_GENE")),
   ifelse(effect_direct, 1, 0),
+  ifelse(effect_regulatory, 1, 0),
+  depth_support,
   flag(dt$LONGPHASE_PHASED, "YES"),
   flag(dt$STRAGLR, "YES"),
-  flag(dt$TLDR, "YES"),
-  flag(dt$METHYLATION_CONTEXT, "EVALUATED")
+  flag(dt$TLDR, "YES")
 )
 colnames(evidence) <- c(
-  "Multi-caller", "Rare in needLR", "ON panel gene", "MitoCarta gene",
-  "Direct/near gene effect", "LongPhase phased", "Straglr match",
-  "TLDR match", "Methylation evaluated"
+  "Multi-caller", "Rare in needLR", "ON panel", "MitoCarta",
+  "Direct SV-gene effect", "Regulatory/inversion context",
+  "Depth supports copy change", "LongPhase phased",
+  "Straglr match", "TLDR match"
 )
 
 rownames(evidence) <- paste0(
   dt$GENE, " | ", dt$SVTYPE, " | ", dt$CHROM, ":",
   format(as.numeric(dt$START), scientific = FALSE, trim = TRUE)
 )
-group <- factor(dt$SV_ANALYSIS_GROUP)
+group_labels <- c(
+  "COPY_NUMBER_SV_GE_10MB" = "CNV >=10 Mb",
+  "LARGE_COPY_NUMBER_SV" = "Large CNV",
+  "COPY_NUMBER_SV" = "CNV",
+  "INSERTION" = "Insertion",
+  "BREAKPOINT_IN_GENE" = "Breakpoint in gene",
+  "BREAKPOINT_NEAR_GENE" = "Breakpoint near gene",
+  "INVERSION_SPANNED_GENE" = "Inversion-spanned gene",
+  "GENE_INSIDE_REARRANGEMENT" = "Inversion-spanned gene",
+  "BREAKPOINT_SV" = "Breakpoint SV",
+  "OTHER_SV" = "Other SV"
+)
+group_text <- as.character(dt$SV_ANALYSIS_GROUP)
+group_text <- ifelse(
+  group_text %in% names(group_labels),
+  group_labels[group_text],
+  gsub("_", " ", group_text)
+)
+group <- factor(group_text, levels = unique(group_text))
 
 row_ha <- rowAnnotation(
   `Gene score` = anno_barplot(
@@ -69,8 +107,9 @@ ht <- Heatmap(
   cluster_columns = FALSE,
   row_split = group,
   row_names_gp = gpar(fontsize = 8),
-  column_names_gp = gpar(fontsize = 9),
-  column_names_rot = 35,
+  column_names_gp = gpar(fontsize = 8.5),
+  column_names_rot = 40,
+  row_title_gp = gpar(fontsize = 9, fontface = "bold"),
   rect_gp = gpar(col = "white", lwd = 0.8),
   left_annotation = row_ha,
   heatmap_legend_param = list(at = c(0, 1), labels = c("No", "Yes")),
@@ -79,14 +118,14 @@ ht <- Heatmap(
 )
 
 height <- max(7, 0.30 * nrow(evidence) + 2.8)
-pdf(pdf_file, width = 12.5, height = height, useDingbats = FALSE)
+pdf(pdf_file, width = 14.5, height = height, useDingbats = FALSE)
 draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
 dev.off()
 
-png(png_file, width = 12.5, height = height, units = "in", res = 400)
+png(png_file, width = 14.5, height = height, units = "in", res = 400)
 draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
 dev.off()
 
-svglite(svg_file, width = 12.5, height = height)
+svglite(svg_file, width = 14.5, height = height)
 draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
 dev.off()
