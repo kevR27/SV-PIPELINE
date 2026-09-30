@@ -40,7 +40,7 @@ def main():
     p.add_argument("--reference", required=True)
     p.add_argument("--sample", required=True)
     p.add_argument("--out-dir", required=True)
-    p.add_argument("--top-n", type=int, default=12)
+    p.add_argument("--top-n", type=int, default=20)
     p.add_argument("--min-mapq", type=int, default=20)
     p.add_argument("--long-read-min", type=int, default=1000)
     p.add_argument("--zoom", type=int, default=20000)
@@ -263,6 +263,8 @@ def main():
                 "SV_ID": sv_id,
                 "genes": genes,
                 "SVTYPE": svtype,
+                "requested_top_n": args.top_n,
+                "selected_sv_rank": rank,
                 "score": row["_score"],
                 "score_field": score_col or ".",
                 "needLR_AF": row["_af"] if pd.notna(row["_af"]) else ".",
@@ -278,7 +280,10 @@ def main():
 
     manifest_path = outdir / "samplot_manifest.tsv"
     pd.DataFrame(manifest).to_csv(manifest_path, sep="\t", index=False)
-    print(f"[OK] samplot_images={len(manifest)} manifest={manifest_path}")
+    print(
+        f"[OK] selected_SVs={len(cand)} requested_top_n={args.top_n} "
+        f"samplot_images={len(manifest)} manifest={manifest_path}"
+    )
 
 
 if __name__ == "__main__":
