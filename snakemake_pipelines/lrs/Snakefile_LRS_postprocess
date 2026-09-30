@@ -297,7 +297,8 @@ rule annotate_mitocarta_context:
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         script=SCRIPTS + "/annotate_mitocarta_context.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv"
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
+        summary=PATH + "{sample}/gene_discovery/{sample}_mitocarta_annotation_summary.tsv"
     conda:
         CONDAENV + "plots.yaml"
     shell:
@@ -309,9 +310,11 @@ rule annotate_mitocarta_context:
             --mitocarta {input.mitocarta} \
             --pathways-gmx {input.pathways} \
             --ranking {input.ranking} \
-            --output {output.tsv}
+            --output {output.tsv} \
+            --summary-output {output.summary}
 
         test -s {output.tsv}
+        test -s {output.summary}
         """
 
 
