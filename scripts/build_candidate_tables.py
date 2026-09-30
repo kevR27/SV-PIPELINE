@@ -81,9 +81,30 @@ def size_group(size: float | None, svtype: str) -> str:
 
 
 def compact_gene_category(row: pd.Series) -> str:
+    existing = text_value(
+        row,
+        ["CANDIDATE_CLASS", "candidate_group", "classification"],
+    ).upper()
+
+    existing_map = {
+        "PANEL_GENE": "OPTIC_NEUROPATHY_PANEL",
+        "NONPANEL_HPO_AND_DISEASE_EVIDENCE": "NON_PANEL_PHENOTYPE_AND_DISEASE",
+        "NONPANEL_HPO_OVERLAP": "NON_PANEL_PHENOTYPE",
+        "NONPANEL_HUMAN_DISEASE_GENE": "NON_PANEL_DISEASE_GENE",
+        "OTHER_NONPANEL_CANDIDATE": "OTHER_NON_PANEL",
+    }
+    if existing in existing_map:
+        return existing_map[existing]
+
     panel = text_value(row, ["PANEL_STATUS", "panel_gene"]).upper()
-    anchors = numeric_value(row, ["optic_neuropathy_anchor_HPO_count", "MITO_ON_ANCHOR_HPO_COUNT"]) or 0
-    disease = numeric_value(row, ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"]) or 0
+    anchors = numeric_value(
+        row,
+        ["optic_neuropathy_anchor_HPO_count", "MITO_ON_ANCHOR_HPO_COUNT"],
+    ) or 0
+    disease = numeric_value(
+        row,
+        ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"],
+    ) or 0
 
     if panel in {"PANEL_GENE", "YES"}:
         return "OPTIC_NEUROPATHY_PANEL"
