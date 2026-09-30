@@ -17,6 +17,11 @@ VEP_ASSEMBLY_EXT = config.get("vep_assembly", "GRCh38")
 DORADO_BIN = config.get("dorado_bin", "dorado")
 DORADO_SUMMARY_BAMS = config.get("dorado_summary_bams", {}) or {}
 DORADO_SAMPLES = [sample for sample in POSTPROCESS_SAMPLES if sample in DORADO_SUMMARY_BAMS]
+SNV_SV_SAMPLES = [
+    sample
+    for sample in POSTPROCESS_SAMPLES
+    if os.path.exists(PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz")
+]
 
 
 rule build_final_candidate_tables:
@@ -288,7 +293,7 @@ FINAL_THESIS_OUTPUTS = [
     ),
     *expand(
         PATH + "{sample}/gene_discovery/final/{sample}_snv_sv_candidates.tsv",
-        sample=POSTPROCESS_SAMPLES,
+        sample=SNV_SV_SAMPLES,
     ),
     *expand(
         PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.pdf",
