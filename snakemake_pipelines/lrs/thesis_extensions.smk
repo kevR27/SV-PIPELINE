@@ -68,7 +68,7 @@ def hpo_optional_input(wc):
 
 rule hpo_semantic_similarity:
     input:
-        genes=rules.build_final_candidate_tables.output.genes,
+        genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.pre_depth.tsv",
         reference=rules.build_hon_hpo_reference.output.tsv,
         edges=MONARCH_EDGES,
         patient=hpo_optional_input,
