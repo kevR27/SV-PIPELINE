@@ -23,5 +23,11 @@ class TestCanonicalLRSFilter(unittest.TestCase):
         self.assertIn("NON_CANONICAL_BREAKEND_CHROM", script)
 
 
+    def test_unresolved_bnd_partner_is_not_considered_canonical(self):
+        script = (ROOT / "scripts" / "filter_sv_evidence.py").read_text(encoding="utf-8")
+        self.assertIn("UNRESOLVED_BREAKEND_CHROM", script)
+        self.assertIn("NON_CANONICAL_BREAKEND_CHROM", script)
+
+
 if __name__ == "__main__":
     unittest.main()
