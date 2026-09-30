@@ -50,6 +50,7 @@ SAMPLOT_ZOOM_BP = config.get("samplot_zoom_bp", 20000)
 SAMPLOT_WINDOW_BP = config.get("samplot_window_bp", 5000)
 SAMPLOT_LARGE_SV_THRESHOLD = config.get("samplot_large_sv_threshold", 1000000)
 SV_GENE_BREAKPOINT_TOLERANCE = config.get("sv_gene_breakpoint_tolerance", 10000)
+THESIS_TOP_GENES = config.get("thesis_top_genes", 25)
 
 
 def integration_source_files(sample):
@@ -261,6 +262,7 @@ rule integrate_candidate_context:
         tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv"
     params:
         methylation_units=config.get("methylation_units", "percent"),
+        top_genes=THESIS_TOP_GENES,
         methylation_arg=lambda wc: (
             f"--methylation-bed {methylation_path(wc.sample)}"
             if methylation_path(wc.sample)
@@ -452,6 +454,7 @@ rule thesis_plots_sample:
             --sample {wildcards.sample} \
             --platform lrs \
             --candidate-table {input.candidate_events} \
+            --top-genes {params.top_genes} \
             --methylation-units {params.methylation_units} \
             {params.gene_bed_arg} \
             {params.methylation_arg} \
