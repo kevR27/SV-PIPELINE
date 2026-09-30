@@ -140,7 +140,7 @@ ONT WGS BAM
 │     └── sequencing-depth QC
 │
 ├── Clair3
-│     └── panel SNV/indel calling
+│     └── genome-wide SNV/indel calling
 │           └── WhatsHap
 │                 └── small-variant phasing + haplotagged BAM
 │
@@ -197,9 +197,9 @@ Main outputs:
 
 ---
 
-### 4.2 Clair3 — complementary SNV/indel analysis
+### 4.2 Clair3 — complementary genome-wide SNV/indel analysis
 
-Clair3 is used as a complementary genome-wide small-variant layer. The optic-neuropathy BED is retained for panel annotation, but the active LRS Clair3 rule is not BED-restricted.
+Clair3 is used as a complementary genome-wide small-variant layer. The optic-neuropathy BED is retained for panel annotation, but the active LRS Clair3 rule is not BED-restricted. These calls support phasing and secondary SNV+SV review; they do not replace the thesis focus on structural variants.
 
 This is useful because an unresolved case can still contain relevant SNVs or small indels, and these variants can also help with phasing.
 
