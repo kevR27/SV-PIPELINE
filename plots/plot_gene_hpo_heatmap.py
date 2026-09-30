@@ -20,7 +20,7 @@ def parse_args():
     p.add_argument("--input", required=True, help="*_human_gene_phenotypes.tsv")
     p.add_argument("--ranking", default=None, help="Optional *_ranked_candidates.tsv used to select/order genes")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-genes", type=int, default=20)
+    p.add_argument("--top-genes", type=int, default=25)
     p.add_argument("--top-hpo", type=int, default=18)
     p.add_argument("--title", default="Human gene–phenotype associations for SV-overlapping genes")
     return p.parse_args()
