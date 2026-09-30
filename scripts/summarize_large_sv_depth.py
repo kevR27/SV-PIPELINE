@@ -120,8 +120,21 @@ def main():
         )
         bin_rows.extend(grouped.to_dict("records"))
 
-    summary = pd.DataFrame(summary_rows)
-    bins = pd.DataFrame(bin_rows)
+    summary = pd.DataFrame(
+        summary_rows,
+        columns=[
+            "SV_ID", "GENE", "CHROM", "START", "END", "SVTYPE",
+            "SV_SIZE_BP", "MEDIAN_DEPTH_INSIDE", "MEDIAN_DEPTH_FLANKS",
+            "DEPTH_RATIO", "DEPTH_PATTERN", "PLOT_BIN_BP",
+        ],
+    )
+    bins = pd.DataFrame(
+        bin_rows,
+        columns=[
+            "CHROM", "PLOT_START", "DEPTH", "PLOT_END", "SV_ID", "GENE",
+            "SVTYPE", "SV_START", "SV_END", "NORMALIZED_DEPTH",
+        ],
+    )
 
     summary_path = Path(args.summary_output)
     bins_path = Path(args.bins_output)
