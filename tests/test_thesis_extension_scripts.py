@@ -15,6 +15,9 @@ class TestThesisExtensionScripts(unittest.TestCase):
             "scripts/integrate_depth_into_candidates.py",
             "scripts/build_large_sv_gene_context.py",
             "scripts/build_population_gene_effect_table.py",
+            "plots/plot_mitocarta_sv_genes.py",
+            "plots/run_samplot_candidates.py",
+            "plots/plot_candidate_locus.py",
         ]:
             with self.subTest(relative=relative):
                 path = ROOT / relative
