@@ -187,7 +187,7 @@ def get_functional_context(svtype: str, gene_effect: str) -> str:
         if "BREAKPOINT_NEAR_GENE" in effect:
             return "REGULATORY_OR_POSITION_EFFECT_POSSIBLE_NEAR_BREAKPOINT"
         if effect in {"GENE_FULLY_SPANNED_BY_INVERSION", "GENE_INSIDE_INVERSION"}:
-            return "GENE_ORIENTATION_CHANGED_COPY_NEUTRAL_REGULATORY_CONTEXT"
+            return "GENE_FULLY_SPANNED_COPY_NEUTRAL_REGULATORY_3D_CONTEXT_POSSIBLE"
         return "INVERSION_FUNCTIONAL_EFFECT_UNRESOLVED"
 
     if svtype in {"BND", "TRA"}:
