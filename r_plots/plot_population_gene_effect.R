@@ -20,7 +20,7 @@ if (nrow(dt) == 0) stop("No population/effect rows available.")
 dt <- unique(dt, by = c("SV_ID", "GENE"))
 dt[, SCORE_NUM := suppressWarnings(as.numeric(GENE_RELEVANCE_SCORE))]
 dt[is.na(SCORE_NUM), SCORE_NUM := 0]
-dt[, RARE_FLAG := as.integer(POPULATION_CLASS == "RARE_NEEDLR")]
+dt[, RARE_FLAG := as.integer(POPULATION_CLASS == "LOW_FREQUENCY_BY_NEEDLR")]
 dt[, PANEL_FLAG := as.integer(PANEL_STATUS == "PANEL_GENE")]
 
 gene_rank <- dt[, .(
@@ -34,10 +34,41 @@ selected <- head(gene_rank$GENE, top_n)
 plot_dt <- dt[GENE %in% selected]
 plot_dt[, GENE := factor(GENE, levels = rev(selected))]
 
-pop <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, POPULATION_CLASS)]
-effect <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, SV_EFFECT_GROUP)]
+population_labels <- c(
+  "LOW_FREQUENCY_BY_NEEDLR" = "Low frequency\nneedLR",
+  "COMMON_BY_NEEDLR" = "Common\nneedLR",
+  "COMMON_BENIGN_REGION_OVERLAP_CONTEXT" = "Common benign-region\noverlap",
+  "LOW_AF_BENIGN_REGION_OVERLAP_CONTEXT" = "Low-AF benign-region\noverlap",
+  "NO_NEEDLR_MATCH_AF_UNKNOWN" = "No needLR match\nAF unknown",
+  "POPULATION_AF_NOT_EVALUABLE" = "AF not\nevaluable",
+  "POPULATION_FREQUENCY_UNKNOWN" = "Frequency\nunknown"
+)
+effect_labels <- c(
+  "DIRECT_BREAKPOINT" = "Direct\nbreakpoint",
+  "COPY_LOSS_GEOMETRY" = "Copy-loss\ngeometry",
+  "COPY_GAIN_GEOMETRY" = "Copy-gain\ngeometry",
+  "INSERTION_IN_GENE" = "Insertion\nin gene",
+  "INVERSION_SPANNED_GENE" = "Inversion-spanned\ngene",
+  "NEAR_GENE" = "Near\ngene",
+  "INVERSION_OTHER" = "Other\ninversion",
+  "OTHER_OR_UNRESOLVED" = "Other /\nunresolved"
+)
 
-p1 <- ggplot(pop, aes(POPULATION_CLASS, GENE, fill = N)) +
+plot_dt[, POP_LABEL := fifelse(
+  POPULATION_CLASS %in% names(population_labels),
+  population_labels[POPULATION_CLASS],
+  gsub("_", " ", POPULATION_CLASS)
+)]
+plot_dt[, EFFECT_LABEL := fifelse(
+  SV_EFFECT_GROUP %in% names(effect_labels),
+  effect_labels[SV_EFFECT_GROUP],
+  gsub("_", " ", SV_EFFECT_GROUP)
+)]
+
+pop <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, POP_LABEL)]
+effect <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, EFFECT_LABEL)]
+
+p1 <- ggplot(pop, aes(POP_LABEL, GENE, fill = N)) +
   geom_tile(colour = "white", linewidth = 0.4) +
   geom_text(aes(label = ifelse(N > 0, N, "")), size = 2.5) +
   scale_fill_gradient(low = "grey95", high = "grey20") +
@@ -52,7 +83,7 @@ p1 <- ggplot(pop, aes(POPULATION_CLASS, GENE, fill = N)) +
     legend.position = "right"
   )
 
-p2 <- ggplot(effect, aes(SV_EFFECT_GROUP, GENE, fill = N)) +
+p2 <- ggplot(effect, aes(EFFECT_LABEL, GENE, fill = N)) +
   geom_tile(colour = "white", linewidth = 0.4) +
   geom_text(aes(label = ifelse(N > 0, N, "")), size = 2.5) +
   scale_fill_gradient(low = "grey95", high = "grey20") +
@@ -72,8 +103,8 @@ combined <- p1 + p2 +
   plot_annotation(
     title = "Population context and structural-variant effects by gene",
     subtitle = paste(
-      "needLR provides direct long-read population AF. gnomAD-SV is represented as AnnotSV overlap context;",
-      "AnnotSV benign AFmax is not treated as source-specific gnomAD AF when multiple databases overlap."
+      "needLR provides matched long-read control-frequency evidence. gnomAD-SV is shown as AnnotSV benign-source overlap;",
+      "AnnotSV benign AFmax may combine databases and is not treated as a gnomAD-specific exact-allele AF."
     )
   )
 
