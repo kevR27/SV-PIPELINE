@@ -389,7 +389,11 @@ def main():
     if not ps.empty:
         ax2.barh(np.arange(len(ps)), ps["unique_genes"])
         ax2.set_yticks(np.arange(len(ps)))
-        ax2.set_yticklabels(ps["pathway"], fontsize=8.5)
+        pathway_labels = [
+            str(value).replace("_", " ")
+            for value in ps["pathway"]
+        ]
+        ax2.set_yticklabels(pathway_labels, fontsize=8.5)
         ax2.set_xlabel("Unique mitochondrial genes")
         ax2.set_title("MitoCarta pathways: direct SV-gene effects only")
         style_axis(ax2, "x")
@@ -398,7 +402,11 @@ def main():
         if not cs.empty:
             ax2.barh(np.arange(len(cs)), cs["unique_genes"])
             ax2.set_yticks(np.arange(len(cs)))
-            ax2.set_yticklabels(cs["subcompartment"], fontsize=8.5)
+            compartment_labels = [
+            str(value).replace("_", " ")
+            for value in cs["subcompartment"]
+        ]
+        ax2.set_yticklabels(compartment_labels, fontsize=8.5)
             ax2.set_xlabel("Unique mitochondrial genes")
             ax2.set_title("MitoCarta sub-mitochondrial localization")
             style_axis(ax2, "x")
@@ -450,7 +458,13 @@ def main():
         fontsize=8.5,
         wrap=True,
     )
-    fig.tight_layout(rect=[0, 0.06, 1, 0.96])
+    fig.subplots_adjust(
+        left=0.18,
+        right=0.985,
+        top=0.93,
+        bottom=0.11,
+        wspace=0.46,
+    )
     outputs = save_figure(fig, prefix)
     plt.close(fig)
 
