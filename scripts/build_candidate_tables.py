@@ -66,7 +66,7 @@ def call_support(row: pd.Series) -> str:
 
 
 def size_group(size: float | None, svtype: str) -> str:
-    if svtype in {"BND", "TRA"} and size is None:
+    if svtype in {"BND", "TRA"}:
         return "BREAKEND"
     if size is None:
         return "UNKNOWN"
@@ -110,7 +110,10 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
         row_dict = source.to_dict()
         effect, distance = get_sv_gene_effect(row_dict, gene, near_breakpoint_bp)
         svtype = text_value(source, ["SVTYPE"]).upper()
-        sv_size = numeric_value(source, ["SVLEN", "SV_EVENT_SPAN_BP"])
+        original_svlen = numeric_value(source, ["SVLEN"])
+        sv_size = numeric_value(source, ["SV_EVENT_SPAN_BP"])
+        if sv_size is None:
+            sv_size = original_svlen
         if sv_size is None:
             start = numeric_value(source, ["START"])
             end = numeric_value(source, ["END", "POS2"])
@@ -130,7 +133,8 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "CHR2": text_value(source, ["CHR2"]),
             "POS2": text_value(source, ["POS2"]),
             "SVTYPE": svtype,
-            "SVLEN": sv_size if sv_size is not None else ".",
+            "SVLEN": original_svlen if original_svlen is not None else ".",
+            "SV_SPAN_BP": sv_size if sv_size is not None else ".",
             "SV_SIZE_GROUP": size_group(sv_size, svtype),
             "SV_GENE_EFFECT": effect,
             "BREAKPOINT_DISTANCE_BP": distance if distance is not None else ".",
@@ -236,10 +240,15 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
         })
 
     out = pd.DataFrame(rows)
-    return out.sort_values(
-        ["GENE_RELEVANCE_SCORE", "GENE_DISEASE_SCORE", "OPTIC_NEUROPATHY_HPO_COUNT", "GENE"],
+    out["_on_hpo_count"] = pd.to_numeric(
+        out["OPTIC_NEUROPATHY_HPO_COUNT"],
+        errors="coerce",
+    ).fillna(0)
+    out = out.sort_values(
+        ["GENE_RELEVANCE_SCORE", "GENE_DISEASE_SCORE", "_on_hpo_count", "GENE"],
         ascending=[False, False, False, True],
     )
+    return out.drop(columns=["_on_hpo_count"])
 
 
 def main():
