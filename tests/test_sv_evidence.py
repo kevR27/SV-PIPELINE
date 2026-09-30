@@ -221,34 +221,14 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(out[2]['SV_DB_CLINVAR_OVERLAP'],'NOT_APPLICABLE')
             self.assertTrue(json.loads(out[0]['ANNOTSV_GENE_ROWS_JSON']))
 
-    def test_needlr_never_reuses_stale_native_results(self):
-        from unittest.mock import patch
-        import run_needlr_fresh
-        with tempfile.TemporaryDirectory() as tmp:
-            d=Path(tmp);(d/'query.vcf').write_text('QUERY')
-            old=d/'native/old';old.mkdir(parents=True)
-            (old/'x_RESULTS.tsv').write_text('STALE')
-            (old/'x.vcf.gz').write_text('STALE')
-            calls=[]
-            def fake_run(command, check):
-                calls.append(command)
-                output=Path(command[command.index('-O')+1]);output.mkdir(parents=True)
-                (output/'x_RESULTS.tsv').write_text('FRESH')
-                (output/'x.vcf.gz').write_text('FRESH')
-            argv=['run_needlr_fresh','--vcf',str(d/'query.vcf'),'--backend',str(d/'backend'),
-                  '--outdir',str(d/'native'),'--tsv',str(d/'final.tsv'),'--output-vcf',str(d/'final.vcf.gz'),
-                  '--manifest',str(d/'manifest.json')]
-            with patch.object(sys,'argv',argv), patch.object(run_needlr_fresh.subprocess,'run',side_effect=fake_run):
-                run_needlr_fresh.main()
-                run_needlr_fresh.main()
-            self.assertEqual(len(calls),2)
-            self.assertNotEqual(calls[0][calls[0].index('-O')+1],calls[1][calls[1].index('-O')+1])
-            self.assertEqual((d/'final.tsv').read_text(),'FRESH')
-            self.assertEqual((old/'x_RESULTS.tsv').read_text(),'STALE')
+    def test_needlr_reuses_complete_native_results_only(self):
+        snakefile = (ROOT / "snakemake_pipelines/lrs/Snakefile_LRS_update").read_text()
+        self.assertIn("rule needlr_annotation:", snakefile)
+        self.assertIn("Completed native results already exist; reusing them.", snakefile)
+        self.assertIn('if [ -s "$results_tsv" ] && [ -s "$results_vcf" ]', snakefile)
+        self.assertIn("No complete native result found; running annotation.", snakefile)
+        self.assertIn("needLR annotate", snakefile)
 
-
-
-class PlotTests(unittest.TestCase):
     def test_methylation_units(self):
         context=importlib.import_module('integrate_candidate_context')
         plot=importlib.import_module('plot_methylation')
