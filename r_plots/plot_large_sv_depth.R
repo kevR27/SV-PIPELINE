@@ -3,7 +3,7 @@ library(ggplot2)
 library(scales)
 library(svglite)
 
-source(snakemake@source("theme_thesis.R"))
+snakemake@source("theme_thesis.R")
 
 bins_file <- snakemake@input[["bins"]]
 summary_file <- snakemake@input[["summary"]]
