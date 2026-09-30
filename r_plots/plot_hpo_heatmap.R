@@ -21,7 +21,21 @@ genes[is.na(SCORE), SCORE := 0]
 selected_genes <- head(genes[order(-SCORE)]$GENE, top_genes)
 
 pheno <- pheno[gene_symbol %in% selected_genes & grepl("^HP:", hpo_id)]
-if (nrow(pheno) == 0) stop("No HPO annotations available for selected genes.")
+if (nrow(pheno) == 0) {
+  pdf(pdf_file, width = 10, height = 4.5, useDingbats = FALSE)
+  grid.newpage()
+  grid.text("No HPO annotations available for selected genes", gp = gpar(fontsize = 14))
+  dev.off()
+  png(png_file, width = 10, height = 4.5, units = "in", res = 400)
+  grid.newpage()
+  grid.text("No HPO annotations available for selected genes", gp = gpar(fontsize = 14))
+  dev.off()
+  svglite(svg_file, width = 10, height = 4.5)
+  grid.newpage()
+  grid.text("No HPO annotations available for selected genes", gp = gpar(fontsize = 14))
+  dev.off()
+  quit(save = "no", status = 0)
+}
 
 term_counts <- pheno[, .(N = uniqueN(gene_symbol)), by = .(hpo_id, hpo_label)]
 selected_terms <- head(term_counts[order(-N, hpo_id)], top_hpo)
