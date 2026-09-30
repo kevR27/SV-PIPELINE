@@ -19,10 +19,11 @@ SAMPLES = list(config["samples"].keys())
 BAMS = config["samples"]
 PATH = config["path"].rstrip("/") + "/"
 REF = config["ref"]
-CONDAENV = config["condaenv"]
 
-SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
-PLOTS = os.path.abspath(os.path.join(workflow.basedir, "../../plots"))
+REPO_ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
+CONDAENV = os.path.join(REPO_ROOT, "envs") + "/"
+SCRIPTS = os.path.join(REPO_ROOT, "scripts")
+PLOTS = os.path.join(REPO_ROOT, "plots")
 
 COMPLEMENTARY_STRAGLR_BP_TOL = config.get(
     "complementary_straglr_breakpoint_tolerance",
