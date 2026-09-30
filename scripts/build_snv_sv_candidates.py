@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -83,6 +84,23 @@ def read_vep(path: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def parse_extra(value: str) -> dict[str, str]:
+    result = {}
+    for item in str(value or "").split(";"):
+        if "=" in item:
+            key, val = item.split("=", 1)
+            result[key] = val
+    return result
+
+
+def parse_uploaded_variant(value: str):
+    match = re.match(r"^(?:chr)?([^_]+)_(\d+)_([^/]+)/(.+)$", str(value))
+    if not match:
+        return None
+    chrom, pos, _ref, alt = match.groups()
+    return chrom, int(pos), alt
+
+
 def parse_location(value: str):
     text = str(value).split("-")[0]
     chrom, pos = text.split(":", 1)
@@ -118,21 +136,27 @@ def main():
 
     small_rows = []
     for _, row in vep.iterrows():
-        gene = str(row.get("SYMBOL", "."))
+        extra = parse_extra(row.get("Extra", ""))
+        gene = str(row.get("SYMBOL") or extra.get("SYMBOL", "."))
         if gene not in genes:
             continue
 
         consequence = str(row.get("Consequence", "."))
-        impact = str(row.get("IMPACT", ".")).upper()
+        impact = str(row.get("IMPACT") or extra.get("IMPACT", ".")).upper()
         consequences = set(consequence.split(","))
         if impact not in KEEP_IMPACT and not (consequences & KEEP_CONSEQUENCE):
             continue
 
-        try:
-            chrom, pos = parse_location(row.get("Location", "."))
-        except Exception:
-            continue
-        alt = str(row.get("Allele", "."))
+        uploaded = parse_uploaded_variant(row.get("Uploaded_variation", "."))
+        if uploaded:
+            chrom, pos, uploaded_alt = uploaded
+            alt = uploaded_alt
+        else:
+            try:
+                chrom, pos = parse_location(row.get("Location", "."))
+            except Exception:
+                continue
+            alt = str(row.get("Allele", "."))
         gt, ps, phased = phase.get(
             (chrom, pos, alt),
             phase_by_position.get((chrom, pos), (".", ".", "NO")),
