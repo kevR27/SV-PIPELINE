@@ -39,6 +39,10 @@ COMPLEMENTARY_LONGPHASE_BP_TOL = config.get(
 
 THESIS_METHYLATION_REGION = config.get("thesis_methylation_region")
 GENE_BED = config.get("gene_bed")
+GENEBED = GENE_BED
+GENE_LIST = config["candidate_genes_list"]
+MONARCH_NODES = config["monarch_nodes"]
+MONARCH_EDGES = config["monarch_edges"]
 MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS_FILE = config.get("mitocarta_pathways_file")
 
