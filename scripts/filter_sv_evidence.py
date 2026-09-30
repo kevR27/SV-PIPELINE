@@ -42,6 +42,24 @@ set_csv_field_size_limit()
 
 MISSING = "."
 
+CANONICAL_CHROMS = {
+    *(f"chr{i}" for i in range(1, 23)),
+    "chrX",
+    "chrY",
+    "chrM",
+}
+
+
+def normalize_chrom(value):
+    text = str(value or "").strip()
+    if text in {"", MISSING}:
+        return None
+    if text.startswith("chr"):
+        return text
+    if text == "MT":
+        return "chrM"
+    return "chr" + text
+
 
 def to_float(v):
     if v in (None, "", MISSING):
@@ -120,6 +138,11 @@ def main() -> int:
     ap.add_argument("--blacklist-bed", default=None,
                      help="Optional BED of low-mappability/segdup regions; overlap is "
                           "flagged, not excluded")
+    ap.add_argument(
+        "--canonical-only",
+        action="store_true",
+        help="Keep only chr1-22, chrX, chrY and chrM. For BND/TRA both breakends must be canonical.",
+    )
     ap.add_argument("--output-tsv", required=True)
     ap.add_argument("--output-ids", required=True)
     a = ap.parse_args()
@@ -204,6 +227,15 @@ def main() -> int:
 
                 if support is None or support < a.min_support:
                     fail_reasons.append("LOW_SUPPORT")
+
+                if a.canonical_only:
+                    chrom1 = normalize_chrom(row.get("CHROM"))
+                    if chrom1 not in CANONICAL_CHROMS:
+                        fail_reasons.append("NON_CANONICAL_CHROM")
+                    if svtype in {"BND", "TRA"}:
+                        chrom2 = normalize_chrom(row.get("CHR2"))
+                        if chrom2 is not None and chrom2 not in CANONICAL_CHROMS:
+                            fail_reasons.append("NON_CANONICAL_BREAKEND_CHROM")
 
                 if svtype in {"BND", "TRA"}:
                     flags.append("NO_SVLEN")
