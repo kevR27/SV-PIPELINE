@@ -27,7 +27,7 @@ def parse_args():
     p.add_argument("--gene-bed", required=True, help="BED with chrom, start, end, gene label")
     p.add_argument("--methylation-bed", default=None, help="Optional tabix-indexed modkit bedMethyl")
     p.add_argument("--out-dir", required=True)
-    p.add_argument("--top-n", type=int, default=12)
+    p.add_argument("--top-n", type=int, default=25)
     p.add_argument("--flank", type=int, default=50000)
     p.add_argument("--title-prefix", default="Candidate locus")
     return p.parse_args()
