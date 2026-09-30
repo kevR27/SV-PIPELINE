@@ -239,6 +239,7 @@ def main():
         help="*_ranked_candidates.tsv with ON-anchor HPO evidence",
     )
     p.add_argument("--output", required=True)
+    p.add_argument("--summary-output", default=None)
     args = p.parse_args()
 
     sv = pd.read_csv(args.integrated, sep="\t", dtype=str, low_memory=False)
@@ -383,11 +384,56 @@ def main():
     nuclear = out["MITOCARTA_ENCODING"].eq("NUCLEAR_MITOCHONDRIAL_GENE")
     on = out["MITO_ON_CONTEXT"].eq("YES")
     path_reported = ~out["MITOCARTA_MITOPATHWAYS"].fillna(".").isin([".", ""])
+    summary = pd.DataFrame(
+        [
+            {
+                "input_rows": len(out),
+                "unique_input_genes": int(genes[~genes.isin(MISSING)].nunique()),
+                "mitocarta_rows": int(matched.sum()),
+                "unique_mitocarta_genes": int(
+                    out.loc[out["MITOCARTA_STATUS"].eq("YES"), gene_col].nunique()
+                ),
+                "nuclear_mito_rows": int(nuclear.sum()),
+                "unique_nuclear_mito_genes": int(
+                    out.loc[nuclear, gene_col].nunique()
+                ),
+                "nuclear_mito_on_rows": int((nuclear & on).sum()),
+                "rows_with_pathways": int(path_reported.sum()),
+                "rows_with_subcompartment": int(
+                    (
+                        ~out["MITOCARTA_SUBCOMPARTMENT"]
+                        .fillna(".")
+                        .isin([".", ""])
+                    ).sum()
+                ),
+                "workbook_sheet": source_sheet,
+                "workbook_header": source_header,
+                "gmx_gene_count": len(gmx),
+                "pathway_source_counts": ";".join(
+                    f"{key}={value}"
+                    for key, value in out["MITOCARTA_PATHWAY_SOURCE"]
+                    .value_counts()
+                    .to_dict()
+                    .items()
+                ),
+            }
+        ]
+    )
+
+    summary_output = (
+        Path(args.summary_output)
+        if args.summary_output
+        else output.with_name(output.stem + "_summary.tsv")
+    )
+    summary_output.parent.mkdir(parents=True, exist_ok=True)
+    summary.to_csv(summary_output, sep="\t", index=False)
+
     print(
         f"[OK] rows={len(out)} mitocarta_rows={int(matched.sum())} "
         f"nuclear_mito_rows={int(nuclear.sum())} "
         f"nuclear_mito_on_rows={int((nuclear & on).sum())} "
-        f"rows_with_pathways={int(path_reported.sum())} output={output}"
+        f"rows_with_pathways={int(path_reported.sum())} "
+        f"summary={summary_output} output={output}"
     )
 
 
