@@ -80,7 +80,7 @@ def main():
         work[relationship_col]
         .fillna("")
         .astype(str)
-        .eq("INTERVAL_CONTEXT_ONLY")
+        .isin(["INTERVAL_CONTEXT_ONLY", "INVERSION_SPANS_INTACT_GENE"])
         if relationship_col
         else False
     )
@@ -92,19 +92,19 @@ def main():
         work["_panel"] = False
 
     pathogenic_col = first_existing(work, ["SV_PATHOGENIC_DB_SOURCE"])
-    orthogonal_cols = [
+    complementary_cols = [
         first_existing(work, ["STRAGLR_MATCH"]),
         first_existing(work, ["TLDR_MATCH"]),
         first_existing(work, ["LONGPHASE_MATCH"]),
     ]
-    orthogonal_cols = [c for c in orthogonal_cols if c]
+    complementary_cols = [c for c in complementary_cols if c]
     work["_path_db"] = present(work[pathogenic_col]) if pathogenic_col else False
-    if orthogonal_cols:
-        work["_orthogonal"] = False
-        for col in orthogonal_cols:
-            work["_orthogonal"] = work["_orthogonal"] | work[col].fillna("").astype(str).str.upper().eq("YES")
+    if complementary_cols:
+        work["_complementary"] = False
+        for col in complementary_cols:
+            work["_complementary"] = work["_complementary"] | work[col].fillna("").astype(str).str.upper().eq("YES")
     else:
-        work["_orthogonal"] = False
+        work["_complementary"] = False
 
     work = (
         work.sort_values(
@@ -119,14 +119,14 @@ def main():
     work["PAIR_LABEL"] = work[id_col].astype(str) + " | " + work["_gene"]
     work["PANEL_GROUP"] = np.where(work["_panel"], "PANEL", "NONPANEL")
     work["PATHOGENIC_DB_REPORTED"] = np.where(work["_path_db"], "YES", "NO")
-    work["ORTHOGONAL_MATCH"] = np.where(work["_orthogonal"], "YES", "NO")
+    work["COMPLEMENTARY_MATCH"] = np.where(work["_complementary"], "YES", "NO")
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     source_cols = [
         id_col, gene_col, "PAIR_LABEL", "PANEL_GROUP", "_svtype", "_svlen",
         "_caller_count", "_priority", "_phenotype", "_disease", "_af",
-        "PATHOGENIC_DB_REPORTED", "ORTHOGONAL_MATCH",
+        "PATHOGENIC_DB_REPORTED", "COMPLEMENTARY_MATCH",
     ]
     work[source_cols].to_csv(
         prefix.with_name(prefix.name + "_sv_gene_pairs.tsv"),
@@ -134,11 +134,11 @@ def main():
         index=False,
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(17.0, 8.6))
+    fig, axes = plt.subplots(1, 2, figsize=(18.5, 9.4))
     ax1, ax2 = axes
 
     sizes = 35 + 24 * np.log10(work["_svlen"].clip(lower=50))
-    edge = np.where(work["_orthogonal"], "black", "white")
+    edge = np.where(work["_complementary"], "black", "white")
     colors = [SVTYPE_COLORS.get(x, "#999999") for x in work["_svtype"]]
 
     directed = ~work["_interval_context_only"]
@@ -150,7 +150,7 @@ def main():
         s=sizes[directed],
         c=np.asarray(colors)[directed],
         edgecolors=np.asarray(edge)[directed],
-        linewidths=np.where(work.loc[directed, "_orthogonal"], 1.3, 0.5),
+        linewidths=np.where(work.loc[directed, "_complementary"], 1.3, 0.5),
         alpha=0.88,
         label="Gene-directed / dosage / breakpoint",
     )
@@ -173,13 +173,11 @@ def main():
             ascending=[True, False, False, False, False],
         )
         .drop_duplicates("_gene")
-        .head(min(20, work["_gene"].nunique()))
+        .head(min(10, work["_gene"].nunique()))
     )
     offsets = [
-        (6, 8), (6, -13), (10, 17), (10, -22), (14, 5),
-        (14, -17), (18, 13), (18, -27), (22, 3), (22, -12),
-        (26, 18), (26, -23), (30, 8), (30, -17), (34, 15),
-        (34, -28), (38, 4), (38, -13), (42, 20), (42, -22),
+        (8, 10), (8, -16), (14, 22), (14, -28), (22, 7),
+        (22, -21), (30, 17), (30, -33), (38, 5), (38, -17),
     ]
     for j, (_, row) in enumerate(label_rows.iterrows()):
         ax1.annotate(
@@ -233,7 +231,7 @@ def main():
     fig.text(
         0.5,
         0.012,
-        "Each point is one merged SV-gene pair. Point size scales with SV span. Hollow grey points are genes that lie inside an INV/BND interval without breakpoint overlap and are retained as context, not direct disruption. Right: blue=panel gene, orange=non-panel gene. Scores are research-prioritization variables, not pathogenicity probabilities.",
+        "Each point is one merged SV-gene pair. Point size scales with SV span. Hollow grey points represent inversion-spanned or interval-only gene context without direct breakpoint overlap. Black point borders indicate complementary computational evidence from the same sequencing data. Right: blue=panel gene, orange=non-panel gene. Scores are research-prioritization variables, not pathogenicity probabilities.",
         ha="center",
         fontsize=8.5,
         wrap=True,
