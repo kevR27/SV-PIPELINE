@@ -539,10 +539,10 @@ def main():
         out["EVENT_POPULATION_TIER"]
         .map(
             {
-                "RARE_AF_LE_0.01": 3,
-                "NOT_EVALUABLE_GE10MB": 2,
-                "NOT_EVALUABLE_BND": 2,
-                "NO_MATCH": 2,
+                "RARE_AF_LE_0.01": 2,
+                "NOT_EVALUABLE_GE10MB": 1,
+                "NOT_EVALUABLE_BND": 1,
+                "NO_MATCH": 1,
                 "UNKNOWN_OR_MISSING": 1,
                 "COMMON_AF_GT_0.01": 0,
             }
@@ -610,13 +610,15 @@ def main():
 
     out["EVENT_RANKING_MODEL"] = (
         "geneRelevance_phenoPlusDisease__"
-        "mechanism_population_callers__v1"
+        "mechanism_population_callers__v2_missingPopulationNeutral"
     )
 
     out["EVENT_RANKING_INTERPRETATION"] = (
         "Research prioritization only. Event size is retained as context, "
         "not used as a pathogenicity score. INV/BND interval-only gene "
-        "overlap is not treated as direct gene disruption."
+        "overlap is not treated as direct gene disruption. Missing, "
+        "no-match and non-evaluable population evidence are neutral rather "
+        "than treated as evidence of rarity."
     )
 
     out = out.drop(
