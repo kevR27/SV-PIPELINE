@@ -177,6 +177,35 @@ def main():
         })
 
     small = pd.DataFrame(small_rows)
+    if not small.empty:
+        impact_rank = {"HIGH": 2, "MODERATE": 1}
+        small["_IMPACT_RANK"] = small["IMPACT"].map(impact_rank).fillna(0)
+
+        collapsed = []
+        group_cols = ["GENE", "SMALL_VARIANT", "CHROM", "POS", "ALT"]
+        for _, group in small.groupby(group_cols, sort=False):
+            lead = group.sort_values("_IMPACT_RANK", ascending=False).iloc[0].copy()
+            lead["CONSEQUENCE"] = ",".join(
+                sorted({
+                    consequence
+                    for value in group["CONSEQUENCE"].astype(str)
+                    for consequence in value.split(",")
+                    if consequence and consequence != "."
+                })
+            ) or "."
+            lead["IMPACT"] = group.sort_values("_IMPACT_RANK", ascending=False).iloc[0]["IMPACT"]
+            lead["CLINVAR_OR_EXISTING_ID"] = ";".join(
+                sorted({
+                    item
+                    for value in group["CLINVAR_OR_EXISTING_ID"].astype(str)
+                    for item in value.split(",")
+                    if item not in {"", ".", "-", "nan", "None"}
+                })
+            ) or "."
+            collapsed.append(lead.drop(labels=["_IMPACT_RANK"]))
+
+        small = pd.DataFrame(collapsed)
+
     output_rows = []
 
     for _, small_var in small.iterrows():
