@@ -469,6 +469,25 @@ rule thesis_plots_sample:
 
 
 
+rule prepare_samplot_gene_annotation:
+    input:
+        bed=GENE_BED
+    output:
+        bed=PATH + "reference_checks/samplot_genes.bed.gz",
+        index=PATH + "reference_checks/samplot_genes.bed.gz.tbi"
+    conda:
+        CONDAENV + "samplot.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.bed})
+        bgzip -c {input.bed} > {output.bed}
+        tabix -f -p bed {output.bed}
+        test -s {output.bed}
+        test -s {output.index}
+        """
+
+
 rule samplot_candidate_breakpoints:
     input:
         # Use the mechanism-aware event ranking so read-level review includes
@@ -476,6 +495,8 @@ rule samplot_candidate_breakpoints:
         # highest generic gene scores.
         integrated=rules.rank_sv_gene_events.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
+        genes=rules.prepare_samplot_gene_annotation.output.bed,
+        gene_index=rules.prepare_samplot_gene_annotation.output.index,
         script=PLOTS + "/run_samplot_candidates.py"
     output:
         manifest=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/samplot_manifest.tsv",
@@ -506,7 +527,8 @@ rule samplot_candidate_breakpoints:
             --long-read-min {params.long_read_min} \
             --zoom {params.zoom} \
             --window {params.window} \
-            --large-sv-threshold {params.large_threshold}
+            --large-sv-threshold {params.large_threshold} \
+            --gene-annotation {input.genes}
 
         test -s {output.manifest}
         touch {output.marker}
