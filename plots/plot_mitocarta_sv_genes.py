@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -11,6 +12,9 @@ import numpy as np
 import pandas as pd
 
 from plot_utils import first_existing, numeric, read_tsv, save_figure, set_thesis_style, style_axis
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from sv_gene_effects import get_functional_context, get_sv_gene_effect
 
 
 MISSING = {"", ".", "NA", "N/A", "nan", "None"}
@@ -93,6 +97,35 @@ def main():
         .eq("NUCLEAR_MITOCHONDRIAL_GENE")
     ].copy()
 
+    effects = nuclear.apply(
+        lambda row: get_sv_gene_effect(row.to_dict(), str(row[gene_col]), 10000),
+        axis=1,
+    )
+    nuclear["_gene_effect"] = [item[0] for item in effects]
+    nuclear["_functional_context"] = [
+        get_functional_context(str(row.get("SVTYPE", "")), effect)
+        for (_, row), effect in zip(nuclear.iterrows(), nuclear["_gene_effect"])
+    ]
+
+    def impact_scope(row):
+        effect = str(row["_gene_effect"])
+        context = str(row["_functional_context"])
+        if (
+            effect.startswith("WHOLE_GENE_")
+            or effect.startswith("PARTIAL_GENE_")
+            or effect.startswith("INSERTION_IN_")
+            or "BREAKPOINT_IN_" in effect
+            or "TWO_BREAKPOINTS_IN_GENE" in effect
+        ):
+            return "DIRECT_STRUCTURAL_EFFECT"
+        if "SPANNED_BY_INVERSION" in effect:
+            return "INVERSION_SPANNED_CONTEXT"
+        if "REGULATORY_OR_POSITION_EFFECT" in context or "BREAKPOINT_NEAR_GENE" in effect:
+            return "REGULATORY_POSITION_CONTEXT"
+        return "UNRESOLVED_CONTEXT"
+
+    nuclear["_impact_scope"] = nuclear.apply(impact_scope, axis=1)
+
     diagnostic = {
         "input_rows": len(df),
         "mitocarta_rows": len(work),
@@ -111,6 +144,9 @@ def main():
             if "MITOCARTA_MITOPATHWAYS" in work
             else 0
         ),
+        "direct_structural_effect_rows": int((nuclear["_impact_scope"] == "DIRECT_STRUCTURAL_EFFECT").sum()),
+        "inversion_spanned_context_rows": int((nuclear["_impact_scope"] == "INVERSION_SPANNED_CONTEXT").sum()),
+        "regulatory_position_context_rows": int((nuclear["_impact_scope"] == "REGULATORY_POSITION_CONTEXT").sum()),
         "rows_with_subcompartment": (
             int(
                 (
@@ -199,6 +235,9 @@ def main():
             {
                 "gene": gene,
                 "unique_SVs": int(group[id_col].nunique()),
+                "direct_SVs": int(group.loc[group["_impact_scope"].eq("DIRECT_STRUCTURAL_EFFECT"), id_col].nunique()),
+                "inversion_spanned_SVs": int(group.loc[group["_impact_scope"].eq("INVERSION_SPANNED_CONTEXT"), id_col].nunique()),
+                "regulatory_context_SVs": int(group.loc[group["_impact_scope"].eq("REGULATORY_POSITION_CONTEXT"), id_col].nunique()),
                 "gene_relevance": float(group["_gene_relevance"].max()),
                 "ON_context": int(
                     group.get("MITO_ON_CONTEXT", pd.Series("NO", index=group.index))
@@ -215,12 +254,17 @@ def main():
         )
 
     gene_summary = pd.DataFrame(gene_rows).sort_values(
-        ["ON_context", "gene_relevance", "unique_SVs", "gene"],
-        ascending=[False, False, False, True],
+        ["ON_context", "direct_SVs", "gene_relevance", "unique_SVs", "gene"],
+        ascending=[False, False, False, False, True],
     ).head(args.top_n)
 
+    # Pathway counts are restricted to direct structural effects so that one
+    # giant inversion does not make hundreds of intact, merely spanned genes
+    # look like a mitochondrial pathway disruption signal.
+    pathway_pairs = pairs[pairs["_impact_scope"].eq("DIRECT_STRUCTURAL_EFFECT")].copy()
+
     pathway_rows = []
-    for _, row in pairs.iterrows():
+    for _, row in pathway_pairs.iterrows():
         raw_top = str(row.get("MITOCARTA_TOP_LEVEL_PATHWAYS", "."))
         pathways = [
             item.strip()
@@ -319,7 +363,7 @@ def main():
     ]
     ax1.set_yticklabels(labels, fontsize=9)
     ax1.set_xlabel("Unique structural variants overlapping gene")
-    ax1.set_title("Nuclear mitochondrial genes affected by SVs")
+    ax1.set_title("Nuclear mitochondrial genes overlapping SVs")
     style_axis(ax1, "x")
 
     xmax = max(float(gs["unique_SVs"].max()), 1.0)
@@ -327,7 +371,11 @@ def main():
         ax1.text(
             bar.get_width() + 0.02 * xmax,
             bar.get_y() + bar.get_height() / 2,
-            f"score={row['gene_relevance']:.1f}",
+            (
+                f"score={row['gene_relevance']:.1f}; "
+                f"direct={int(row['direct_SVs'])}; "
+                f"inv-span={int(row['inversion_spanned_SVs'])}"
+            ),
             va="center",
             fontsize=8,
         )
@@ -339,7 +387,7 @@ def main():
         ax2.set_yticks(np.arange(len(ps)))
         ax2.set_yticklabels(ps["pathway"], fontsize=8.5)
         ax2.set_xlabel("Unique mitochondrial genes")
-        ax2.set_title("MitoCarta pathway context")
+        ax2.set_title("MitoCarta pathways: direct SV-gene effects only")
         style_axis(ax2, "x")
     else:
         cs = compartment_summary.head(15).iloc[::-1]
@@ -388,9 +436,10 @@ def main():
         0.5,
         0.012,
         (
-            "Left: number of unique SVs per nuclear mitochondrial gene; the text value is the "
-            f"gene-relevance score ({score_name}). Right: MitoCarta pathway context, with "
-            "sub-mitochondrial localization used only when pathway assignments are unavailable. "
+            "Left: number of unique SVs overlapping each nuclear mitochondrial gene; labels separate "
+            f"direct structural effects from inversion-spanned context and show the gene-relevance score ({score_name}). "
+            "Right: pathway counts use direct SV-gene effects only so giant inversion intervals do not dominate. "
+            "Inversion-spanned and regulatory contexts remain in the companion TSV for review. "
             "MitoCarta membership does not establish SV causality."
         ),
         ha="center",
