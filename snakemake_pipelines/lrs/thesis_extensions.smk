@@ -285,6 +285,42 @@ rule build_snv_sv_candidates:
         """
 
 
+rule build_population_gene_effect:
+    input:
+        candidates=rules.integrate_depth_into_final_candidates.output.sv,
+        script=SCRIPTS + "/build_population_gene_effect_table.py"
+    output:
+        table=PATH + "{sample}/gene_discovery/final/{sample}_population_gene_effect.tsv",
+        genes=PATH + "{sample}/gene_discovery/final/{sample}_population_gene_summary.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --candidates {input.candidates} \
+            --output {output.table} \
+            --gene-summary {output.genes}
+        test -s {output.table}
+        test -s {output.genes}
+        """
+
+
+rule r_population_gene_effect:
+    input:
+        table=rules.build_population_gene_effect.output.table
+    output:
+        pdf=PATH + "{sample}/plots_r/population_gene_effect/{sample}_population_gene_effect.pdf",
+        png=PATH + "{sample}/plots_r/population_gene_effect/{sample}_population_gene_effect.png",
+        svg=PATH + "{sample}/plots_r/population_gene_effect/{sample}_population_gene_effect.svg"
+    params:
+        top_n=R_TOP_CANDIDATES
+    conda:
+        CONDAENV + "r_thesis_plots.yaml"
+    script:
+        "../../r_plots/plot_population_gene_effect.R"
+
+
 rule r_candidate_evidence_heatmap:
     input:
         candidates=rules.integrate_depth_into_final_candidates.output.sv
@@ -432,6 +468,18 @@ FINAL_THESIS_OUTPUTS = [
     *expand(
         PATH + "{sample}/gene_discovery/final/{sample}_snv_sv_candidates.tsv",
         sample=SNV_SV_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_population_gene_effect.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_population_gene_summary.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/plots_r/population_gene_effect/{sample}_population_gene_effect.pdf",
+        sample=POSTPROCESS_SAMPLES,
     ),
     *expand(
         PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.pdf",
