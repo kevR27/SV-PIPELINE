@@ -157,6 +157,17 @@ monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-
 monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_edges.tsv"
 discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
 
+# Core HON phenotypes are used only as ontology seeds. The semantic-similarity
+# reference itself is generated from Monarch gene-disease-HPO associations.
+hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
+
+# Optional patient-specific HPO files. Each file may be a one-HPO-ID-per-line
+# file or TSV containing hpo_id/HPO_ID. If absent, the semantic stage reports
+# PATIENT_HPO_NOT_AVAILABLE and does not invent a patient phenotype score.
+patient_hpo_files: {}
+# patient_hpo_files:
+#   "21930": "/path/to/21930.hpo.tsv"
+
 # Optional AnnotSV HPO argument.  Leave null unless you intentionally want to
 # pass patient/analysis HPO terms directly to AnnotSV.
 hpo_terms: null
