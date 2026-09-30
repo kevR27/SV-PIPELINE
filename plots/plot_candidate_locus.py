@@ -339,13 +339,23 @@ def main():
 
         methyl = methylation_records(args.methylation_bed, chrom, locus_start, locus_end)
 
-        fig, axes = plt.subplots(
-            3,
-            1,
-            figsize=(14.5, 10.4),
-            gridspec_kw={"height_ratios": [1.1, 1.5, 1.25]},
-        )
-        ax_sv, ax_gene, ax_ev = axes
+        if methyl:
+            fig, axes = plt.subplots(
+                4,
+                1,
+                figsize=(16.5, 12.4),
+                gridspec_kw={"height_ratios": [1.0, 1.55, 0.85, 1.6]},
+            )
+            ax_sv, ax_gene, ax_methyl, ax_ev = axes
+        else:
+            fig, axes = plt.subplots(
+                3,
+                1,
+                figsize=(16.5, 10.8),
+                gridspec_kw={"height_ratios": [1.0, 1.55, 1.6]},
+            )
+            ax_sv, ax_gene, ax_ev = axes
+            ax_methyl = None
 
         color = SVTYPE_COLORS.get(svtype, "#999999")
         if large_gene_centered:
@@ -407,16 +417,20 @@ def main():
         ax_gene.grid(axis="x", color="#E6E6E6", linewidth=0.7)
 
         if methyl:
-            inset = ax_gene.inset_axes([0.0, -0.55, 1.0, 0.36], transform=ax_gene.transAxes)
             pos = [x[0] for x in methyl]
             pct = [x[1] for x in methyl]
             cov = [x[2] for x in methyl]
-            inset.scatter(pos, pct, s=np.clip(np.sqrt(cov) * 4, 6, 36), alpha=0.65)
-            inset.set_xlim(locus_start, locus_end)
-            inset.set_ylim(0, 100)
-            inset.set_ylabel("5mC %", fontsize=8)
-            inset.tick_params(labelsize=7)
-            inset.grid(axis="y", color="#EEEEEE", linewidth=0.6)
+            ax_methyl.scatter(
+                pos,
+                pct,
+                s=np.clip(np.sqrt(cov) * 4, 6, 36),
+                alpha=0.65,
+            )
+            ax_methyl.set_xlim(locus_start, locus_end)
+            ax_methyl.set_ylim(0, 100)
+            ax_methyl.set_ylabel("5mC %", fontsize=8.5)
+            ax_methyl.tick_params(labelsize=8)
+            ax_methyl.grid(axis="y", color="#EEEEEE", linewidth=0.6)
 
         evidence = [
             ("Overlapping gene", gene),
@@ -456,9 +470,9 @@ def main():
         ax_gene.xaxis.set_major_formatter(formatter)
         ax_sv.tick_params(axis="x", labelbottom=False)
         if methyl:
-            inset.xaxis.set_major_formatter(formatter)
+            ax_methyl.xaxis.set_major_formatter(formatter)
             ax_gene.tick_params(axis="x", labelbottom=False)
-            inset.set_xlabel(f"{chrom} position (Mb)", fontsize=8)
+            ax_methyl.set_xlabel(f"{chrom} position (Mb)", fontsize=8.5)
         else:
             ax_gene.set_xlabel(f"{chrom} position (Mb)")
 
@@ -470,7 +484,13 @@ def main():
             ha="center",
             fontsize=8.5,
         )
-        fig.tight_layout(rect=[0, 0.035, 1, 0.965])
+        fig.subplots_adjust(
+            left=0.075,
+            right=0.985,
+            top=0.925,
+            bottom=0.085,
+            hspace=0.55,
+        )
 
         stem = f"{rank:02d}_{safe_name(gene)}_{safe_name(sv_id)}"
         outputs = save_figure(fig, outdir / stem)
