@@ -23,8 +23,9 @@ def open_text(path: str):
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path, "r", encoding="utf-8")
 
 
-def read_phase(path: str) -> dict[tuple[str, int, str], tuple[str, str, str]]:
+def read_phase(path: str):
     phase = {}
+    by_position = {}
     with open_text(path) as handle:
         sample_index = None
         for line in handle:
@@ -50,7 +51,9 @@ def read_phase(path: str) -> dict[tuple[str, int, str], tuple[str, str, str]]:
 
             for alt in alts:
                 phase[(chrom, pos, alt)] = (gt, ps, phased)
-    return phase
+            if len(alts) == 1:
+                by_position[(chrom, pos)] = (gt, ps, phased)
+    return phase, by_position
 
 
 def alt_haplotype(gt: str) -> str:
@@ -96,7 +99,7 @@ def main():
 
     sv = pd.read_csv(args.sv_candidates, sep="\t", dtype=str, low_memory=False)
     genes = set(sv["GENE"].dropna().astype(str))
-    phase = read_phase(args.phased_vcf)
+    phase, phase_by_position = read_phase(args.phased_vcf)
     vep = read_vep(args.vep)
 
     output_columns = [
@@ -130,7 +133,10 @@ def main():
         except Exception:
             continue
         alt = str(row.get("Allele", "."))
-        gt, ps, phased = phase.get((chrom, pos, alt), (".", ".", "NO"))
+        gt, ps, phased = phase.get(
+            (chrom, pos, alt),
+            phase_by_position.get((chrom, pos), (".", ".", "NO")),
+        )
         small_rows.append({
             "GENE": gene,
             "SMALL_VARIANT": row.get("Uploaded_variation", "."),
