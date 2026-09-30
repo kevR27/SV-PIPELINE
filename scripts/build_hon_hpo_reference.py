@@ -242,8 +242,14 @@ def main():
         for gd in diseases:
             disease = gd["disease_id"]
             annotations = disease_hpo.get(disease, [])
+            phenotype_scope = "DISEASE_SPECIFIC"
             if not annotations:
                 annotations = direct_gene_hpo.get(hgnc, [])
+                phenotype_scope = (
+                    "GENE_LEVEL_FALLBACK"
+                    if annotations
+                    else "NO_PHENOTYPE_ASSOCIATION"
+                )
 
             if not annotations:
                 annotations = [{
@@ -302,6 +308,7 @@ def main():
                         "GENE_MAPPING_STATUS": "HGNC_MAPPED",
                         "GENE_DISEASE_PREDICATE": gd.get("predicate", "."),
                         "PHENOTYPE_PREDICATE": hp.get("predicate", "."),
+                        "PHENOTYPE_ASSOCIATION_SCOPE": phenotype_scope,
                     }
                 )
 
@@ -323,6 +330,7 @@ def main():
             "GENE_MAPPING_STATUS": "NO_HGNC_MAPPING",
             "GENE_DISEASE_PREDICATE": ".",
             "PHENOTYPE_PREDICATE": ".",
+            "PHENOTYPE_ASSOCIATION_SCOPE": "NO_PHENOTYPE_ASSOCIATION",
         })
 
     output = Path(args.output)
@@ -333,6 +341,7 @@ def main():
         "ISOLATED_SYNDROMIC", "ISOLATED_SYNDROMIC_BASIS",
         "MITOCHONDRIAL_PATHWAY", "LITERATURE_SUPPORT", "KNOWLEDGE_SOURCE",
         "GENE_MAPPING_STATUS", "GENE_DISEASE_PREDICATE", "PHENOTYPE_PREDICATE",
+        "PHENOTYPE_ASSOCIATION_SCOPE",
     ]
     with output.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
