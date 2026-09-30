@@ -199,7 +199,7 @@ Main outputs:
 
 ### 4.2 Clair3 — complementary SNV/indel analysis
 
-Clair3 is used as a complementary small-variant layer and is currently focused on the optic-neuropathy regions.
+Clair3 is used as a complementary genome-wide small-variant layer. The optic-neuropathy BED is retained for panel annotation, but the active LRS Clair3 rule is not BED-restricted.
 
 This is useful because an unresolved case can still contain relevant SNVs or small indels, and these variants can also help with phasing.
 
@@ -685,7 +685,7 @@ This table connects the SV discovery results with gene relevance, dosage sensiti
 
 ---
 
-## 14. Orthogonal long-read evidence
+## 14. Complementary long-read computational evidence
 
 The following analyses are kept separate from the main Jasmine caller count because they answer different biological questions.
 
@@ -759,17 +759,17 @@ It does not call new master SVs. Instead, it keeps the Jasmine master callset as
 It creates:
 
 ```text
-<sample>_integrated_SV_gene_with_orthogonal_evidence.tsv
-<sample>_independent_orthogonal_findings.tsv
+<sample>_integrated_SV_gene_with_complementary_evidence.tsv
+<sample>_independent_complementary_findings.tsv
 <sample>_integrated_SV_gene_with_multimodal_context.tsv
 <sample>_gene_multimodal_evidence_summary.tsv
 ```
 
-### Integrated orthogonal-evidence table
+### Integrated complementary-evidence table
 
-Adds coordinate-aware Straglr, TLDR, and optional LongPhase evidence to the allele-assessed master SVs. Historical output filenames retain `orthogonal`; these same-read computational overlaps are not independent experimental confirmation.
+Adds coordinate-aware Straglr, TLDR, and optional LongPhase evidence to the allele-assessed master SVs. These analyses reuse the same sequencing dataset and are therefore complementary computational evidence, not independent experimental validation.
 
-### Independent orthogonal findings
+### Independent complementary findings
 
 Keeps relevant Straglr or TLDR findings that do not have a compatible Jasmine SV.
 
@@ -934,7 +934,7 @@ The plotting scripts are organized by analysis type:
 ├── 04_population_frequency/
 ├── 05_candidate_prioritization/
 ├── 06_phenotype/
-├── 07_orthogonal/
+├── 07_complementary_evidence/
 │   ├── straglr/
 │   └── tldr/
 ├── 08_phasing/
@@ -1062,7 +1062,7 @@ Does the affected gene fit the phenotype/HPO profile?
 Is there repeat, MEI, phasing, or methylation information?
         ↓
 Does the combined evidence support further review
-and orthogonal confirmation?
+and independent experimental confirmation where required?
 ```
 
 The main purpose of the pipeline is to move from a large genome-wide SV callset to a smaller and more informative set of candidates, while keeping the analysis transparent and without discarding potentially relevant variants simply because one caller or one annotation resource cannot evaluate them.
