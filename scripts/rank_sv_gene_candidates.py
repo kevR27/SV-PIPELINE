@@ -353,12 +353,12 @@ def main() -> int:
         a = annotsv[gene]
         sv_count = len(a["sv_ids"])
 
-        # Phenotype remains the strongest discovery component.
-        # Optic-neuropathy anchor terms receive more weight than broad HPO
-        # associations because they are closer to the phenotype of interest.
-        phenotype_component = min(10.0, p["anchor_count"] * 5.0) + min(
-            3.0, p["hpo_count"] / 20.0
-        )
+        # Baseline HON relevance uses only explicit HON anchor terms.
+        # Total HPO annotation count is retained descriptively but does not add
+        # ranking points because annotation density is strongly affected by how
+        # intensively a gene/disease has been studied. Patient-specific semantic
+        # similarity, when available, is reported separately downstream.
+        phenotype_component = min(10.0, p["anchor_count"] * 5.0)
 
         # SV count is descriptive only. Repeated calls in one gene can reflect
         # large rearrangements, repetitive regions or caller behavior and must
@@ -413,7 +413,7 @@ def main() -> int:
         )
 
         # Research-priority score only:
-        # phenotype (0-13) + curated gene-disease evidence (0-4).
+        # HON-anchor phenotype (0-10) + curated gene-disease evidence (0-4).
         # SV burden is retained in separate descriptive columns.
         integrated_discovery_score = (
             phenotype_component
@@ -488,7 +488,7 @@ def main() -> int:
                 ),
                 "candidate_group": candidate_group,
                 "classification": candidate_group,
-                "ranking_model": "phenotype13_geneDisease4_v3_noSVcount",
+                "ranking_model": "HONanchor10_geneDisease4_v4_noHPOcount",
                 "interpretation": (
                     "Research-priority score only. The gene-disease component "
                     "summarizes curated evidence and is not a gene pathogenicity "
