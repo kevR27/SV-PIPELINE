@@ -21,7 +21,7 @@ selected_genes <- head(genes[order(-SCORE)]$GENE, top_genes)
 pheno <- pheno[gene_symbol %in% selected_genes & grepl("^HP:", hpo_id)]
 if (nrow(pheno) == 0) stop("No HPO annotations available for selected genes.")
 
-term_counts <- pheno[, .(N = uniqueN(gene_symbol)), by = .(hpo_id, hpo_name)]
+term_counts <- pheno[, .(N = uniqueN(gene_symbol)), by = .(hpo_id, hpo_label)]
 selected_terms <- head(term_counts[order(-N, hpo_id)], top_hpo)
 pheno <- pheno[hpo_id %in% selected_terms$hpo_id]
 
@@ -33,7 +33,7 @@ wide <- wide[match(gene_order, gene_symbol)]
 mat <- as.matrix(wide[, -1])
 rownames(mat) <- wide$gene_symbol
 
-term_names <- selected_terms$hpo_name
+term_names <- selected_terms$hpo_label
 names(term_names) <- selected_terms$hpo_id
 colnames(mat) <- paste0(colnames(mat), "\n", term_names[colnames(mat)])
 
