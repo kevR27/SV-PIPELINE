@@ -93,6 +93,7 @@ rule hpo_semantic_similarity:
         python {input.script} \
             --genes {input.genes} \
             --reference {input.reference} \
+            --gene-phenotypes {input.gene_phenotypes} \
             --edges {input.edges} \
             {params.patient_arg} \
             --output {output.tsv}
