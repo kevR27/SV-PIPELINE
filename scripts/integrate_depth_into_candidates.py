@@ -34,6 +34,7 @@ def main():
     p.add_argument("--gene-candidates", required=True)
     p.add_argument("--sv-candidates", required=True)
     p.add_argument("--depth-summary", required=True)
+    p.add_argument("--hpo-similarity", default=None)
     p.add_argument("--gene-output", required=True)
     p.add_argument("--sv-output", required=True)
     p.add_argument("--min-size", type=int, default=100000)
@@ -42,6 +43,11 @@ def main():
     genes = pd.read_csv(args.gene_candidates, sep="\t", dtype=str, low_memory=False)
     sv = pd.read_csv(args.sv_candidates, sep="\t", dtype=str, low_memory=False)
     depth = pd.read_csv(args.depth_summary, sep="\t", dtype=str, low_memory=False)
+    hpo = (
+        pd.read_csv(args.hpo_similarity, sep="\t", dtype=str, low_memory=False)
+        if args.hpo_similarity
+        else pd.DataFrame()
+    )
 
     depth_cols = [
         "MEDIAN_DEPTH_INSIDE",
@@ -79,6 +85,22 @@ def main():
             out[col] = "."
         else:
             out[col] = out[col].fillna(".")
+
+    if not hpo.empty and "GENE" in hpo.columns:
+        hpo_cols = [
+            "GENE",
+            "HPO_SEMANTIC_STATUS",
+            "PATIENT_HPO_COUNT",
+            "GENE_REFERENCE_HPO_COUNT",
+            "HPO_EXACT_MATCH_COUNT",
+            "HPO_BMA_RESNIK",
+            "HPO_BMA_RESNIK_NORMALIZED",
+            "BEST_MATCHED_PATIENT_HPO",
+        ]
+        hpo_cols = [col for col in hpo_cols if col in hpo.columns]
+        hpo_index = hpo[hpo_cols].drop_duplicates("GENE")
+        out = out.merge(hpo_index, on="GENE", how="left")
+        genes = genes.merge(hpo_index, on="GENE", how="left")
 
     if not genes.empty and not out.empty:
         unique = out.drop_duplicates(["GENE", "SV_ID"])
