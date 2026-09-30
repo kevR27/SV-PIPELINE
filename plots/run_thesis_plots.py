@@ -84,8 +84,8 @@ def main():
         "population": out / "04_population_frequency",
         "candidates": out / "05_candidate_prioritization",
         "phenotype": out / "06_phenotype",
-        "straglr": out / "07_orthogonal" / "straglr",
-        "tldr": out / "07_orthogonal" / "tldr",
+        "straglr": out / "07_complementary_evidence" / "straglr",
+        "tldr": out / "07_complementary_evidence" / "tldr",
         "phasing": out / "08_phasing",
         "methylation": out / "09_methylation",
         "integration": out / "10_integrated_evidence",
@@ -114,7 +114,7 @@ def main():
 
     caller_summary = sample_root / "sv" / "merged" / f"{s}_caller_support_summary.tsv"
     integrated_base = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_analysis.tsv"
-    integrated_extended = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_orthogonal_evidence.tsv"
+    integrated_extended = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_complementary_evidence.tsv"
     integrated_multimodal = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_multimodal_context.tsv"
     integrated_mitocarta = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_mitocarta.tsv"
     if integrated_mitocarta.exists():
