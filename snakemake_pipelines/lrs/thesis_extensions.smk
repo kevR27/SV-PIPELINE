@@ -280,6 +280,10 @@ rule summarize_dorado_qc:
 
 FINAL_THESIS_OUTPUTS = [
     *expand(
+        PATH + "{sample}/plots/.thesis_plots.done",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
         PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.tsv",
         sample=POSTPROCESS_SAMPLES,
     ),
