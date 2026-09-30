@@ -20,6 +20,7 @@ DIRECT_BUCKETS = [
 ]
 
 CONTEXT_BUCKETS = [
+    "INVERSION_SPANNED_GENE_CONTEXT",
     "LARGE_COMPLEX_INTERVAL_CONTEXT",
     "COMPLEX_INTERVAL_CONTEXT",
 ]
@@ -219,7 +220,7 @@ def main():
     plot_panel(
         axes[1],
         context,
-        "Inversion/BND interval context only",
+        "Inversion-spanned and rearrangement context",
     )
 
     fig.suptitle(
@@ -231,7 +232,7 @@ def main():
     fig.text(
         0.5,
         0.012,
-        "Left: events with dosage or breakpoint-level gene relevance. Right: genes lying inside inversion/BND intervals without breakpoint overlap; these are retained for context but are not treated as direct disruption. Size itself does not add pathogenicity points.",
+        "Left: events with dosage or direct/proximal breakpoint-level gene relevance. Right: genes fully spanned by inversions or otherwise lying in rearranged intervals without a direct transcript breakpoint. These may warrant regulatory, position-effect or 3D-genome review but are not automatically considered non-functional. Size itself does not add pathogenicity points.",
         ha="center",
         fontsize=8.8,
     )
