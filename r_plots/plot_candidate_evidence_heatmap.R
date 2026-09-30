@@ -10,6 +10,8 @@ png_file <- snakemake@output[["png"]]
 svg_file <- snakemake@output[["svg"]]
 top_n <- as.integer(snakemake@params[["top_n"]])
 
+dir.create(dirname(pdf_file), recursive = TRUE, showWarnings = FALSE)
+
 dt <- fread(input_file, na.strings = c("", ".", "NA", "N/A"))
 if (nrow(dt) == 0) stop("No SV-gene candidates available for heatmap.")
 
