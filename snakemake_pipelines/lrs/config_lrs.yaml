@@ -156,7 +156,7 @@ sv_gene_breakpoint_tolerance: 10000
 
 monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_nodes.tsv"
 monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/monarch/monarch-kg_edges.tsv"
-discovery_hpo_file: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/optic_neuropathy_hpo_terms.tsv"
+# Baseline HON anchors default to reference/hon_hpo_seed_terms.tsv in the active checkout.
 
 # Core HON phenotypes are used only as ontology seeds. The semantic-similarity
 # reference itself is generated from Monarch gene-disease-HPO associations.
