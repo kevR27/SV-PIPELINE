@@ -169,11 +169,41 @@ def get_sv_gene_effect(
             if second is not None:
                 left, right = sorted((start, second))
                 if left <= gene_start and right >= gene_end:
-                    return "GENE_INSIDE_INVERSION", nearest
+                    return "GENE_FULLY_SPANNED_BY_INVERSION", nearest
 
         return f"{prefix}_GENE_EFFECT_UNRESOLVED", nearest
 
     return "OTHER_SV_GENE_OVERLAP", nearest
+
+
+def get_functional_context(svtype: str, gene_effect: str) -> str:
+    """Translate genomic geometry into a cautious functional hypothesis."""
+    svtype = str(svtype or "").upper()
+    effect = str(gene_effect or "")
+
+    if svtype == "INV":
+        if "BREAKPOINT_IN_" in effect or "TWO_BREAKPOINTS_IN_GENE" in effect:
+            return "DIRECT_TRANSCRIPT_DISRUPTION_POSSIBLE"
+        if "BREAKPOINT_NEAR_GENE" in effect:
+            return "REGULATORY_OR_POSITION_EFFECT_POSSIBLE_NEAR_BREAKPOINT"
+        if effect in {"GENE_FULLY_SPANNED_BY_INVERSION", "GENE_INSIDE_INVERSION"}:
+            return "GENE_ORIENTATION_CHANGED_COPY_NEUTRAL_REGULATORY_CONTEXT"
+        return "INVERSION_FUNCTIONAL_EFFECT_UNRESOLVED"
+
+    if svtype in {"BND", "TRA"}:
+        if "BREAKPOINT_IN_" in effect or "TWO_BREAKPOINTS_IN_GENE" in effect:
+            return "DIRECT_TRANSCRIPT_DISRUPTION_POSSIBLE"
+        if "BREAKPOINT_NEAR_GENE" in effect:
+            return "REGULATORY_OR_POSITION_EFFECT_POSSIBLE_NEAR_BREAKPOINT"
+        return "BREAKEND_FUNCTIONAL_EFFECT_UNRESOLVED"
+
+    if svtype == "DEL":
+        return "COPY_LOSS_GEOMETRIC_CONTEXT"
+    if svtype == "DUP":
+        return "COPY_GAIN_GEOMETRIC_CONTEXT"
+    if svtype == "INS":
+        return "INSERTION_SITE_CONTEXT"
+    return "FUNCTIONAL_EFFECT_UNRESOLVED"
 
 
 def get_analysis_group(svtype: str, sv_size: float | None, gene_effect: str) -> str:
@@ -195,8 +225,8 @@ def get_analysis_group(svtype: str, sv_size: float | None, gene_effect: str) -> 
             return "BREAKPOINT_IN_GENE"
         if "BREAKPOINT_NEAR_GENE" in gene_effect:
             return "BREAKPOINT_NEAR_GENE"
-        if gene_effect == "GENE_INSIDE_INVERSION":
-            return "GENE_INSIDE_REARRANGEMENT"
+        if gene_effect in {"GENE_FULLY_SPANNED_BY_INVERSION", "GENE_INSIDE_INVERSION"}:
+            return "INVERSION_SPANNED_GENE"
         return "BREAKPOINT_SV"
 
     return "OTHER_SV"
