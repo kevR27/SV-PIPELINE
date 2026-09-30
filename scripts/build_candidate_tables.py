@@ -213,8 +213,8 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
         "NOT_EVALUABLE_GE_10MB": 1,
         "NOT_EVALUABLE_BREAKEND": 1,
         "NO_POPULATION_MATCH": 1,
-        "UNKNOWN": 2,
-        "COMMON": 3,
+        "UNKNOWN": 1,
+        "COMMON": 2,
     }
     out["_population_order"] = out["POPULATION_STATUS"].map(population_order).fillna(2)
     out["_caller_count"] = pd.to_numeric(out["CALLER_COUNT"], errors="coerce").fillna(0)
