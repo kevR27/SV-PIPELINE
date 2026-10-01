@@ -200,7 +200,11 @@ def disruption(row, evidence):
     if "CDS_LOSS_PREDICTED" in candidates:
         return domain("CDS_LOSS_PREDICTED", 1, detail + ";LOF not established"), "POSSIBLE_LOF"
     if "TRANSCRIPT_COPY_GAIN_PREDICTED" in candidates:
-        return domain("TRANSCRIPT_COPY_GAIN_PREDICTED", 1, detail + ";insertion location/function unresolved"), "POSSIBLE_COPY_GAIN"
+        return domain(
+            "TRANSCRIPT_COPY_GAIN_PREDICTED",
+            1,
+            detail + ";duplication structure/orientation and functional dosage consequence unresolved",
+        ), "POSSIBLE_COPY_GAIN"
     if candidates:
         return domain("BREAKPOINT_DISRUPTION_POSSIBLE", 1, detail), "UNKNOWN"
     return domain("UNKNOWN", detail=detail), "UNKNOWN"
