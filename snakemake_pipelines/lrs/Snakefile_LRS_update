@@ -63,6 +63,7 @@ SNIFFLES_COV_VAR_SVTYPES = ",".join(
     config.get("sniffles_cov_var_svtypes", ["DEL", "DUP"])
 )
 SNIFFLES_COV_VAR_RESCUE_FLAG = "--rescue-cov-var" if SNIFFLES_RESCUE_COV_VAR else ""
+SNIFFLES_MIN_ALIGNMENT_LENGTH = config.get("sniffles_min_alignment_length", 1000)
 DELLY_GENOME = config.get("delly_genome", "ont")
 
 # Jasmine SUPP_VEC must be interpreted in exactly the file-list order below.
@@ -289,7 +290,7 @@ rule sniffles2_sv:
             {SNIFFLES_QC_OUTPUT_ALL_FLAG} \
             {SNIFFLES_MOSAIC_FLAG} \
             --allow-overwrite \
-            --min-alignment-length 100 \
+            --min-alignment-length {SNIFFLES_MIN_ALIGNMENT_LENGTH} \
             --output-rnames \
             --tandem-repeats {VNTR_BED}
         """
