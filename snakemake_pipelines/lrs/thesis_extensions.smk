@@ -103,33 +103,7 @@ def gnomad_optional_input(wc):
     return [GNOMAD_SV_VCF] if GNOMAD_SV_VCF else []
 
 
-rule annotate_gnomad_sv_exact:
-    input:
-        events=rules.rank_sv_gene_events.output.tsv,
-        resource=gnomad_optional_input,
-        script=SCRIPTS + "/annotate_gnomad_sv_exact.py"
-    output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.gnomad.tsv"
-    params:
-        resource_arg=lambda wc: (
-            f"--gnomad-vcf {shlex.quote(GNOMAD_SV_VCF)}"
-            if GNOMAD_SV_VCF
-            else ""
-        )
-    conda:
-        CONDAENV + "gnomad_sv.yaml"
-    shell:
-        """
-        set -euo pipefail
-        python {input.script} \
-            --input {input.events} \
-            {params.resource_arg} \
-            --output {output.tsv}
-        test -s {output.tsv}
-        """
-
-
-rule build_final_candidate_tables:
+# gnomAD-SV annotation is defined once in Snakefile_LRS_postprocess.\n# This extension consumes rules.annotate_gnomad_sv_exact.output.tsv.\n\nrule build_final_candidate_tables:
     input:
         genes=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         events=rules.annotate_gnomad_sv_exact.output.tsv,
