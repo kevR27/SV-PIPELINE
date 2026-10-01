@@ -170,6 +170,7 @@ p <- p +
     title = "Read-depth support and gene context for large copy-number-changing SVs",
     subtitle = paste(
       "Grey: adaptive median depth bins; black: 3-bin rolling median; dashed lines: SV boundaries.",
+      "Depth is derived from the same BAM and is supportive context, not independent validation.",
       "Gene ticks are aligned to genomic position; labels prioritize ON-panel, MitoCarta and high-relevance genes."
     )
   ) +
