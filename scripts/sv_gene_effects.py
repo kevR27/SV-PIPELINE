@@ -156,7 +156,10 @@ def get_sv_gene_effect(
         return "INSERTION_GENE_EFFECT_UNRESOLVED", nearest
 
     if svtype in {"INV", "BND", "TRA"}:
-        inside_count = sum(distance == 0 for distance in distances)
+        inside_count = sum(
+            any(distance_to_transcript(bp, tx) == 0 for tx in bounds)
+            for bp in breakpoints
+        )
         prefix = "INVERSION" if svtype == "INV" else "BREAKEND"
 
         if inside_count >= 2:
