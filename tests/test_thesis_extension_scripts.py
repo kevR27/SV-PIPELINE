@@ -34,5 +34,12 @@ class TestThesisExtensionScripts(unittest.TestCase):
         self.assertIn('bed["GENE_START"].lt(end)', text)
 
 
+    def test_core_allele_assessment_does_not_claim_exon_breakpoint(self):
+        text = (ROOT / "scripts" / "assess_sv_alleles.py").read_text(encoding="utf-8")
+        self.assertNotIn("EXONIC_BREAKPOINT_POSSIBLE", text)
+        self.assertNotIn("INTRONIC_BREAKPOINT_POSSIBLE", text)
+        self.assertIn("TRANSCRIPT_BREAKPOINT_POSSIBLE", text)
+
+
 if __name__ == "__main__":
     unittest.main()
