@@ -103,11 +103,11 @@ class ScoreReportingTests(unittest.TestCase):
 
     def test_missing_population_evidence_is_neutral(self):
         priority = event_rank.POPULATION_PRIORITY
-        self.assertGreater(priority["RARE_AF_LE_0.01"], priority["NO_MATCH"])
+        self.assertGreater(priority["PROVISIONAL_LOW_AF_LE_0.01"], priority["NO_MATCH"])
         self.assertEqual(priority["NO_MATCH"], priority["UNKNOWN_OR_MISSING"])
         self.assertEqual(priority["NOT_EVALUABLE_BND"], priority["UNKNOWN_OR_MISSING"])
         self.assertEqual(priority["NOT_EVALUABLE_GE10MB"], priority["UNKNOWN_OR_MISSING"])
-        self.assertGreater(priority["UNKNOWN_OR_MISSING"], priority["COMMON_AF_GT_0.01"])
+        self.assertGreater(priority["UNKNOWN_OR_MISSING"], priority["PROVISIONAL_HIGH_AF_GT_0.01"])
 
     def test_matrix_keeps_distinct_ids_and_follows_gene_score(self):
         with tempfile.TemporaryDirectory() as tmp:
