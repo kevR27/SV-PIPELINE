@@ -25,14 +25,27 @@ dt[, PANEL_FLAG := as.integer(PANEL_STATUS == "PANEL_GENE")]
 
 # Global overview is computed before top-gene selection so every gene in the
 # candidate table contributes to the population-by-effect summary.
-population_labels <- c(
-  "LOW_FREQUENCY_BY_NEEDLR" = "Low frequency\nneedLR",
-  "COMMON_BY_NEEDLR" = "Common\nneedLR",
-  "COMMON_BENIGN_REGION_OVERLAP_CONTEXT" = "Common benign-region\noverlap",
-  "LOW_AF_BENIGN_REGION_OVERLAP_CONTEXT" = "Low-AF benign-region\noverlap",
-  "NO_NEEDLR_MATCH_AF_UNKNOWN" = "No needLR match\nAF unknown",
-  "POPULATION_AF_NOT_EVALUABLE" = "AF not\nevaluable",
-  "POPULATION_FREQUENCY_UNKNOWN" = "Frequency\nunknown"
+needlr_labels <- c(
+  "NOT_OBSERVED_IN_NEEDLR_CONTROLS" = "Not observed",
+  "VERY_RARE_NEEDLR_LE_0.001" = "Very rare <=0.1%",
+  "RARE_NEEDLR_LE_0.01" = "Rare <=1%",
+  "COMMON_NEEDLR_GT_0.01" = "Common >1%",
+  "VERY_COMMON_NEEDLR_GE_0.05" = "Very common >=5%",
+  "NO_NEEDLR_MATCH_AF_UNKNOWN" = "No match / AF unknown",
+  "NEEDLR_NOT_EVALUABLE_GE_10MB" = "Not evaluable >=10 Mb",
+  "NEEDLR_NOT_EVALUABLE_BREAKEND" = "Breakend not evaluable",
+  "NEEDLR_FREQUENCY_UNKNOWN" = "Frequency unknown"
+)
+
+gnomad_labels <- c(
+  "EXACT_GNOMAD_AF_ZERO" = "Exact match AF=0",
+  "EXACT_GNOMAD_VERY_RARE_LE_0.001" = "Exact match <=0.1%",
+  "EXACT_GNOMAD_RARE_LE_0.01" = "Exact match <=1%",
+  "EXACT_GNOMAD_COMMON_GT_0.01" = "Exact match >1%",
+  "EXACT_GNOMAD_VERY_COMMON_GE_0.05" = "Exact match >=5%",
+  "EXACT_GNOMAD_MATCH_AF_UNAVAILABLE" = "Exact match / AF unavailable",
+  "NO_EXACT_GNOMAD_SV_MATCH" = "No exact match",
+  "GNOMAD_SV_RESOURCE_NOT_CONFIGURED" = "Resource not configured"
 )
 effect_labels <- c(
   "DIRECT_BREAKPOINT" = "Direct\nbreakpoint",
@@ -45,10 +58,15 @@ effect_labels <- c(
   "OTHER_OR_UNRESOLVED" = "Other /\nunresolved"
 )
 
-dt[, POP_LABEL := fifelse(
-  POPULATION_CLASS %in% names(population_labels),
-  population_labels[POPULATION_CLASS],
-  gsub("_", " ", POPULATION_CLASS)
+dt[, NEEDLR_LABEL := fifelse(
+  NEEDLR_FREQUENCY_CLASS %in% names(needlr_labels),
+  needlr_labels[NEEDLR_FREQUENCY_CLASS],
+  gsub("_", " ", NEEDLR_FREQUENCY_CLASS)
+)]
+dt[, GNOMAD_LABEL := fifelse(
+  GNOMAD_EXACT_AF_CLASS %in% names(gnomad_labels),
+  gnomad_labels[GNOMAD_EXACT_AF_CLASS],
+  gsub("_", " ", GNOMAD_EXACT_AF_CLASS)
 )]
 dt[, EFFECT_LABEL := fifelse(
   SV_EFFECT_GROUP %in% names(effect_labels),
@@ -56,10 +74,10 @@ dt[, EFFECT_LABEL := fifelse(
   gsub("_", " ", SV_EFFECT_GROUP)
 )]
 
-global <- unique(dt[, .(GENE, POP_LABEL, EFFECT_LABEL)])
-global <- global[, .(UNIQUE_GENES = uniqueN(GENE)), by = .(POP_LABEL, EFFECT_LABEL)]
+global <- unique(dt[, .(GENE, NEEDLR_LABEL, EFFECT_LABEL)])
+global <- global[, .(UNIQUE_GENES = uniqueN(GENE)), by = .(NEEDLR_LABEL, EFFECT_LABEL)]
 
-p0 <- ggplot(global, aes(EFFECT_LABEL, POP_LABEL, fill = UNIQUE_GENES)) +
+p0 <- ggplot(global, aes(EFFECT_LABEL, NEEDLR_LABEL, fill = UNIQUE_GENES)) +
   geom_tile(colour = "white", linewidth = 0.45) +
   geom_text(aes(label = ifelse(UNIQUE_GENES > 0, UNIQUE_GENES, "")), size = 3) +
   scale_fill_gradient(low = "grey95", high = "grey20") +
@@ -88,15 +106,16 @@ plot_dt <- dt[GENE %in% selected]
 plot_dt[, GENE := factor(GENE, levels = rev(selected))]
 
 
-pop <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, POP_LABEL)]
+needlr <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, NEEDLR_LABEL)]
+gnomad <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, GNOMAD_LABEL)]
 effect <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, EFFECT_LABEL)]
 
-p1 <- ggplot(pop, aes(POP_LABEL, GENE, fill = N)) +
+p1 <- ggplot(needlr, aes(NEEDLR_LABEL, GENE, fill = N)) +
   geom_tile(colour = "white", linewidth = 0.4) +
   geom_text(aes(label = ifelse(N > 0, N, "")), size = 2.5) +
   scale_fill_gradient(low = "grey95", high = "grey20") +
   labs(
-    title = "Population-frequency context",
+    title = "needLR frequency context",
     x = NULL, y = NULL, fill = "SV count"
   ) +
   theme_thesis(9) +
@@ -106,7 +125,23 @@ p1 <- ggplot(pop, aes(POP_LABEL, GENE, fill = N)) +
     legend.position = "right"
   )
 
-p2 <- ggplot(effect, aes(EFFECT_LABEL, GENE, fill = N)) +
+p2 <- ggplot(gnomad, aes(GNOMAD_LABEL, GENE, fill = N)) +
+  geom_tile(colour = "white", linewidth = 0.4) +
+  geom_text(aes(label = ifelse(N > 0, N, "")), size = 2.5) +
+  scale_fill_gradient(low = "grey95", high = "grey20") +
+  labs(
+    title = "Exact gnomAD-SV v4.1 frequency context",
+    x = NULL, y = NULL, fill = "SV count"
+  ) +
+  theme_thesis(9) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1, vjust = 1),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.position = "right"
+  )
+
+p3 <- ggplot(effect, aes(EFFECT_LABEL, GENE, fill = N)) +
   geom_tile(colour = "white", linewidth = 0.4) +
   geom_text(aes(label = ifelse(N > 0, N, "")), size = 2.5) +
   scale_fill_gradient(low = "grey95", high = "grey20") +
@@ -122,17 +157,17 @@ p2 <- ggplot(effect, aes(EFFECT_LABEL, GENE, fill = N)) +
     legend.position = "right"
   )
 
-combined <- p0 / (p1 + p2) +
+combined <- p0 / (p1 + p2 + p3) +
   plot_layout(heights = c(1.0, 1.7)) +
   plot_annotation(
     title = "Population context and structural-variant effects by gene",
     subtitle = paste(
-      "needLR is provisional coordinate-compatible long-read control-frequency evidence. gnomAD-SV is shown as AnnotSV benign-source overlap;",
-      "AnnotSV benign AFmax may combine databases and is not treated as a gnomAD-specific exact-allele AF."
+      "needLR and gnomAD-SV frequencies are displayed separately. gnomAD AF is reported only for the conservative exact coordinate/type match;",
+      "AnnotSV benign-region overlap remains a separate context field and is not substituted for gnomAD exact-site AF."
     )
   )
 
 height <- max(11, 0.28 * length(selected) + 6.0)
-ggsave(pdf_file, combined, width = 16, height = height, device = cairo_pdf)
-ggsave(png_file, combined, width = 16, height = height, dpi = 400)
-ggsave(svg_file, combined, width = 16, height = height, device = svglite)
+ggsave(pdf_file, combined, width = 19, height = height, device = cairo_pdf)
+ggsave(png_file, combined, width = 19, height = height, dpi = 400)
+ggsave(svg_file, combined, width = 19, height = height, device = svglite)
