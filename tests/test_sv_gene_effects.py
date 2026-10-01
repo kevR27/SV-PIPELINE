@@ -92,7 +92,7 @@ class TestSVGeneEffects(unittest.TestCase):
                 {"Gene_name": "A", "SV_chrom": "chr1", "Tx_start": "120", "Tx_end": "350", "Location": "intronic"},
             ]),
         }
-        effect, distance = effects.get_sv_gene_effect(row, "A")
+        effect, distance = get_sv_gene_effect(row, "A")
         self.assertEqual(effect, "INVERSION_BREAKPOINT_IN_TRANSCRIPT")
         self.assertEqual(distance, 0)
 
@@ -107,7 +107,7 @@ class TestSVGeneEffects(unittest.TestCase):
                 {"Gene_name": "A", "SV_chrom": "chr1", "Tx_start": "100", "Tx_end": "300", "Location": "exonic"},
             ]),
         }
-        effect, distance = effects.get_sv_gene_effect(row, "A")
+        effect, distance = get_sv_gene_effect(row, "A")
         self.assertEqual(effect, "INVERSION_TWO_BREAKPOINTS_IN_GENE")
         self.assertEqual(distance, 0)
 
