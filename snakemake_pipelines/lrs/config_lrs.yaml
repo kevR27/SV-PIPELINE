@@ -111,6 +111,13 @@ vep_assembly: "GRCh38"
 
 needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/needlr/release/backend_files/"
 
+# Optional exact-coordinate/type gnomAD-SV v4.1 annotation.
+# Download the official GRCh38 gnomAD v4.1 genome-SV sites VCF and .tbi, then
+# set this path. If null, the final tables explicitly report
+# RESOURCE_NOT_CONFIGURED rather than borrowing AnnotSV's mixed benign AF.
+gnomad_sv_vcf: null
+# gnomad_sv_vcf: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/gnomad/gnomad.v4.1.sv.sites.vcf.gz"
+
 # ============================================================
 # TLDR
 # ============================================================
