@@ -224,9 +224,11 @@ class CommandTests(unittest.TestCase):
     def test_needlr_reuses_complete_native_results_only(self):
         snakefile = (ROOT / "snakemake_pipelines/lrs/Snakefile_LRS_update").read_text()
         self.assertIn("rule needlr_annotation:", snakefile)
-        self.assertIn("Completed native results already exist; reusing them.", snakefile)
+        self.assertIn("query_hash=$(sha256sum", snakefile)
+        self.assertIn(".needlr_query.sha256", snakefile)
+        self.assertIn("Native result matches current query; reusing it.", snakefile)
+        self.assertIn("Query changed or no validated native result; running annotation.", snakefile)
         self.assertIn('if [ -s "$results_tsv" ] && [ -s "$results_vcf" ]', snakefile)
-        self.assertIn("No complete native result found; running annotation.", snakefile)
         self.assertIn("needLR annotate", snakefile)
 
     def test_methylation_units(self):
