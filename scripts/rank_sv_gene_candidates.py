@@ -423,11 +423,11 @@ def main() -> int:
             + gene_disease_component
         )
 
-        has_disease_evidence = (
-            gene_disease_component > 0
-            or has_omim
-            or bool(a["clinvar"])
-        )
+        # Candidate gene-disease status must come from curated gene-disease
+        # evidence (GenCC, with OMIM as a weaker fallback). A ClinVar
+        # variant/region annotation is retained separately and must not by
+        # itself turn a gene into a curated human disease gene.
+        has_disease_evidence = gene_disease_component > 0
 
         if gene in panel:
             candidate_group = "PANEL_GENE"
