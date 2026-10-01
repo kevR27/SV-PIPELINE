@@ -20,7 +20,13 @@ if (nrow(dt) == 0) stop("No population/effect rows available.")
 dt <- unique(dt, by = c("SV_ID", "GENE"))
 dt[, SCORE_NUM := suppressWarnings(as.numeric(GENE_RELEVANCE_SCORE))]
 dt[is.na(SCORE_NUM), SCORE_NUM := 0]
-dt[, RARE_FLAG := as.integer(POPULATION_CLASS == "LOW_FREQUENCY_BY_NEEDLR")]
+dt[, RARE_FLAG := as.integer(
+  POPULATION_CLASS %in% c(
+    "LOW_FREQUENCY_BY_NEEDLR",
+    "LOW_FREQUENCY_BY_EXACT_GNOMAD",
+    "LOW_FREQUENCY_SUPPORTED_BY_NEEDLR_AND_GNOMAD"
+  )
+)]
 dt[, PANEL_FLAG := as.integer(PANEL_STATUS == "PANEL_GENE")]
 
 # Global overview is computed before top-gene selection so every gene in the
