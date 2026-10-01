@@ -65,6 +65,26 @@ class ScoreReportingTests(unittest.TestCase):
                     r=self.rank(Path(tmp),[{'SV_ID':'v','Gene_name':'A','Annotation_mode':'split','OMIM_phenotype':value}])
                     self.assertEqual(r['gene_disease_evidence_score'],'0.0')
 
+    def test_clinvar_alone_does_not_define_human_disease_gene(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d/'genes').write_text('A\n')
+            (d/'panel').write_text('')
+            table(d/'hpo.tsv',[],['gene_symbol','hpo_id','optic_neuropathy_anchor'])
+            table(d/'ann.tsv',[{
+                'SV_ID':'v','Gene_name':'A','Annotation_mode':'split',
+                'ClinVar':'pathogenic_variant_overlap'
+            }])
+            self.command(
+                'scripts/rank_sv_gene_candidates.py',
+                '--annotsv',d/'ann.tsv','--genes',d/'genes',
+                '--panel',d/'panel','--phenotypes',d/'hpo.tsv',
+                '--output',d/'rank.tsv'
+            )
+            r = read(d/'rank.tsv')[0]
+            self.assertEqual(r['gene_disease_evidence_score'],'0.0')
+            self.assertEqual(r['candidate_group'],'OTHER_NONPANEL_CANDIDATE')
+
     def test_animal_only_record_retained_without_human_evidence_points(self):
         with tempfile.TemporaryDirectory() as tmp:
             r=self.rank(Path(tmp),[{'SV_ID':'v','Gene_name':'A','Annotation_mode':'split','GenCC_classification':'Animal Model Only'}])
