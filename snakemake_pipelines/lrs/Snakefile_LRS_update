@@ -250,8 +250,8 @@ rule summarize_dorado_qc:
 
 rule read_length_n50:
     input:
-        summary=rules.dorado_summary.output.tsv,
-        script=SCRIPTS + "/calc_n50.py"
+        bam=lambda wc: BAMS[wc.sample],
+        script=SCRIPTS + "/calc_bam_n50.py"
     output:
         tsv=PATH + "{sample}/qc/{sample}.n50.tsv"
     conda:
@@ -260,7 +260,7 @@ rule read_length_n50:
         """
         set -euo pipefail
         python {input.script} \
-            --summary {input.summary} \
+            --bam {input.bam} \
             --min-length {N50_MIN_LENGTH} \
             --out {output.tsv}
         test -s {output.tsv}
