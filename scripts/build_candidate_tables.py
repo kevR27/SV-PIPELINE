@@ -206,6 +206,8 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "MITO_PATHWAY": text_value(source, ["MITOCARTA_MITOPATHWAYS"]),
             "LONGPHASE": text_value(source, ["LONGPHASE_MATCH", "LONGPHASE_STATUS"]),
             "STRAGLR": text_value(source, ["STRAGLR_MATCH", "STRAGLR_STATUS"]),
+            "STRAGLR_CONTEXT": text_value(source, ["STRAGLR_CONTEXT"]),
+            "STRAGLR_CONTEXT_LOCI": text_value(source, ["STRAGLR_CONTEXT_LOCI"]),
             "TLDR": text_value(source, ["TLDR_MATCH", "TLDR_STATUS"]),
             "LONGPHASE_GT": text_value(source, ["LONGPHASE_GT"]),
             "LONGPHASE_PS": text_value(source, ["LONGPHASE_PS"]),
