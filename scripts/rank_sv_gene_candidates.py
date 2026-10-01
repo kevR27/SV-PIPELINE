@@ -3,10 +3,13 @@
 
 This is a research-prioritization layer, not a pathogenicity classifier.
 
-The ranking keeps three ideas separate:
-1. Phenotype relevance: does the gene match the optic-neuropathy/HPO context?
+The ranking keeps gene relevance separate from event evidence:
+1. Generic HON context: does the gene have explicit hereditary-optic-neuropathy
+   HPO anchor annotations?
 2. Gene-disease evidence: how strong is the known human gene-disease evidence?
-3. SV evidence: how many master SVs affect the gene?
+
+SV count, SV size, caller support, population frequency and event mechanism are
+retained separately and do not add gene-relevance points.
 
 GenCC classifications are converted into a small transparent numerical score
 only to help order candidates. The score is not a probability of pathogenicity
