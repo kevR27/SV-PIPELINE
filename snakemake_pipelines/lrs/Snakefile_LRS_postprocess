@@ -58,10 +58,12 @@ SV_GENE_BREAKPOINT_TOLERANCE = config.get("sv_gene_breakpoint_tolerance", 10000)
 THESIS_TOP_GENES = config.get("thesis_top_genes", 25)
 
 
-def integration_source_files(sample):
-    """Files required to build the extended complementary-evidence table."""
+def postprocess_required_files(sample):
+    """Upstream files required by the active downstream interpretation DAG."""
     return [
-        PATH + f"{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
+        PATH + f"{sample}/gene_discovery/{sample}_allele_assessment.tsv",
+        PATH + f"{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
+        PATH + f"{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         PATH + f"{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
         PATH + f"{sample}/mei/tldr/{sample}.tldr.table.txt",
     ]
@@ -142,10 +144,11 @@ def mitocarta_context_table(sample):
 
 
 def sample_ready_for_postprocess(sample):
-    """A sample is ready if the extended table already exists or all source files exist."""
-    if os.path.exists(extended_table(sample)):
-        return True
-    return all(os.path.exists(path) for path in integration_source_files(sample))
+    """A sample is ready only when the current downstream prerequisites exist."""
+    return all(
+        os.path.exists(path)
+        for path in postprocess_required_files(sample)
+    )
 
 
 # Optional explicit subset in config_lrs.yaml:
