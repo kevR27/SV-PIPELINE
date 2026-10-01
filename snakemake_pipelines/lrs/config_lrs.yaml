@@ -71,6 +71,8 @@ vntr_bed: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/human_GRCh38_no_alt_a
 # false = standard germline calling.  Enable only when intentionally running
 # Sniffles mosaic mode.
 sniffles_mosaic: false
+# Ignore alignments shorter than the standard Sniffles2 germline default.
+sniffles_min_alignment_length: 1000
 
 # Keep Sniffles' standard QC logic.  Leave this false in production.
 sniffles_no_qc: false
