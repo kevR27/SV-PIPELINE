@@ -6,7 +6,7 @@ under `plots/` remain available.
 The R environment is defined in:
 
 ```text
-envs/r_plots.yaml
+envs/r_plot.yaml
 ```
 
 Current figures:
