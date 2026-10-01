@@ -51,9 +51,26 @@ def main():
     candidates["START_NUM"] = pd.to_numeric(candidates["START"], errors="coerce")
     candidates["END_NUM"] = pd.to_numeric(candidates["END"], errors="coerce")
 
+    if "SV_SPAN_BP" in candidates.columns:
+        candidates["SV_SPAN_NUM"] = pd.to_numeric(
+            candidates["SV_SPAN_BP"],
+            errors="coerce",
+        ).abs()
+    else:
+        candidates["SV_SPAN_NUM"] = np.nan
+
+    interval_span = (candidates["END_NUM"] - candidates["START_NUM"]).abs()
+    candidates["SV_SPAN_NUM"] = (
+        candidates["SV_SPAN_NUM"]
+        .fillna(candidates["SVLEN_NUM"])
+        .fillna(interval_span)
+    )
+
     large = candidates[
         candidates["SVTYPE"].isin(["DEL", "DUP"])
-        & candidates["SVLEN_NUM"].ge(args.min_size)
+        & candidates["SV_SPAN_NUM"].ge(args.min_size)
+        & candidates["START_NUM"].notna()
+        & candidates["END_NUM"].notna()
     ].copy()
 
     summary_rows = []
@@ -144,6 +161,9 @@ def main():
             "MEDIAN_DEPTH_FLANKS": round(float(flank_depth), 3) if pd.notna(flank_depth) else ".",
             "DEPTH_RATIO": round(float(depth_ratio), 4) if pd.notna(depth_ratio) else ".",
             "DEPTH_PATTERN": pattern,
+            "DEPTH_INTERPRETATION_SCOPE": (
+                "DESCRIPTIVE_SAME_BAM_LOCAL_DEPTH_NOT_INDEPENDENT_VALIDATION"
+            ),
             "PLOT_BIN_BP": plot_bin,
         })
 
@@ -173,7 +193,8 @@ def main():
             "PANEL_GENES_IN_SV", "MITOCARTA_GENES_IN_SV", "TOP_RELEVANT_GENES",
             "CHROM", "START", "END", "SVTYPE",
             "SV_SIZE_BP", "MEDIAN_DEPTH_INSIDE", "MEDIAN_DEPTH_FLANKS",
-            "DEPTH_RATIO", "DEPTH_PATTERN", "PLOT_BIN_BP",
+            "DEPTH_RATIO", "DEPTH_PATTERN", "DEPTH_INTERPRETATION_SCOPE",
+            "PLOT_BIN_BP",
         ],
     )
     bins = pd.DataFrame(
