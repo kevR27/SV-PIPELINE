@@ -74,6 +74,26 @@ def benign_afmax_class(row):
     return "BENIGN_REGION_AFMAX_GE_0.05"
 
 
+def gnomad_exact_class(row):
+    match = str(row.get("GNOMAD_SV_EXACT_MATCH", ".")).upper()
+    af = number(row.get("GNOMAD_SV_AF"))
+    if match == "RESOURCE_NOT_CONFIGURED":
+        return "GNOMAD_SV_RESOURCE_NOT_CONFIGURED"
+    if match != "YES":
+        return "NO_EXACT_GNOMAD_SV_MATCH"
+    if af is None:
+        return "EXACT_GNOMAD_MATCH_AF_UNAVAILABLE"
+    if af == 0:
+        return "EXACT_GNOMAD_AF_ZERO"
+    if af <= 0.001:
+        return "EXACT_GNOMAD_VERY_RARE_LE_0.001"
+    if af <= 0.01:
+        return "EXACT_GNOMAD_RARE_LE_0.01"
+    if af < 0.05:
+        return "EXACT_GNOMAD_COMMON_GT_0.01"
+    return "EXACT_GNOMAD_VERY_COMMON_GE_0.05"
+
+
 def gnomad_context(row):
     overlap = str(row.get("GNOMAD_SV_OVERLAP", ".")).upper()
     source = str(
@@ -192,6 +212,7 @@ def main():
     out = df.copy()
     out["NEEDLR_FREQUENCY_CLASS"] = out.apply(needlr_class, axis=1)
     out["ANNOTSV_BENIGN_AFMAX_CLASS"] = out.apply(benign_afmax_class, axis=1)
+    out["GNOMAD_EXACT_AF_CLASS"] = out.apply(gnomad_exact_class, axis=1)
     out["GNOMAD_CONTEXT_CLASS"] = out.apply(gnomad_context, axis=1)
     out["POPULATION_CLASS"] = out.apply(population_class, axis=1)
     out["POPULATION_INTERPRETATION"] = out.apply(
@@ -204,9 +225,9 @@ def main():
     ]
     out["POPULATION_EVIDENCE_SCOPE"] = (
         "needLR is provisional coordinate-compatible long-read control-frequency evidence. "
-        "AnnotSV benign AFmax is overlap-region evidence and may combine "
-        "multiple benign resources. gnomAD context indicates database-source "
-        "overlap unless a source-specific exact allele frequency is available."
+        "gnomAD-SV exact AF is reported only for the conservative exact "
+        "coordinate/type match defined by this workflow. AnnotSV benign AFmax "
+        "is overlap-region evidence and may combine multiple benign resources."
     )
 
     output = Path(args.output)
