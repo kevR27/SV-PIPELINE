@@ -92,11 +92,14 @@ def distance_to_transcript(
 
 
 def breakpoint_location(records: list[dict[str, Any]]) -> str:
-    locations = " ".join(str(record.get("Location", "")).lower() for record in records)
-    if "exon" in locations:
-        return "EXON"
-    if "intron" in locations:
-        return "INTRON"
+    """Return only the resolution supported by the current annotation.
+
+    AnnotSV's gene-row Location field describes the SV/gene annotation context;
+    it is not a breakpoint-specific exon interval. Once a breakpoint has been
+    shown geometrically to fall inside a transcript, exon-versus-intron status
+    must remain unresolved unless an exon-coordinate resource is intersected
+    explicitly.
+    """
     return "TRANSCRIPT"
 
 
