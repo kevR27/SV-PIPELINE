@@ -46,6 +46,7 @@ MONARCH_NODES = config["monarch_nodes"]
 MONARCH_EDGES = config["monarch_edges"]
 MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS_FILE = config.get("mitocarta_pathways_file")
+GNOMAD_SV_VCF = config.get("gnomad_sv_vcf")
 
 SAMPLOT_TOP_N = config.get("samplot_top_n", 20)
 SAMPLOT_RUN_NAME = f"top_{SAMPLOT_TOP_N}"
@@ -349,6 +350,29 @@ rule rank_sv_gene_events:
         """
 
 
+rule annotate_gnomad_sv_exact:
+    input:
+        events=rules.rank_sv_gene_events.output.tsv,
+        gnomad=gnomad_sv_inputs,
+        script=SCRIPTS + "/annotate_gnomad_sv_exact.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.with_gnomad.tsv"
+    params:
+        gnomad_arg=gnomad_sv_arg
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --input {input.events} \
+            {params.gnomad_arg} \
+            --output {output.tsv}
+        test -s {output.tsv}
+        """
+
+
+
 rule build_gene_multimodal_summary:
     input:
         integrated=rules.annotate_mitocarta_context.output.tsv,
@@ -407,7 +431,7 @@ def existing_plot_inputs(wc):
 rule thesis_plots_sample:
     input:
         integrated=rules.annotate_mitocarta_context.output.tsv,
-        candidate_events=rules.rank_sv_gene_events.output.tsv,
+        candidate_events=rules.annotate_gnomad_sv_exact.output.tsv,
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
         available=existing_plot_inputs,
         plot_scripts=[
@@ -503,7 +527,7 @@ rule samplot_candidate_breakpoints:
         # Use the mechanism-aware event ranking so read-level review includes
         # small, large and breakpoint-defined candidates rather than only the
         # highest generic gene scores.
-        integrated=rules.rank_sv_gene_events.output.tsv,
+        integrated=rules.annotate_gnomad_sv_exact.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         genes=rules.prepare_samplot_gene_annotation.output.bed,
         gene_index=rules.prepare_samplot_gene_annotation.output.index,
@@ -543,6 +567,20 @@ rule samplot_candidate_breakpoints:
         test -s {output.manifest}
         touch {output.marker}
         """
+
+
+def gnomad_sv_inputs(wc):
+    if not GNOMAD_SV_VCF:
+        return []
+    return [GNOMAD_SV_VCF, GNOMAD_SV_VCF + ".tbi"]
+
+
+def gnomad_sv_arg(wc):
+    return (
+        f"--gnomad-vcf {shlex.quote(GNOMAD_SV_VCF)}"
+        if GNOMAD_SV_VCF
+        else ""
+    )
 
 
 def cohort_sample_args():
