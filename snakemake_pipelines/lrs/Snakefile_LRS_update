@@ -744,9 +744,9 @@ rule needlr_annotation:
         mkdir -p {params.outdir}
         mkdir -p $(dirname {log})
 
-        # Reuse a completed native needLR result when it already exists.
-        # This protects expensive whole-genome annotations from being repeated
-        # when Snakemake only needs to rebuild downstream standardized outputs.
+        # Reuse a completed native needLR result only when it belongs to
+        # the current query VCF. This avoids repeating expensive annotation
+        # while preventing stale population evidence after an upstream change.
         results_tsv=$(find {params.outdir} \
             -type f \
             -name '*_RESULTS.tsv' \
@@ -758,10 +758,25 @@ rule needlr_annotation:
             results_vcf=""
         fi
 
+        query_hash=$(sha256sum {input.vcf} | awk '{{print $1}}')
+        hash_file="{params.outdir}/.needlr_query.sha256"
+        reuse_native=0
+
         if [ -s "$results_tsv" ] && [ -s "$results_vcf" ]; then
-            echo "[needLR] Completed native results already exist; reusing them." > {log}
+            if [ -s "$hash_file" ] && [ "$(cat "$hash_file")" = "$query_hash" ]; then
+                reuse_native=1
+            elif [ ! -e "$hash_file" ] && [ "$results_tsv" -nt {input.vcf} ] && [ "$results_vcf" -nt {input.vcf} ]; then
+                # Bootstrap existing pre-checksum results only when they are
+                # newer than the current query VCF.
+                printf "%s\n" "$query_hash" > "$hash_file"
+                reuse_native=1
+            fi
+        fi
+
+        if [ "$reuse_native" -eq 1 ]; then
+            echo "[needLR] Native result matches current query; reusing it." > {log}
         else
-            echo "[needLR] No complete native result found; running annotation." > {log}
+            echo "[needLR] Query changed or no validated native result; running annotation." > {log}
 
             needLR annotate \
                 -O {params.outdir} \
@@ -782,6 +797,7 @@ rule needlr_annotation:
 
             test -s "$results_tsv"
             test -s "$results_vcf"
+            printf "%s\n" "$query_hash" > "$hash_file"
         fi
 
         cp "$results_tsv" {output.tsv}
