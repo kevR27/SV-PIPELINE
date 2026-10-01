@@ -68,7 +68,11 @@ def same_sv(a: SV, b: SV, breakpoint_bp: int, insertion_bp: int) -> bool:
             return False
 
         if a.orientation not in {"", "."} and b.orientation not in {"", "."}:
-            return a.orientation == b.orientation
+            if direct:
+                return a.orientation == b.orientation
+            # When endpoint order is swapped, local/remote strand order is
+            # swapped as well (same convention as sv_evidence_common.same_breakend).
+            return a.orientation == b.orientation[::-1]
         return True
 
     if a.chrom != b.chrom:
