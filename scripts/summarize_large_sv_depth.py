@@ -17,12 +17,12 @@ def choose_plot_bin(size_bp: int) -> int:
     These larger bins are used only for a cleaner plot.
     """
     if size_bp >= 50_000_000:
-        return 500_000
+        return 1_000_000
     if size_bp >= 10_000_000:
-        return 250_000
+        return 500_000
     if size_bp >= 1_000_000:
-        return 100_000
-    return 50_000
+        return 250_000
+    return 100_000
 
 
 def main():
