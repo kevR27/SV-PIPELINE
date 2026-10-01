@@ -107,7 +107,9 @@ def exact_match(query, record):
         return True, "EXACT_POS_END_TYPE"
 
     if qtype == "INS":
-        qlen = number(query.get("SV_SPAN_BP", query.get("SVLEN")))
+        qlen = number(query.get("SV_SPAN_BP"))
+        if qlen is None:
+            qlen = number(query.get("SVLEN"))
         if qlen is not None:
             qlen = abs(int(qlen))
         rlen = record_svlen(record)
