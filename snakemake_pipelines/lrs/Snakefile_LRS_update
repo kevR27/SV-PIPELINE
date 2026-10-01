@@ -94,11 +94,21 @@ EVIDENCE_CANONICAL_FLAG = "--canonical-only" if EVIDENCE_CANONICAL_ONLY else ""
 # the master SV universe regardless of caller count.
 HIGH_CONFIDENCE_MIN_SUPP = config.get("high_confidence_min_supp", 2)
 
+# Dorado summary / read-length QC (only samples with a basecalled BAM).
+DORADO_BIN = config.get("dorado_bin", "dorado")
+DORADO_SUMMARY_BAMS = config.get("dorado_summary_bams") or {}
+N50_MIN_LENGTH = config.get("n50_min_length", 1000)
+N50_SAMPLES = [s for s in SAMPLES if s in DORADO_SUMMARY_BAMS]
+
 rule all:
     input:
         # QC
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt", sample=SAMPLES),
+
+        # QC summary RUN from dorado --> file 
+        expand(PATH + "{sample}/qc/{sample}.dorado_summary.tsv", sample=N50_SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.n50.tsv", sample=N50_SAMPLES),
 
         # Complementary small variants + phasing
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
@@ -194,6 +204,39 @@ rule mosdepth_coverage:
         test -s {output.summary}
         """
 
+rule dorado_summary:
+    input:
+        bam=lambda wc: DORADO_SUMMARY_BAMS[wc.sample]
+    output:
+        tsv=PATH + "{sample}/qc/{sample}.dorado_summary.tsv"
+    log:
+        PATH + "{sample}/logs/dorado/{sample}.dorado_summary.log"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.tsv}) $(dirname {log})
+        {DORADO_BIN} summary {input.bam} > {output.tsv} 2> {log}
+        test -s {output.tsv}
+        """
+
+
+rule read_length_n50:
+    input:
+        script=SCRIPTS + "/calc_n50.py",
+        summary=rules.dorado_summary.output.tsv
+    output:
+        tsv=PATH + "{sample}/qc/{sample}.n50.tsv"
+    conda:
+        CONDAENV + "read_qc.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --summary {input.summary} \
+            --min-length {N50_MIN_LENGTH} \
+            --out {output.tsv}
+        test -s {output.tsv}
+        """
 
 ##################################
 # Small variant calling (control)
