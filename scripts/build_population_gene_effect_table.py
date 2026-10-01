@@ -4,7 +4,10 @@
 This is a research-prioritization table, not a pathogenicity classifier.
 
 Frequency sources are kept distinct:
-- needLR AF: frequency from the matched long-read control resource used by needLR.
+- needLR AF: frequency from the matched long-read control resource used by
+  needLR, transferred to the Jasmine event through the pipeline's conservative
+  coordinate/type/size matching. This is provisional event-level population
+  evidence, not exact allele identity.
 - AnnotSV benign AFmax: maximum AF among overlapping benign SV regions reported
   by AnnotSV. The source field may include gnomAD-SV together with DGV, 1000G,
   ClinVar or other resources, so AFmax is not relabelled as a gnomAD-specific
@@ -200,7 +203,7 @@ def main():
         for effect, svtype in zip(out["SV_GENE_EFFECT"], out["SVTYPE"])
     ]
     out["POPULATION_EVIDENCE_SCOPE"] = (
-        "needLR is matched long-read control-frequency evidence. "
+        "needLR is provisional coordinate-compatible long-read control-frequency evidence. "
         "AnnotSV benign AFmax is overlap-region evidence and may combine "
         "multiple benign resources. gnomAD context indicates database-source "
         "overlap unless a source-specific exact allele frequency is available."
