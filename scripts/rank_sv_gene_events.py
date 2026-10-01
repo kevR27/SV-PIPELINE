@@ -254,6 +254,25 @@ def classify_size(
     return "GE_10MB", size
 
 
+def technical_review_status(row) -> str:
+    """Flag caller-evidence concerns without excluding the discovery event."""
+    flags = str(row.get("CALLER_EVIDENCE_FLAGS", "") or "").upper()
+    match = str(row.get("CALLER_EVIDENCE_MATCH", "") or "").upper()
+
+    review_tokens = (
+        "RESCUED_COV_VAR",
+        "LOW_GQ",
+        "IMPRECISE",
+        "BLACKLIST_REGION",
+        "CALLER_RECORD_FAILS_CURRENT_FILTER",
+    )
+    if "AMBIGUOUS" in match:
+        return "REVIEW_REQUIRED_AMBIGUOUS_CALLER_LINK"
+    if any(token in flags for token in review_tokens):
+        return "REVIEW_REQUIRED_CALLER_QC_FLAG"
+    return "NO_REVIEW_FLAG_FROM_CALLER_EVIDENCE"
+
+
 def focality_class(gene_count: int) -> str:
     if gene_count <= 0:
         return "NO_RESOLVED_GENE"
@@ -507,6 +526,10 @@ def main():
         "MULTI_CALLER",
         "SINGLE_CALLER",
     )
+    out["EVENT_TECHNICAL_REVIEW"] = out.apply(
+        technical_review_status,
+        axis=1,
+    )
 
     phenotype = (
         numeric(out["PHENOTYPE_SCORE"]).fillna(0)
@@ -560,6 +583,11 @@ def main():
     )
 
     out["_MECHANISM_RANK"] = mechanism_rank
+    out["_TECHNICAL_CLEAN_RANK"] = (
+        out["EVENT_TECHNICAL_REVIEW"]
+        .eq("NO_REVIEW_FLAG_FROM_CALLER_EVIDENCE")
+        .astype(int)
+    )
     out["_POPULATION_RANK"] = population_rank
     out["_CALLER_RANK"] = callers
     out["_PANEL_RANK"] = panel_rank
@@ -569,6 +597,7 @@ def main():
             "EVENT_REVIEW_BUCKET",
             "EVENT_GENE_RELEVANCE_SCORE",
             "_MECHANISM_RANK",
+            "_TECHNICAL_CLEAN_RANK",
             "_POPULATION_RANK",
             "_CALLER_RANK",
             "_PANEL_RANK",
@@ -577,6 +606,7 @@ def main():
         ],
         ascending=[
             True,
+            False,
             False,
             False,
             False,
@@ -610,7 +640,7 @@ def main():
 
     out["EVENT_RANKING_MODEL"] = (
         "geneRelevance_honContextPlusDisease__"
-        "mechanism_provisionalPopulation_callers__v3"
+        "mechanism_callerQC_provisionalPopulation_callers__v4"
     )
 
     out["EVENT_RANKING_INTERPRETATION"] = (
@@ -618,7 +648,9 @@ def main():
         "not used as a pathogenicity score. INV/BND interval-only gene "
         "overlap is not treated as direct gene disruption. Missing, "
         "no-match and non-evaluable population evidence are neutral rather "
-        "than treated as evidence of rarity. needLR frequency attached to the "
+        "than treated as evidence of rarity. Caller QC flags are retained and "
+        "used only as a within-context review tie-breaker; flagged calls are "
+        "not removed from discovery. needLR frequency attached to the "
         "Jasmine master event is a coordinate-compatible provisional match, "
         "not an exact-allele identity assertion."
     )
@@ -626,6 +658,7 @@ def main():
     out = out.drop(
         columns=[
             "_MECHANISM_RANK",
+            "_TECHNICAL_CLEAN_RANK",
             "_POPULATION_RANK",
             "_CALLER_RANK",
             "_PANEL_RANK",
