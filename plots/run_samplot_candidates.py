@@ -465,7 +465,6 @@ def main():
                 "selected_sv_rank": rank,
                 "score": row["_score"],
                 "score_field": score_col or ".",
-                "needLR_AF": row["_af"] if pd.notna(row["_af"]) else ".",
                 "caller_count": row["_callers"],
                 "event_bucket": row.get("EVENT_REVIEW_BUCKET", "."),
                 "gene_relationship": row.get("SV_GENE_RELATIONSHIP", "."),
