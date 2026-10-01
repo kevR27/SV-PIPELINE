@@ -94,11 +94,30 @@ EVIDENCE_CANONICAL_FLAG = "--canonical-only" if EVIDENCE_CANONICAL_ONLY else ""
 # the master SV universe regardless of caller count.
 HIGH_CONFIDENCE_MIN_SUPP = config.get("high_confidence_min_supp", 2)
 
+# Mandatory ONT sequencing/read-length QC.
+# Dorado summary is expected for every LRS sample. By default the aligned BAM
+# is used; set dorado_summary_bams explicitly if the original Dorado basecalled
+# BAM should be used instead.
+DORADO_BIN = config.get("dorado_bin", "dorado")
+DORADO_SUMMARY_BAMS = config.get("dorado_summary_bams") or BAMS
+N50_MIN_LENGTH = int(config.get("n50_min_length", 1000))
+MISSING_DORADO_QC_SAMPLES = [
+    sample for sample in SAMPLES if sample not in DORADO_SUMMARY_BAMS
+]
+if MISSING_DORADO_QC_SAMPLES:
+    raise ValueError(
+        "dorado_summary_bams must provide a BAM for every LRS sample: "
+        + ", ".join(MISSING_DORADO_QC_SAMPLES)
+    )
+
 rule all:
     input:
         # QC
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.dorado_summary.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.dorado_qc.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.n50.tsv", sample=SAMPLES),
 
         # Complementary small variants + phasing
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
@@ -193,6 +212,60 @@ rule mosdepth_coverage:
         test -s {output.global_dist}
         test -s {output.summary}
         """
+
+rule dorado_summary:
+    input:
+        bam=lambda wc: DORADO_SUMMARY_BAMS[wc.sample]
+    output:
+        tsv=PATH + "{sample}/qc/{sample}.dorado_summary.tsv"
+    log:
+        PATH + "{sample}/logs/dorado/{sample}.dorado_summary.log"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.tsv}) $(dirname {log})
+        {DORADO_BIN} summary {input.bam} > {output.tsv} 2> {log}
+        test -s {output.tsv}
+        """
+
+
+rule summarize_dorado_qc:
+    input:
+        summary=rules.dorado_summary.output.tsv,
+        script=SCRIPTS + "/summarize_dorado_qc.py"
+    output:
+        tsv=PATH + "{sample}/qc/{sample}.dorado_qc.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --input {input.summary} \
+            --sample {wildcards.sample} \
+            --output {output.tsv}
+        test -s {output.tsv}
+        """
+
+
+rule read_length_n50:
+    input:
+        summary=rules.dorado_summary.output.tsv,
+        script=SCRIPTS + "/calc_n50.py"
+    output:
+        tsv=PATH + "{sample}/qc/{sample}.n50.tsv"
+    conda:
+        CONDAENV + "read_qc.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --summary {input.summary} \
+            --min-length {N50_MIN_LENGTH} \
+            --out {output.tsv}
+        test -s {output.tsv}
+        """
+
 
 ##################################
 # Small variant calling (control)
