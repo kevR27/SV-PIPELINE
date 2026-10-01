@@ -543,7 +543,7 @@ rule samplot_candidate_breakpoints:
         # Use the mechanism-aware event ranking so read-level review includes
         # small, large and breakpoint-defined candidates rather than only the
         # highest generic gene scores.
-        integrated=rules.annotate_gnomad_sv_exact.output.tsv,
+        integrated=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.gnomad.tsv",
         bam=lambda wc: BAMS[wc.sample],
         genes=rules.prepare_samplot_gene_annotation.output.bed,
         gene_index=rules.prepare_samplot_gene_annotation.output.index,
