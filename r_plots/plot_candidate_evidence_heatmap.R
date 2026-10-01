@@ -23,8 +23,13 @@ setorder(dt, -SCORE_NUM, -CALLER_COUNT_NUM)
 dt <- unique(dt, by = c("SV_ID", "GENE"))
 dt <- head(dt, top_n)
 
-flag <- function(x, positive) {
-  ifelse(is.na(x), NA_real_, ifelse(x %in% positive, 1, 0))
+flag <- function(x, positive, unknown = character()) {
+  x <- as.character(x)
+  ifelse(
+    is.na(x) | x %in% unknown,
+    NA_real_,
+    ifelse(x %in% positive, 1, 0)
+  )
 }
 
 functional_context <- if ("SV_FUNCTIONAL_CONTEXT" %in% names(dt)) {
@@ -47,20 +52,24 @@ depth_support <- if ("DEPTH_SUPPORT_CLASS" %in% names(dt)) {
 }
 
 evidence <- cbind(
-  flag(dt$CALL_SUPPORT, "MULTI_CALLER"),
-  flag(dt$POPULATION_STATUS, "RARE"),
-  flag(dt$PANEL_STATUS, "PANEL_GENE"),
-  flag(dt$MITOCARTA, c("NUCLEAR_MITOCHONDRIAL_GENE", "MTDNA_ENCODED_GENE")),
+  flag(dt$CALL_SUPPORT, "MULTI_CALLER", c("UNKNOWN")),
+  flag(
+    dt$POPULATION_STATUS,
+    "RARE",
+    c("UNKNOWN", "NO_POPULATION_MATCH", "NOT_EVALUABLE_GE_10MB", "NOT_EVALUABLE_BREAKEND")
+  ),
+  flag(dt$PANEL_STATUS, "PANEL_GENE", c("UNKNOWN")),
+  flag(dt$MITOCARTA, c("NUCLEAR_MITOCHONDRIAL_GENE", "MTDNA_ENCODED_GENE"), c("UNKNOWN")),
   ifelse(effect_direct, 1, 0),
   ifelse(effect_regulatory, 1, 0),
   depth_support,
-  flag(dt$LONGPHASE_PHASED, "YES"),
-  flag(dt$STRAGLR, "YES"),
-  flag(dt$TLDR, "YES")
+  flag(dt$LONGPHASE_PHASED, "YES", c("NOT_AVAILABLE", "UNKNOWN")),
+  flag(dt$STRAGLR, "YES", c("NOT_AVAILABLE", "UNKNOWN")),
+  flag(dt$TLDR, "YES", c("NOT_AVAILABLE", "UNKNOWN"))
 )
 colnames(evidence) <- c(
   "Multi-caller", "Rare in needLR", "ON panel", "MitoCarta",
-  "Direct SV-gene effect", "Regulatory/inversion context",
+  "Direct/geometry SV-gene relation", "Regulatory/inversion context",
   "Depth supports copy change", "LongPhase phased",
   "Straglr match", "TLDR match"
 )
@@ -115,7 +124,11 @@ ht <- Heatmap(
   rect_gp = gpar(col = "white", lwd = 0.8),
   left_annotation = row_ha,
   row_names_max_width = unit(62, "mm"),
-  heatmap_legend_param = list(at = c(0, 1), labels = c("No", "Yes")),
+  heatmap_legend_param = list(
+    at = c(0, 1),
+    labels = c("No", "Yes"),
+    title = "Evidence\n(grey = unavailable)"
+  ),
   column_title = "SV candidate evidence",
   column_title_gp = gpar(fontface = "bold", fontsize = 13)
 )
