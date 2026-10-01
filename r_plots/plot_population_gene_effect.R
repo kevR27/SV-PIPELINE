@@ -127,7 +127,7 @@ combined <- p0 / (p1 + p2) +
   plot_annotation(
     title = "Population context and structural-variant effects by gene",
     subtitle = paste(
-      "needLR provides matched long-read control-frequency evidence. gnomAD-SV is shown as AnnotSV benign-source overlap;",
+      "needLR is provisional coordinate-compatible long-read control-frequency evidence. gnomAD-SV is shown as AnnotSV benign-source overlap;",
       "AnnotSV benign AFmax may combine databases and is not treated as a gnomAD-specific exact-allele AF."
     )
   )
