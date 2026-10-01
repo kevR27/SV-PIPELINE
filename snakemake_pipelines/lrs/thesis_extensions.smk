@@ -103,7 +103,10 @@ def gnomad_optional_input(wc):
     return [GNOMAD_SV_VCF] if GNOMAD_SV_VCF else []
 
 
-# gnomAD-SV annotation is defined once in Snakefile_LRS_postprocess.\n# This extension consumes rules.annotate_gnomad_sv_exact.output.tsv.\n\nrule build_final_candidate_tables:
+# gnomAD-SV annotation is defined once in Snakefile_LRS_postprocess.
+# This extension consumes rules.annotate_gnomad_sv_exact.output.tsv.
+
+rule build_final_candidate_tables:
     input:
         genes=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         events=rules.annotate_gnomad_sv_exact.output.tsv,
@@ -370,7 +373,8 @@ rule r_large_sv_depth:
         png=PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.png",
         svg=PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.svg"
     params:
-        top_n=8
+        top_n=8,
+        top_genes=THESIS_TOP_GENES
     conda:
         CONDAENV + "r_plot.yaml"
     script:
