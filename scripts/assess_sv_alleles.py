@@ -162,9 +162,10 @@ def functional_context(row):
         elif kind == "INV" and contains:
             effects.add("TRANSCRIPT_INSIDE_INVERSION_NO_INTRAGENIC_BREAKPOINT_SHOWN")
         elif transcript_breakpoints(row, ann):
-            location = str(ann.get("Location", "")).lower()
-            effects.add("EXONIC_BREAKPOINT_POSSIBLE" if "exon" in location else
-                        "INTRONIC_BREAKPOINT_POSSIBLE" if "intron" in location else "TRANSCRIPT_BREAKPOINT_POSSIBLE")
+            # AnnotSV's gene-row Location field is not a breakpoint-specific
+            # exon interval. Without an explicit exon-coordinate intersection,
+            # retain only transcript-level breakpoint resolution.
+            effects.add("TRANSCRIPT_BREAKPOINT_POSSIBLE")
         else:
             effects.add("OVERLAP_WITHOUT_RESOLVED_FUNCTIONAL_EFFECT")
     return ";".join(sorted(effects))
@@ -192,11 +193,9 @@ def disruption(row, evidence):
         txstart, txend = number(ann.get("Tx_start")), number(ann.get("Tx_end"))
         if svtype == "DUP" and None not in (start, end, txstart, txend) and start <= txstart and end >= txend:
             candidates.add("TRANSCRIPT_COPY_GAIN_PREDICTED")
-        location = str(ann.get("Location", "")).lower()
-        if svtype in {"INS", "INV", "BND"} and "exon" in location:
-            # Location alone is insufficient for inversions encompassing a gene.
+        if svtype in {"INS", "INV", "BND", "TRA"}:
             if transcript_breakpoints(row, ann):
-                candidates.add("EXONIC_BREAKPOINT_POSSIBLE")
+                candidates.add("TRANSCRIPT_BREAKPOINT_POSSIBLE")
     detail = ";".join(sorted(candidates)) or functional_context(row)
     if "CDS_LOSS_PREDICTED" in candidates:
         return domain("CDS_LOSS_PREDICTED", 1, detail + ";LOF not established"), "POSSIBLE_LOF"
