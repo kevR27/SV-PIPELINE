@@ -48,7 +48,7 @@ curation or additional patient data.
 
 ## Allele-level assessment and correctness update
 
-Both LRS and SRS now preserve the genome-wide master callset and add a six-domain,
+Both LRS and SRS now preserve the genome-wide complete discovery callset and add a six-domain,
 source-traceable SV–gene–disease research assessment. See
 [configuration, scoring and input templates](docs/ALLELE_ASSESSMENT.md).
 The original gene-discovery score remains available separately.
@@ -89,16 +89,16 @@ These changes can include:
 The pipeline is designed to answer a series of connected questions.
 
 **Question 1 — Is there a structural variant that could explain the phenotype?**  
-Three long-read SV callers are used independently and their results are merged into one patient-level master SV callset.
+Three long-read SV callers are used independently and their results are merged into one patient-level integrated discovery SV callset.
 
 **Question 2 — Is the call technically supported?**  
 Read support, FILTER status, caller agreement, SV size, QC flags, and sequencing depth are kept as evidence.
 
 **Question 3 — Does the SV affect a relevant gene or genomic region?**  
-The master SV callset is annotated genome-wide with AnnotSV and is also analysed with VEP.
+The integrated discovery SV callset is annotated genome-wide with AnnotSV and is also analysed with VEP.
 
 **Question 4 — Is the SV rare enough to be compatible with a rare disease?**  
-needLR is used as an additional ONT population-frequency source and is matched back to the master SVs.
+needLR is used as an additional ONT population-frequency source and is matched back to the integrated discovery SVs.
 
 **Question 5 — Does the affected gene fit the disease phenotype?**  
 Panel membership, OMIM/GenCC information, and Monarch/HPO phenotype relationships are used for prioritization.
@@ -124,7 +124,7 @@ If SV calling were restricted only to the optic-neuropathy panel, the workflow c
 
 For this reason, the optic-neuropathy panel is applied **after SV discovery** as an interpretation layer.
 
-A variant can therefore be labelled as affecting a known panel gene or a non-panel gene without being removed from the master callset.
+A variant can therefore be labelled as affecting a known panel gene or a non-panel gene without being removed from the complete discovery callset.
 
 The current LRS workflow uses standard ONT whole-genome sequencing. Adaptive sampling is not part of the active workflow.
 
@@ -144,7 +144,7 @@ ONT WGS BAM
 │                 └── small-variant phasing + haplotagged BAM
 │
 ├── Sniffles2 ─┐
-├── cuteSV     ├── caller normalization/QC ──> Jasmine ──> MASTER SV VCF
+├── cuteSV     ├── caller normalization/QC ──> Jasmine ──> INTEGRATED DISCOVERY SV VCF
 └── DELLY LR   ┘                                  │
                                                   ├── caller-support summary
                                                   ├── AnnotSV genome-wide
@@ -156,7 +156,7 @@ ONT WGS BAM
 
 ONT BAM ──> dedicated Sniffles2 v2.6.2 ──> needLR
                                              └── population-frequency evidence
-                                                 matched back to MASTER SVs
+                                                 matched back to integrated discovery SVs
 
 ONT BAM ──> Straglr ──> tandem-repeat evidence
 ONT BAM ──> TLDR ──> mobile-element insertion evidence
@@ -208,7 +208,7 @@ Main output:
 <sample>/snp_clair3/<sample>.vcf.gz
 ```
 
-**Question answered:** Are there small variants in the disease-focused regions that should be considered together with the SV results?
+**Question answered:** Are there genome-wide small variants that can support phasing and secondary SNV+SV review?
 
 ---
 
@@ -280,13 +280,13 @@ Other Sniffles QC failures remain excluded.
 
 ### 5.2 cuteSV
 
-cuteSV is used as a second independent long-read SV caller.
+cuteSV is used as a second complementary long-read SV caller on the same ONT alignment data.
 
 Its clustering strategy is different from Sniffles2, so it provides another view of the same sequencing data.
 
 Agreement between callers can increase technical confidence. Differences between callers are also useful because they show where sensitivity or breakpoint representation changes between algorithms.
 
-The ONT-specific clustering parameters are defined in the Snakefile. Very large deletions are validated using known-positive samples so that the chosen settings can be checked against real expected events.
+The ONT-specific clustering parameters are defined in the Snakefile. The active rule uses `--max_size -1`, so cuteSV is not restricted by its usual 100 kb reporting ceiling and can contribute caller concordance for large and very large SVs.
 
 **Question answered:** Does another long-read caller recover the same event, and how similar is its representation?
 
@@ -294,7 +294,7 @@ The ONT-specific clustering parameters are defined in the Snakefile. Very large 
 
 ### 5.3 DELLY long-read mode
 
-DELLY is run in ONT long-read mode and provides a third independent source of SV evidence.
+DELLY is run in ONT long-read mode and provides a third complementary calling method on the same ONT alignment data. Caller agreement is technical concordance, not independent experimental validation.
 
 A real event can be missed by one caller but still be detected by another. For this reason, DELLY is used together with Sniffles2 and cuteSV rather than as a replacement for either one.
 
@@ -365,7 +365,7 @@ Examples:
 
 The workflow uses `--allow_intrasample` because all three VCFs come from the same biological sample.
 
-The complete sorted and indexed Jasmine VCF is considered the **master SV callset** for each patient:
+The complete sorted and indexed Jasmine VCF is considered the **integrated discovery SV callset** for each patient:
 
 ```text
 <sample>/sv/merged/<sample>_merged_SV.vcf.gz
@@ -381,7 +381,7 @@ This second file is a companion high-confidence set. It does not replace the com
 
 A single-caller SV is therefore not automatically considered false.
 
-**Question answered:** Which caller records most likely represent the same biological event, and how many callers support each master SV?
+**Question answered:** Which caller records most likely represent the same biological event, and how many callers support each integrated discovery SV?
 
 ---
 
@@ -393,7 +393,7 @@ A single-caller SV is therefore not automatically considered false.
 <sample>/sv/merged/<sample>_caller_support_summary.tsv
 ```
 
-This table records which callers support each master SV and is also used for caller-concordance plots.
+This table records which callers support each integrated discovery SV and is also used for caller-concordance plots.
 
 Caller count is treated as technical evidence. It is not a pathogenicity score.
 
@@ -416,7 +416,7 @@ needLR
   ↓
 population-frequency evidence
   ↓
-match back to Jasmine master SV
+match back to Jasmine integrated discovery SV
 ```
 
 Main outputs:
@@ -426,16 +426,16 @@ Main outputs:
 <sample>/sv/needlr/<sample>_needLR_RESULTS.vcf.gz
 ```
 
-The needLR results are matched back to the Jasmine SVs using compatible SV type and genomic position.
+The needLR results are matched back to the integrated Jasmine SVs using compatible SV type, genomic position and size/overlap criteria. The transferred frequency is therefore provisional coordinate-compatible population evidence, not an assertion of exact allele identity.
 
 Important rules:
 
-- needLR is a supplementary annotation source, not a filter that defines the master SV callset;
+- needLR is a supplementary annotation source, not a filter that defines the integrated discovery SV callset;
 - a missing needLR match does **not** mean allele frequency = 0;
 - BNDs and SVs >=10 Mb remain in the master analysis even when needLR cannot evaluate them;
 - needLR records are matched by SV type and coordinates, not only by gene name.
 
-**Question answered:** Is a compatible SV present in the ONT population reference, and at what frequency?
+**Question answered:** Is a coordinate-compatible SV present in the ONT population reference, and what population frequency does that matched needLR event report?
 
 ---
 
@@ -443,7 +443,7 @@ Important rules:
 
 AnnotSV is the main annotation tool used for the structural variants.
 
-It is run directly on the complete Jasmine master VCF.
+It is run directly on the complete Jasmine complete discovery VCF.
 
 The main outputs are:
 
@@ -492,7 +492,7 @@ The change is implemented in `build_integrated_sv_gene_tsv.py` ([commit d019bf9]
 
 ## 11. VEP — supplementary transcript/consequence annotation
 
-VEP is also run on the complete Jasmine master VCF.
+VEP is also run on the complete Jasmine complete discovery VCF.
 
 It is used as a supplementary transcript/consequence layer rather than as the main tool for deciding which genes are affected by an SV.
 
@@ -515,7 +515,7 @@ AnnotSV remains the main genome-wide gene-mapping layer. VEP is used to add tran
 
 ## 12. Genome-wide gene and phenotype discovery
 
-After AnnotSV, all genes affected by the master SVs are extracted.
+After AnnotSV, all genes affected by the integrated discovery SVs are extracted.
 
 The workflow creates:
 
@@ -537,17 +537,15 @@ This produces:
 
 ### Gene ranking
 
-The ranking now keeps three types of information separate:
+The gene-ranking layer uses two explicit components:
 
 ```text
-phenotype relevance
+generic HON anchor context
         +
 curated gene-disease evidence
-        +
-a small SV-evidence component
 ```
 
-The phenotype component has the largest weight because the main purpose is to identify genes that fit the neurological/optic-neuropathy phenotype.
+The HON component is based on predefined hereditary-optic-neuropathy HPO anchor terms. It is a generic disease-context score, not patient-specific phenotype matching. Patient-specific HPO semantic similarity is calculated separately only when patient HPO terms are supplied.
 
 The gene-disease component uses GenCC classifications when available. These are kept as readable terms such as:
 
@@ -573,17 +571,16 @@ This is **not a probability of pathogenicity**.
 
 If GenCC evidence is not available but an OMIM disease relationship is present, a smaller supportive value is used for research prioritization.
 
-The current integrated discovery score is:
+The current gene-relevance score is:
 
 ```text
-phenotype component       0-13
-gene-disease evidence     0-4
-SV evidence               0-2
-                          ----
-maximum                    19
+generic HON anchor context    0-10
+gene-disease evidence         0-4
+                              ----
+maximum                       14
 ```
 
-SV count has only a small contribution because several SVs affecting the same gene do not automatically make that gene more likely to be disease-causing.
+SV count does not contribute points. SV size, mechanism, caller concordance, population evidence and other event-level information remain separate so that large rearrangements or repeatedly called genes do not automatically rise in the gene ranking.
 
 Panel membership remains a separate category and is not added directly to the numerical score. This avoids automatically forcing known panel genes above potentially relevant non-panel genes.
 
@@ -601,11 +598,11 @@ The main interpretation output of the core LRS workflow is:
 <sample>/gene_discovery/<sample>_integrated_SV_gene_analysis.tsv
 ```
 
-Each row represents one master SV together with one overlapping gene.
+Each row represents one integrated discovery SV together with one overlapping gene.
 
 The table combines:
 
-- master SV coordinates, type, and length;
+- integrated discovery SV coordinates, type, and length;
 - caller provenance;
 - caller count and `SUPP_VEC`;
 - normalized read support;
@@ -618,8 +615,8 @@ The table combines:
 - AnnotSV ranking score and ranking criteria;
 - ACMG CNV class for deletions and duplications;
 - panel status;
-- phenotype and discovery scores;
-- relevant INFO fields from the master VCF.
+- generic HON-context and gene-disease relevance scores;
+- relevant INFO fields from the complete discovery VCF.
 
 Representative columns include:
 
@@ -753,7 +750,7 @@ Methylation is treated as additional biological context, not as direct proof tha
 
 The post-processing workflow is run after the main LRS workflow is complete.
 
-It does not call new master SVs. Instead, it keeps the Jasmine master callset as the backbone and adds other evidence around it.
+It does not call new integrated discovery SVs. Instead, it keeps the Jasmine complete discovery callset as the backbone and adds other evidence around it.
 
 It creates:
 
@@ -766,7 +763,7 @@ It creates:
 
 ### Integrated complementary-evidence table
 
-Adds coordinate-aware Straglr, TLDR, and optional LongPhase evidence to the allele-assessed master SVs. These analyses reuse the same sequencing dataset and are therefore complementary computational evidence, not independent experimental validation.
+Adds coordinate-aware Straglr, TLDR, and optional LongPhase evidence to the allele-assessed integrated discovery SVs. These analyses reuse the same sequencing dataset and are therefore complementary computational evidence, not independent experimental validation.
 
 ### Independent complementary findings
 
@@ -782,7 +779,7 @@ These data are kept separate from SV caller support.
 
 ### Gene-level multimodal summary
 
-Combines the different evidence layers at gene level while avoiding repeated counting of the same master SV.
+Combines the different evidence layers at gene level while avoiding repeated counting of the same integrated discovery SV.
 
 ---
 
@@ -801,7 +798,7 @@ For each candidate, the final analysis can provide:
 | Gene effect | genes affected by the SV |
 | Known-disease context | panel membership, OMIM, GenCC |
 | Population evidence | needLR AF/status when available |
-| Phenotype relevance | Monarch/HPO relationship and phenotype score |
+| HON context | generic Monarch/HPO anchor context; patient-specific HPO similarity is separate |
 | Candidate priority | discovery-oriented candidate class |
 | Repeat evidence | Straglr findings |
 | MEI evidence | TLDR findings |
@@ -820,7 +817,7 @@ caller-specific SV calls
         ↓
 transparent QC
         ↓
-patient-level master SVs
+patient-level integrated discovery SVs
         ↓
 gene and clinical annotation
         ↓
@@ -843,7 +840,7 @@ The following rules are central to the workflow:
 2. A variant is not removed simply because needLR, VEP, or another annotation tool cannot evaluate it.
 3. Support from several callers increases technical confidence but does not define pathogenicity.
 4. Single-caller variants remain available for interpretation.
-5. The high-confidence multi-caller VCF is a companion file, not the master callset.
+5. The high-confidence multi-caller VCF is a companion file, not the complete discovery callset.
 6. Panel membership is used for interpretation, not as a restriction during genome-wide SV discovery.
 7. No needLR match does not mean allele frequency = 0.
 8. BNDs and very large SVs remain in the master analysis even when a supplementary tool has size or representation limits.
