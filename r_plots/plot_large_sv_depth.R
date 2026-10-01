@@ -12,7 +12,7 @@ genes_file <- snakemake@input[["genes"]]
 pdf_file <- snakemake@output[["pdf"]]
 png_file <- snakemake@output[["png"]]
 svg_file <- snakemake@output[["svg"]]
-top_n <- as.integer(snakemake@params[["top_n"]])
+top_n <- as.integer(snakemake@params[["top_n"]])\ntop_genes <- as.integer(snakemake@params[["top_genes"]])
 
 dir.create(dirname(pdf_file), recursive = TRUE, showWarnings = FALSE)
 
@@ -53,7 +53,7 @@ bins[, POSITION_MB := (as.numeric(PLOT_START) + as.numeric(PLOT_END)) / 2 / 1e6]
 setorder(bins, SV_ID, PLOT_START)
 bins[, ROLLING_MEDIAN_DEPTH := frollmedian(
   as.numeric(NORMALIZED_DEPTH),
-  n = 3,
+  n = 5,
   align = "center",
   fill = NA_real_,
   na.rm = TRUE
@@ -84,7 +84,7 @@ if (nrow(gene_plot) > 0) {
 
   label_genes <- gene_plot[
     order(-LABEL_PRIORITY, GENE),
-    head(.SD, 8),
+    head(.SD, top_genes),
     by = SV_ID
   ]
 } else {
@@ -169,7 +169,7 @@ p <- p +
   labs(
     title = "Read-depth support and gene context for large copy-number-changing SVs",
     subtitle = paste(
-      "Grey: adaptive median depth bins; black: 3-bin rolling median; dashed lines: SV boundaries.",
+      "Grey: adaptive median depth bins; black: 5-bin rolling median; dashed lines: SV boundaries.",
       "Depth is derived from the same BAM and is supportive context, not independent validation.",
       "Gene ticks are aligned to genomic position; labels prioritize ON-panel, MitoCarta and high-relevance genes."
     )
