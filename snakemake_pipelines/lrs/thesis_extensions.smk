@@ -322,7 +322,7 @@ rule r_population_gene_effect:
     params:
         top_n=R_TOP_CANDIDATES
     conda:
-        CONDAENV + "r_thesis_plots.yaml"
+        CONDAENV + "r_plots.yaml"
     script:
         "../../r_plots/plot_population_gene_effect.R"
 
@@ -337,7 +337,7 @@ rule r_candidate_evidence_heatmap:
     params:
         top_n=R_TOP_CANDIDATES
     conda:
-        CONDAENV + "r_thesis_plots.yaml"
+        CONDAENV + "r_plots.yaml"
     script:
         "../../r_plots/plot_candidate_evidence_heatmap.R"
 
@@ -354,7 +354,7 @@ rule r_hpo_heatmap:
         top_genes=THESIS_TOP_GENES,
         top_hpo=R_TOP_HPO
     conda:
-        CONDAENV + "r_thesis_plots.yaml"
+        CONDAENV + "r_plots.yaml"
     script:
         "../../r_plots/plot_hpo_heatmap.R"
 
@@ -371,7 +371,7 @@ rule r_large_sv_depth:
     params:
         top_n=8
     conda:
-        CONDAENV + "r_thesis_plots.yaml"
+        CONDAENV + "r_plots.yaml"
     script:
         "../../r_plots/plot_large_sv_depth.R"
 
