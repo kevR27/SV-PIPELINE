@@ -130,8 +130,11 @@ def main():
 
     nuclear["_impact_scope"] = nuclear.apply(impact_scope, axis=1)
 
+    gene_text = df[gene_col].fillna(".").astype(str).str.strip()
     diagnostic = {
         "input_rows": len(df),
+        "multi_gene_cells": int(gene_text.str.contains(";", regex=False).sum()),
+        "missing_gene_cells": int(gene_text.isin(MISSING).sum()),
         "mitocarta_rows": len(work),
         "nuclear_mito_rows": len(nuclear),
         "unique_mitocarta_genes": int(work[gene_col].nunique()) if not work.empty else 0,
@@ -199,13 +202,25 @@ def main():
             va="center",
             fontsize=10,
         )
+        detail = (
+            f"Gene cells containing ';': {diagnostic['multi_gene_cells']} | "
+            f"missing gene cells: {diagnostic['missing_gene_cells']}"
+        )
         ax.text(
             0.5,
             0.34,
-            "Check the companion *_diagnostics.tsv before interpreting this as a biological negative.",
+            detail,
             ha="center",
             va="center",
             fontsize=9.5,
+        )
+        ax.text(
+            0.5,
+            0.24,
+            "Check *_diagnostics.tsv and MitoCarta annotation output before interpreting this as a biological negative.",
+            ha="center",
+            va="center",
+            fontsize=9.0,
         )
         fig.suptitle(
             "MitoCarta3.0 context for SV-overlapping genes",
