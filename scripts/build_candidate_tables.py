@@ -187,6 +187,13 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "NEEDLR_AF": text_value(source, ["NEEDLR_AF"]),
             "POPULATION_STATUS": population_status(source),
             "GNOMAD_SV_OVERLAP": text_value(source, ["SV_DB_GNOMAD_OVERLAP"]),
+            "GNOMAD_SV_EXACT_MATCH": text_value(source, ["GNOMAD_SV_EXACT_MATCH"]),
+            "GNOMAD_SV_ID": text_value(source, ["GNOMAD_SV_ID"]),
+            "GNOMAD_SV_AF": text_value(source, ["GNOMAD_SV_AF"]),
+            "GNOMAD_SV_AC": text_value(source, ["GNOMAD_SV_AC"]),
+            "GNOMAD_SV_AN": text_value(source, ["GNOMAD_SV_AN"]),
+            "GNOMAD_SV_FILTER": text_value(source, ["GNOMAD_SV_FILTER"]),
+            "GNOMAD_SV_MATCH_SCOPE": text_value(source, ["GNOMAD_SV_MATCH_SCOPE"]),
             "ANNOTSV_BENIGN_AFMAX": text_value(source, ["SV_BENIGN_DB_AFMAX"]),
             "ANNOTSV_BENIGN_DB_SOURCE": text_value(source, ["SV_BENIGN_DB_SOURCE"]),
             # Backward-compatible aliases. AFmax can reflect multiple benign
