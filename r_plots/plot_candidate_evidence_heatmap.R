@@ -55,7 +55,7 @@ evidence <- cbind(
   flag(dt$CALL_SUPPORT, "MULTI_CALLER", c("UNKNOWN")),
   flag(
     dt$POPULATION_STATUS,
-    "RARE",
+    "PROVISIONAL_LOW_FREQUENCY",
     c("UNKNOWN", "NO_POPULATION_MATCH", "NOT_EVALUABLE_GE_10MB", "NOT_EVALUABLE_BREAKEND")
   ),
   flag(dt$PANEL_STATUS, "PANEL_GENE", c("UNKNOWN")),
@@ -68,7 +68,7 @@ evidence <- cbind(
   flag(dt$TLDR, "YES", c("NOT_AVAILABLE", "UNKNOWN"))
 )
 colnames(evidence) <- c(
-  "Multi-caller", "Rare in needLR", "ON panel", "MitoCarta",
+  "Multi-caller", "Low-frequency needLR match", "ON panel", "MitoCarta",
   "Direct/geometry SV-gene relation", "Regulatory/inversion context",
   "Depth supports copy change", "LongPhase phased",
   "Straglr match", "TLDR match"
