@@ -178,6 +178,12 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "CALLER_COUNT": text_value(source, ["CALLER_COUNT", "SUPP"]),
             "READ_SUPPORT": text_value(source, ["CALLER_READ_SUPPORT"]),
             "CALL_SUPPORT": call_support(source),
+            "CALLER_EVIDENCE_FLAGS": text_value(source, ["CALLER_EVIDENCE_FLAGS"]),
+            "CALLER_EVIDENCE_MATCH": text_value(source, ["CALLER_EVIDENCE_MATCH"]),
+            "TECHNICAL_EVIDENCE_SCOPE": (
+                "CALLER_COUNT_AND_READ_SUPPORT_ARE_SUPPORTING_EVIDENCE; "
+                "REVIEW_CALLER_FLAGS_AND_READ_LEVEL_SIGNAL"
+            ),
             "NEEDLR_AF": text_value(source, ["NEEDLR_AF"]),
             "POPULATION_STATUS": population_status(source),
             "GNOMAD_SV_OVERLAP": text_value(source, ["SV_DB_GNOMAD_OVERLAP"]),
