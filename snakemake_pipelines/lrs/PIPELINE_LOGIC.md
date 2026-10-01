@@ -4,14 +4,14 @@ This document describes the active logic of `Snakefile_LRS_update`.
 
 ## Source-of-truth hierarchy
 
-The per-patient Jasmine VCF is the master structural-variant (SV) callset. A downstream annotation tool is not allowed to remove a master SV simply because that tool cannot evaluate it.
+The per-patient Jasmine VCF is the complete integrated structural-variant (SV) discovery callset. A downstream annotation tool is not allowed to remove a integrated discovery SV simply because that tool cannot evaluate it.
 
 ```text
 ONT BAM
 ├── mosdepth                         QC
 ├── Clair3 -> WhatsHap               complementary genome-wide SNV/indel + phasing
 ├── Sniffles2 ─┐
-├── cuteSV ────┼─ caller evidence QC -> Jasmine -> MASTER SV VCF
+├── cuteSV ────┼─ caller evidence QC -> Jasmine -> INTEGRATED DISCOVERY SV VCF
 └── DELLY ─────┘                           ├── caller-support summary
                                           ├── AnnotSV -> panel/full views
                                           ├── VEP
@@ -19,7 +19,7 @@ ONT BAM
                                           └── integrated SV/gene table
 
 ONT BAM -> dedicated Sniffles2 v2.6.2 query -> needLR -> population-frequency evidence
-                                                       └-> matched back to MASTER SVs
+                                                       └-> matched back to integrated discovery SVs
 
 ONT BAM -> Straglr -> repeat-expansion evidence
 ONT BAM -> modkit extract -> per-read modification evidence
@@ -29,7 +29,7 @@ Clair3 + same-patient Sniffles SV VCF + BAM -> LongPhase
 
 ## Jasmine
 
-The three genome-wide SV callers are normalized and transparently filtered before Jasmine. In the active LRS configuration, only canonical GRCh38 chromosomes (chr1-22, chrX, chrY and chrM) are retained; BND/TRA records require both breakends to resolve to canonical chromosomes. The input order is fixed as:
+The three genome-wide SV callers are normalized and transparently filtered before Jasmine. The active cuteSV command uses `--max_size -1` so caller concordance is not artificially capped at 100 kb. In the active LRS configuration, only canonical GRCh38 chromosomes (chr1-22, chrX, chrY and chrM) are retained; BND/TRA records require both breakends to resolve to canonical chromosomes. The input order is fixed as:
 
 1. Sniffles2
 2. cuteSV
@@ -39,9 +39,9 @@ That order defines the interpretation of `SUPP_VEC`.
 
 Jasmine is run per patient with `--allow_intrasample`. `--output_genotypes` is deliberately not used because these are three caller representations of the same biological sample, not three independent samples.
 
-Jasmine first writes a plain raw VCF. The workflow then repairs missing metadata, sorts with `bcftools`, BGZF-compresses, and tabix-indexes the master VCF.
+Jasmine first writes a plain raw VCF. The workflow then repairs missing metadata, sorts with `bcftools`, BGZF-compresses, and tabix-indexes the integrated discovery VCF.
 
-The complete Jasmine VCF remains the master callset. A separate high-confidence companion VCF is generated using the configured minimum caller count; it does not replace the master callset.
+The complete Jasmine VCF remains the complete discovery callset. A separate high-confidence companion VCF is generated using the configured minimum caller count; it does not replace the complete discovery callset.
 
 ## needLR
 
@@ -55,13 +55,13 @@ BNDs and SVs >=10 Mb remain in the Jasmine/AnnotSV master analysis. The integrat
 
 ## AnnotSV and VEP
 
-AnnotSV and VEP both consume the complete Jasmine master VCF directly. They do not consume a needLR-derived or needLR-filtered VCF.
+AnnotSV and VEP both consume the complete Jasmine integrated discovery VCF directly. They do not consume a needLR-derived or needLR-filtered VCF.
 
 The panel result is derived after genome-wide annotation. Panel membership is therefore an annotation/view, not a calling restriction.
 
 ## Integrated evidence table
 
-`build_integrated_sv_gene_tsv.py` defines rows from the Jasmine master callset and combines:
+`build_integrated_sv_gene_tsv.py` defines rows from the Jasmine complete discovery callset and combines:
 
 - Jasmine caller provenance and `SUPP_VEC`
 - filtered caller evidence from Sniffles2, cuteSV, and DELLY
@@ -86,9 +86,9 @@ Before running the cohort, validate one known patient end-to-end:
 
 1. Parse and filter each caller.
 2. Confirm DELLY retains calls and is not systematically marked `LOW_SUPPORT`.
-3. Produce the Jasmine master VCF and inspect `SUPP`, `SUPP_VEC`, and `IDLIST`.
+3. Produce the Jasmine integrated discovery VCF and inspect `SUPP`, `SUPP_VEC`, and `IDLIST`.
 4. Run the dedicated Sniffles2 needLR query and confirm `*_RESULTS.tsv` is produced.
-5. Run AnnotSV directly on the Jasmine master VCF.
+5. Run AnnotSV directly on the Jasmine integrated discovery VCF.
 6. Build the integrated table and inspect `NEEDLR_STATUS` rather than interpreting missing needLR AF as zero.
 7. Confirm a known positive SV survives calling -> evidence QC -> Jasmine -> AnnotSV -> integrated table.
 
