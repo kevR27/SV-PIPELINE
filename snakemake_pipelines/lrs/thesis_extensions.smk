@@ -376,10 +376,13 @@ rule r_large_sv_depth:
         "../../r_plots/plot_large_sv_depth.R"
 
 
-def cohort_candidate_args():
+def cohort_recurrence_args():
     return " ".join(
         "--sample-input " + shlex.quote(
-            sample + "=" + PATH + f"{sample}/gene_discovery/final/{sample}_sv_gene_candidates.tsv"
+            sample
+            + "="
+            + PATH
+            + f"{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv"
         )
         for sample in POSTPROCESS_SAMPLES
     )
@@ -388,7 +391,7 @@ def cohort_candidate_args():
 rule cohort_sv_recurrence:
     input:
         tables=expand(
-            PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
             sample=POSTPROCESS_SAMPLES,
         ),
         script=SCRIPTS + "/build_cohort_sv_recurrence.py"
@@ -396,7 +399,7 @@ rule cohort_sv_recurrence:
         summary=PATH + "cohort_analysis/sv_recurrence.tsv",
         members=PATH + "cohort_analysis/sv_recurrence_members.tsv"
     params:
-        sample_args=lambda wc: cohort_candidate_args()
+        sample_args=lambda wc: cohort_recurrence_args()
     conda:
         CONDAENV + "plots.yaml"
     shell:
