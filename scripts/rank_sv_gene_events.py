@@ -32,12 +32,12 @@ PROXIMAL_RELATIONSHIPS = {
 }
 
 POPULATION_PRIORITY = {
-    "RARE_AF_LE_0.01": 2,
+    "PROVISIONAL_LOW_AF_LE_0.01": 2,
     "NOT_EVALUABLE_GE10MB": 1,
     "NOT_EVALUABLE_BND": 1,
     "NO_MATCH": 1,
     "UNKNOWN_OR_MISSING": 1,
-    "COMMON_AF_GT_0.01": 0,
+    "PROVISIONAL_HIGH_AF_GT_0.01": 0,
 }
 
 
@@ -271,9 +271,9 @@ def population_tier(af, status) -> str:
 
     if pd.notna(af):
         return (
-            "RARE_AF_LE_0.01"
+            "PROVISIONAL_LOW_AF_LE_0.01"
             if af <= 0.01
-            else "COMMON_AF_GT_0.01"
+            else "PROVISIONAL_HIGH_AF_GT_0.01"
         )
 
     if "NOT_EVALUABLE_GE_10MB" in status:
@@ -609,8 +609,8 @@ def main():
     out = out.drop(columns=["_PANEL_GROUP_FOR_RANK"])
 
     out["EVENT_RANKING_MODEL"] = (
-        "geneRelevance_phenoPlusDisease__"
-        "mechanism_population_callers__v2_missingPopulationNeutral"
+        "geneRelevance_honContextPlusDisease__"
+        "mechanism_provisionalPopulation_callers__v3"
     )
 
     out["EVENT_RANKING_INTERPRETATION"] = (
@@ -618,7 +618,9 @@ def main():
         "not used as a pathogenicity score. INV/BND interval-only gene "
         "overlap is not treated as direct gene disruption. Missing, "
         "no-match and non-evaluable population evidence are neutral rather "
-        "than treated as evidence of rarity."
+        "than treated as evidence of rarity. needLR frequency attached to the "
+        "Jasmine master event is a coordinate-compatible provisional match, "
+        "not an exact-allele identity assertion."
     )
 
     out = out.drop(
