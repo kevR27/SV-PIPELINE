@@ -28,9 +28,6 @@ def patient_hpo_path(sample):
 VEP_CACHE_DIR_EXT = config.get("vep_cache_dir")
 VEP_ASSEMBLY_EXT = config.get("vep_assembly", "GRCh38")
 
-DORADO_BIN = config.get("dorado_bin", "dorado")
-DORADO_SUMMARY_BAMS = config.get("dorado_summary_bams", {}) or {}
-DORADO_SAMPLES = [sample for sample in POSTPROCESS_SAMPLES if sample in DORADO_SUMMARY_BAMS]
 SNV_SV_SAMPLES = [
     sample
     for sample in POSTPROCESS_SAMPLES
@@ -415,39 +412,6 @@ rule cohort_sv_recurrence:
         """
 
 
-rule dorado_read_summary:
-    input:
-        bam=lambda wc: DORADO_SUMMARY_BAMS[wc.sample]
-    output:
-        tsv=PATH + "{sample}/qc/dorado/{sample}.dorado_summary.tsv"
-    shell:
-        """
-        set -euo pipefail
-        mkdir -p $(dirname {output.tsv})
-        {DORADO_BIN} summary {input.bam} > {output.tsv}
-        test -s {output.tsv}
-        """
-
-
-rule summarize_dorado_qc:
-    input:
-        tsv=rules.dorado_read_summary.output.tsv,
-        script=SCRIPTS + "/summarize_dorado_qc.py"
-    output:
-        tsv=PATH + "{sample}/qc/dorado/{sample}_dorado_qc.tsv"
-    conda:
-        CONDAENV + "plots.yaml"
-    shell:
-        """
-        set -euo pipefail
-        python {input.script} \
-            --input {input.tsv} \
-            --sample {wildcards.sample} \
-            --output {output.tsv}
-        test -s {output.tsv}
-        """
-
-
 FINAL_THESIS_OUTPUTS = [
     rules.build_hon_hpo_reference.output.tsv,
     *expand(
@@ -509,8 +473,12 @@ FINAL_THESIS_OUTPUTS = [
     PATH + "cohort_analysis/sv_recurrence.tsv",
     PATH + "cohort_analysis/sv_recurrence_members.tsv",
     *expand(
-        PATH + "{sample}/qc/dorado/{sample}_dorado_qc.tsv",
-        sample=DORADO_SAMPLES,
+        PATH + "{sample}/qc/{sample}.dorado_qc.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/qc/{sample}.n50.tsv",
+        sample=POSTPROCESS_SAMPLES,
     ),
 ]
 
