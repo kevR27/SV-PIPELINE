@@ -215,17 +215,17 @@ def main():
     def visual(term):
         return VISUAL_ROOT in ancestors(term)
 
-    disease_class = {}
+    hpo_breadth_context = {}
     for disease, annotations in disease_hpo.items():
         terms = {x["hpo_id"] for x in annotations}
         visual_terms = {x for x in terms if visual(x)}
         nonvisual_terms = terms - visual_terms
         if visual_terms and nonvisual_terms:
-            disease_class[disease] = "LIKELY_SYNDROMIC_BY_HPO_BREADTH"
+            hpo_breadth_context[disease] = "VISUAL_AND_NONVISUAL_HPO_REPORTED"
         elif visual_terms:
-            disease_class[disease] = "PREDOMINANTLY_OCULAR_BY_HPO_BREADTH"
+            hpo_breadth_context[disease] = "VISUAL_HPO_ONLY_IN_CURRENT_MONARCH_RECORD"
         else:
-            disease_class[disease] = "UNRESOLVED"
+            hpo_breadth_context[disease] = "UNRESOLVED"
 
     rows = []
     seen = set()
@@ -296,9 +296,18 @@ def main():
                         "ASSOCIATED_DISEASE": node_name.get(disease, "") if disease != "." else ".",
                         "ASSOCIATED_GENE": gene,
                         "PANEL_GENE": "YES",
-                        "ISOLATED_SYNDROMIC": disease_class.get(disease, "UNRESOLVED"),
+                        "ISOLATED_SYNDROMIC": "NOT_CURATED_FROM_MONARCH",
                         "ISOLATED_SYNDROMIC_BASIS": (
-                            "AUTOMATED_HPO_PHENOTYPE_BREADTH"
+                            "NOT_INFERRED_FROM_HPO_BREADTH"
+                            if disease != "."
+                            else "NO_DISEASE_ASSOCIATION_AVAILABLE"
+                        ),
+                        "HPO_BREADTH_CONTEXT": hpo_breadth_context.get(
+                            disease,
+                            "UNRESOLVED",
+                        ),
+                        "HPO_BREADTH_CONTEXT_SCOPE": (
+                            "DESCRIPTIVE_CURRENT_MONARCH_DISEASE_HPO_SET"
                             if disease != "."
                             else "NO_DISEASE_ASSOCIATION_AVAILABLE"
                         ),
@@ -323,8 +332,10 @@ def main():
             "ASSOCIATED_DISEASE": ".",
             "ASSOCIATED_GENE": gene,
             "PANEL_GENE": "YES",
-            "ISOLATED_SYNDROMIC": "UNRESOLVED",
+            "ISOLATED_SYNDROMIC": "NOT_CURATED_FROM_MONARCH",
             "ISOLATED_SYNDROMIC_BASIS": "NO_HGNC_MAPPING",
+            "HPO_BREADTH_CONTEXT": "UNRESOLVED",
+            "HPO_BREADTH_CONTEXT_SCOPE": "NO_HGNC_MAPPING",
             "MITOCHONDRIAL_PATHWAY": ";".join(sorted(mito.get(gene, set()))) or ".",
             "LITERATURE_SUPPORT": ".",
             "LITERATURE_SUPPORT_SCOPE": "MONARCH_EDGE_PUBLICATIONS_ONLY",
@@ -341,6 +352,7 @@ def main():
         "HPO_ID", "HPO_NAME", "HON_RELEVANCE", "ASSOCIATED_DISEASE_ID",
         "ASSOCIATED_DISEASE", "ASSOCIATED_GENE", "PANEL_GENE",
         "ISOLATED_SYNDROMIC", "ISOLATED_SYNDROMIC_BASIS",
+        "HPO_BREADTH_CONTEXT", "HPO_BREADTH_CONTEXT_SCOPE",
         "MITOCHONDRIAL_PATHWAY", "LITERATURE_SUPPORT", "LITERATURE_SUPPORT_SCOPE",
         "KNOWLEDGE_SOURCE",
         "GENE_MAPPING_STATUS", "GENE_DISEASE_PREDICATE", "PHENOTYPE_PREDICATE",
