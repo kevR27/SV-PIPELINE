@@ -19,6 +19,7 @@ MONARCH_NODES_EXT = config["monarch_nodes"]
 MONARCH_EDGES_EXT = config["monarch_edges"]
 GENE_BED_EXT = config["gene_bed"]
 PATIENT_HPO_FILES = config.get("patient_hpo_files", {}) or {}
+GNOMAD_SV_VCF = config.get("gnomad_sv_vcf")
 
 
 def patient_hpo_path(sample):
@@ -93,6 +94,36 @@ rule hpo_semantic_similarity:
             --gene-phenotypes {input.gene_phenotypes} \
             --edges {input.edges} \
             {params.patient_arg} \
+            --output {output.tsv}
+        test -s {output.tsv}
+        """
+
+
+def gnomad_optional_input(wc):
+    return [GNOMAD_SV_VCF] if GNOMAD_SV_VCF else []
+
+
+rule annotate_gnomad_sv_exact:
+    input:
+        events=rules.rank_sv_gene_events.output.tsv,
+        resource=gnomad_optional_input,
+        script=SCRIPTS + "/annotate_gnomad_sv_exact.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.gnomad.tsv"
+    params:
+        resource_arg=lambda wc: (
+            f"--gnomad-vcf {shlex.quote(GNOMAD_SV_VCF)}"
+            if GNOMAD_SV_VCF
+            else ""
+        )
+    conda:
+        CONDAENV + "gnomad_sv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --input {input.events} \
+            {params.resource_arg} \
             --output {output.tsv}
         test -s {output.tsv}
         """
