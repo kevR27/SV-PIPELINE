@@ -11,13 +11,18 @@ These terms are used to identify phenotype proximity in the Monarch knowledge
 graph. They are not intended to enumerate every manifestation of every
 syndromic optic neuropathy.
 
-## Legacy file
+## Earlier manual term list
 
-`reference/optic_neuropathy_hpo_terms.tsv` is retained only for
-traceability from the earlier pipeline design. It is not the active phenotype
-reference. It mixed core ocular features with a few non-ocular features without
-linking those features to the specific disease/gene in which they occur, which
-is not appropriate for isolated-versus-syndromic interpretation.
+The earlier `reference/optic_neuropathy_hpo_terms.tsv` file has been removed
+from the active repository. It mixed core ocular features with selected
+non-ocular features without linking those features to the specific disease/gene
+in which they occur. That structure is not appropriate for isolated-versus-
+syndromic interpretation.
+
+The only active manually curated seed file is
+`reference/hon_hpo_seed_terms.tsv`. Broader syndromic phenotypes are obtained
+from the generated gene-disease-HPO reference rather than from a second global
+manual list.
 
 ## Isolated and syndromic HON
 
