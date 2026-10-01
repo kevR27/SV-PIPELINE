@@ -79,5 +79,37 @@ class TestSVGeneEffects(unittest.TestCase):
         self.assertEqual(effect, "WHOLE_GENE_DELETION")
 
 
+
+    def test_one_breakpoint_in_multiple_isoforms_is_not_two_breakpoints(self):
+        row = {
+            "SVTYPE": "INV",
+            "CHROM": "chr1",
+            "START": "150",
+            "END": "5000",
+            "POS2": "5000",
+            "ANNOTSV_GENE_ROWS_JSON": json.dumps([
+                {"Gene_name": "A", "SV_chrom": "chr1", "Tx_start": "100", "Tx_end": "300", "Location": "exonic"},
+                {"Gene_name": "A", "SV_chrom": "chr1", "Tx_start": "120", "Tx_end": "350", "Location": "intronic"},
+            ]),
+        }
+        effect, distance = effects.get_sv_gene_effect(row, "A")
+        self.assertEqual(effect, "INVERSION_BREAKPOINT_IN_TRANSCRIPT")
+        self.assertEqual(distance, 0)
+
+    def test_two_distinct_inversion_breakpoints_in_gene(self):
+        row = {
+            "SVTYPE": "INV",
+            "CHROM": "chr1",
+            "START": "150",
+            "END": "250",
+            "POS2": "250",
+            "ANNOTSV_GENE_ROWS_JSON": json.dumps([
+                {"Gene_name": "A", "SV_chrom": "chr1", "Tx_start": "100", "Tx_end": "300", "Location": "exonic"},
+            ]),
+        }
+        effect, distance = effects.get_sv_gene_effect(row, "A")
+        self.assertEqual(effect, "INVERSION_TWO_BREAKPOINTS_IN_GENE")
+        self.assertEqual(distance, 0)
+
 if __name__ == "__main__":
     unittest.main()
