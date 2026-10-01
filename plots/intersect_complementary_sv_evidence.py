@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Attach complementary computational and phasing evidence to the integrated Jasmine SV-gene table.
 
-The Jasmine master SV universe is never replaced. Straglr and TLDR are
+The Jasmine master SV set is never replaced. Straglr and TLDR are
 coordinate-aware complementary discovery layers; LongPhase is used as SV phasing
-evidence. Independent Straglr/TLDR findings without a master-SV match can be
-written to a separate table so they are not discarded.
+evidence. Straglr loci merely located inside a large interval are recorded as
+context, not as support for that SV. Independent Straglr/TLDR findings without a
+same-locus master-SV match can be written to a separate table.
 """
 
 from __future__ import annotations
@@ -292,6 +293,9 @@ def main():
         ("STRAGLR_GENES", "."),
         ("STRAGLR_COPY_NUMBER", "."),
         ("STRAGLR_SUPPORTING_READS", "."),
+        ("STRAGLR_CONTEXT", "NO" if args.straglr else "NOT_AVAILABLE"),
+        ("STRAGLR_CONTEXT_LOCI", "."),
+        ("STRAGLR_CONTEXT_GENES", "."),
         ("TLDR_MATCH", "NO" if args.tldr else "NOT_AVAILABLE"),
         ("TLDR_INSERTIONS", "."),
         ("TLDR_UUID", "."),
@@ -329,10 +333,36 @@ def main():
                 end = start  # Remote breakpoint is not a local interval endpoint.
 
             smatches, sgenes, scn, ssupport = [], [], [], []
+            scontext, scontext_genes = [], []
             if start is not None:
                 for s in straglr_by_chrom.get(chrom, []):
                     if s["start"] is None or s["end"] is None:
                         continue
+
+                    repeat_mid = (s["start"] + s["end"]) // 2
+                    insertion_near = (
+                        svtype == "INS"
+                        and min(
+                            abs(start - s["start"]),
+                            abs(start - s["end"]),
+                            abs(start - repeat_mid),
+                        ) <= args.straglr_breakpoint_tol
+                    )
+
+                    if insertion_near:
+                        matched_straglr.add(s["source_index"])
+                        smatches.append(s["label"])
+                        if s["genes"] not in {"", ".", "nan"}:
+                            sgenes.append(s["genes"])
+                        if s["copy_number"] not in {"", ".", "nan"}:
+                            scn.append(s["copy_number"])
+                        if s["supporting_reads"] not in {"", ".", "nan"}:
+                            ssupport.append(s["supporting_reads"])
+                        continue
+
+                    # A repeat located anywhere inside a DEL/DUP/INV (or near a
+                    # breakpoint of another SV class) is biologically useful
+                    # context but does not corroborate the structural event.
                     overlap = interval_overlap(start, end, s["start"], s["end"])
                     near_bp = (
                         min(
@@ -343,15 +373,10 @@ def main():
                         )
                         <= args.straglr_breakpoint_tol
                     )
-                    if overlap > 0 or (svtype in {"INS", "BND"} and near_bp):
-                        matched_straglr.add(s["source_index"])
-                        smatches.append(s["label"])
+                    if overlap > 0 or near_bp:
+                        scontext.append(s["label"])
                         if s["genes"] not in {"", ".", "nan"}:
-                            sgenes.append(s["genes"])
-                        if s["copy_number"] not in {"", ".", "nan"}:
-                            scn.append(s["copy_number"])
-                        if s["supporting_reads"] not in {"", ".", "nan"}:
-                            ssupport.append(s["supporting_reads"])
+                            scontext_genes.append(s["genes"])
 
             tmatches, tuuids, tused, tspan = [], [], [], []
             if start is not None and svtype in {"INS", "BND"}:
@@ -377,12 +402,18 @@ def main():
                 )
 
             evidence = {
-                "COMPLEMENTARY_MATCH_SCOPE": "FIRST_BREAKPOINT_CONTEXT" if svtype == "BND" else "LOCAL_INTERVAL_OR_BREAKPOINT_CONTEXT",
+                "COMPLEMENTARY_MATCH_SCOPE": (
+                    "FIRST_BREAKPOINT_CONTEXT" if svtype == "BND"
+                    else "SAME_LOCUS_INSERTION_OR_CONTEXT_ONLY"
+                ),
                 "STRAGLR_MATCH": "YES" if smatches else ("NO" if args.straglr else "NOT_AVAILABLE"),
                 "STRAGLR_LOCI": ";".join(sorted(set(smatches))) if smatches else ".",
                 "STRAGLR_GENES": ";".join(sorted(set(sgenes))) if sgenes else ".",
                 "STRAGLR_COPY_NUMBER": ";".join(sorted(set(scn))) if scn else ".",
                 "STRAGLR_SUPPORTING_READS": ";".join(sorted(set(ssupport))) if ssupport else ".",
+                "STRAGLR_CONTEXT": "YES" if scontext else ("NO" if args.straglr else "NOT_AVAILABLE"),
+                "STRAGLR_CONTEXT_LOCI": ";".join(sorted(set(scontext))) if scontext else ".",
+                "STRAGLR_CONTEXT_GENES": ";".join(sorted(set(scontext_genes))) if scontext_genes else ".",
                 "TLDR_MATCH": "YES" if tmatches else ("NO" if args.tldr else "NOT_AVAILABLE"),
                 "TLDR_INSERTIONS": ";".join(sorted(set(tmatches))) if tmatches else ".",
                 "TLDR_UUID": ";".join(sorted(set(tuuids))) if tuuids else ".",
