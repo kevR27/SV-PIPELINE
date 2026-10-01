@@ -121,6 +121,29 @@ class ScoreReportingTests(unittest.TestCase):
             self.command('plots/build_gene_evidence_summary.py','--integrated',d/'out.tsv','--output',d/'summary.tsv')
             self.assertEqual(read(d/'summary.tsv')[0]['longphase_match_unavailable_SV_count'],'1')
 
+    def test_event_technical_review_flags_qc_rescue(self):
+        self.assertEqual(
+            event_rank.technical_review_status({
+                "CALLER_EVIDENCE_FLAGS": "Sniffles2:RESCUED_COV_VAR",
+                "CALLER_EVIDENCE_MATCH": "IDLIST",
+            }),
+            "REVIEW_REQUIRED_CALLER_QC_FLAG",
+        )
+        self.assertEqual(
+            event_rank.technical_review_status({
+                "CALLER_EVIDENCE_FLAGS": ".",
+                "CALLER_EVIDENCE_MATCH": "IDLIST",
+            }),
+            "NO_REVIEW_FLAG_FROM_CALLER_EVIDENCE",
+        )
+        self.assertEqual(
+            event_rank.technical_review_status({
+                "CALLER_EVIDENCE_FLAGS": ".",
+                "CALLER_EVIDENCE_MATCH": "AMBIGUOUS_COORDINATE",
+            }),
+            "REVIEW_REQUIRED_AMBIGUOUS_CALLER_LINK",
+        )
+
     def test_missing_population_evidence_is_neutral(self):
         priority = event_rank.POPULATION_PRIORITY
         self.assertGreater(priority["PROVISIONAL_LOW_AF_LE_0.01"], priority["NO_MATCH"])
