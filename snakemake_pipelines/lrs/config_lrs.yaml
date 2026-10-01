@@ -251,13 +251,20 @@ r_plot_top_hpo: 20
 # ============================================================
 # FOR QC PARAMETERS
 # ============================================================
-# Dorado sequencing summary QC is optional and belongs to the additive
-# thesis/QC layer, not the core SV-calling target. Configure only when the
-# original Dorado basecalling BAM (with the required Dorado tags) and the
-# Dorado executable are available.
+# Dorado sequencing summary and read-length QC are mandatory LRS QC outputs.
+# Dorado officially defines `dorado summary <bam>` for BAMs produced from
+# Dorado basecalling. These paths currently point to the WGS BAMs used by the
+# pipeline; if a BAM no longer retains the required Dorado metadata, replace
+# that sample path with its original Dorado basecalled BAM.
 dorado_bin: "dorado"
-dorado_summary_bams: {}
+dorado_summary_bams:
+  "14996": "/DATA/casadei7/nanopore/WGS/14996_HMW_bam/14996_HMW_merged.bam"
+  "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
+  "12066": "/DATA/casadei7/nanopore/WGS/CONTROL/12066/12066.merge.sort.bam"
+  "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
 
-# Example:
-# dorado_summary_bams:
-#   "21930": "/path/to/21930.basecalled.bam"
+# Read-length threshold used to report the long-read subset separately from
+# all reads. N50 itself is a QC metric; this threshold is what separates the
+# short-read tail from the long-read QC subset.
+n50_min_length: 1000
+
