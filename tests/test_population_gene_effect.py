@@ -55,6 +55,32 @@ class TestPopulationGeneEffect(unittest.TestCase):
             "COMMON_BENIGN_REGION_OVERLAP_CONTEXT",
         )
 
+    def test_exact_gnomad_frequency_contributes(self):
+        row = {
+            "NEEDLR_AF": ".",
+            "POPULATION_STATUS": "UNKNOWN",
+            "GNOMAD_SV_EXACT_MATCH": "YES",
+            "GNOMAD_SV_AF": "0.0005",
+            "ANNOTSV_BENIGN_AFMAX": ".",
+        }
+        self.assertEqual(
+            population_class(row),
+            "LOW_FREQUENCY_BY_EXACT_GNOMAD",
+        )
+
+    def test_frequency_conflict_is_preserved(self):
+        row = {
+            "NEEDLR_AF": "0.2",
+            "POPULATION_STATUS": "COMMON",
+            "GNOMAD_SV_EXACT_MATCH": "YES",
+            "GNOMAD_SV_AF": "0.0001",
+            "ANNOTSV_BENIGN_AFMAX": ".",
+        }
+        self.assertEqual(
+            population_class(row),
+            "FREQUENCY_SOURCES_CONFLICT",
+        )
+
     def test_low_frequency_is_not_named_pathogenic(self):
         cls = population_class(
             {
