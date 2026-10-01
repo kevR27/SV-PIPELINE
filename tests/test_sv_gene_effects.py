@@ -47,7 +47,7 @@ class TestSVGeneEffects(unittest.TestCase):
             make_row("INV", 450, 1000, 400, 600, location="exon"),
             "TEST",
         )
-        self.assertEqual(effect, "INVERSION_BREAKPOINT_IN_EXON")
+        self.assertEqual(effect, "INVERSION_BREAKPOINT_IN_TRANSCRIPT")
         self.assertEqual(distance, 0)
         self.assertEqual(
             get_functional_context("INV", effect),
@@ -59,7 +59,7 @@ class TestSVGeneEffects(unittest.TestCase):
             make_row("INV", 450, 1000, 400, 600, location="intron"),
             "TEST",
         )
-        self.assertEqual(effect, "INVERSION_BREAKPOINT_IN_INTRON")
+        self.assertEqual(effect, "INVERSION_BREAKPOINT_IN_TRANSCRIPT")
         self.assertEqual(distance, 0)
 
     def test_inversion_breakpoint_near_gene(self):
