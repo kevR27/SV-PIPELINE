@@ -372,7 +372,7 @@ rule annotate_gnomad_sv_exact:
         gnomad=gnomad_sv_inputs,
         script=SCRIPTS + "/annotate_gnomad_sv_exact.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.with_gnomad.tsv"
+        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.gnomad.tsv"
     params:
         gnomad_arg=gnomad_sv_arg
     conda:
