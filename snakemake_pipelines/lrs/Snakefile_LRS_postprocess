@@ -81,6 +81,8 @@ def postprocess_required_files(sample):
         PATH + f"{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         PATH + f"{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
         PATH + f"{sample}/mei/tldr/{sample}.tldr.table.txt",
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        PATH + f"{sample}/phasing_longphase/{sample}.longphase_SV.vcf.gz",
     ]
 
 
