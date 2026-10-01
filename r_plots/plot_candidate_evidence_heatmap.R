@@ -71,7 +71,7 @@ colnames(evidence) <- c(
   "Multi-caller", "Low-frequency needLR match", "ON panel", "MitoCarta",
   "Direct/geometry SV-gene relation", "Regulatory/inversion context",
   "Depth supports copy change", "LongPhase phased",
-  "Straglr match", "TLDR match"
+  "Straglr same-locus insertion", "TLDR insertion match"
 )
 
 rownames(evidence) <- paste0(
