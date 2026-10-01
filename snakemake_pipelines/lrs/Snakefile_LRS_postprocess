@@ -48,6 +48,20 @@ MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS_FILE = config.get("mitocarta_pathways_file")
 GNOMAD_SV_VCF = config.get("gnomad_sv_vcf")
 
+
+def gnomad_sv_inputs(wc):
+    if not GNOMAD_SV_VCF:
+        return []
+    return [GNOMAD_SV_VCF, GNOMAD_SV_VCF + ".tbi"]
+
+
+def gnomad_sv_arg(wc):
+    return (
+        f"--gnomad-vcf {shlex.quote(GNOMAD_SV_VCF)}"
+        if GNOMAD_SV_VCF
+        else ""
+    )
+
 SAMPLOT_TOP_N = config.get("samplot_top_n", 20)
 SAMPLOT_RUN_NAME = f"top_{SAMPLOT_TOP_N}"
 SAMPLOT_MIN_MAPQ = config.get("samplot_min_mapq", 20)
@@ -567,20 +581,6 @@ rule samplot_candidate_breakpoints:
         test -s {output.manifest}
         touch {output.marker}
         """
-
-
-def gnomad_sv_inputs(wc):
-    if not GNOMAD_SV_VCF:
-        return []
-    return [GNOMAD_SV_VCF, GNOMAD_SV_VCF + ".tbi"]
-
-
-def gnomad_sv_arg(wc):
-    return (
-        f"--gnomad-vcf {shlex.quote(GNOMAD_SV_VCF)}"
-        if GNOMAD_SV_VCF
-        else ""
-    )
 
 
 def cohort_sample_args():
