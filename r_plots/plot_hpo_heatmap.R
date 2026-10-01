@@ -37,8 +37,21 @@ if (nrow(pheno) == 0) {
   quit(save = "no", status = 0)
 }
 
-term_counts <- pheno[, .(N = uniqueN(gene_symbol)), by = .(hpo_id, hpo_label)]
-selected_terms <- head(term_counts[order(-N, hpo_id)], top_hpo)
+if ("optic_neuropathy_anchor" %in% names(pheno)) {
+  pheno[, HON_ANCHOR := suppressWarnings(as.integer(optic_neuropathy_anchor))]
+  pheno[is.na(HON_ANCHOR), HON_ANCHOR := 0L]
+} else {
+  pheno[, HON_ANCHOR := 0L]
+}
+
+term_counts <- pheno[, .(
+  N = uniqueN(gene_symbol),
+  HON_ANCHOR = max(HON_ANCHOR)
+), by = .(hpo_id, hpo_label)]
+selected_terms <- head(
+  term_counts[order(-HON_ANCHOR, -N, hpo_id)],
+  top_hpo
+)
 pheno <- pheno[hpo_id %in% selected_terms$hpo_id]
 
 matrix_dt <- unique(pheno[, .(gene_symbol, hpo_id)])
@@ -75,18 +88,29 @@ ht <- Heatmap(
   column_names_rot = 45,
   rect_gp = gpar(col = "white", lwd = 0.8),
   left_annotation = row_ha,
-  column_title = "Human HPO associations of prioritized genes",
+  column_title = "Human HPO annotation context of prioritized genes",
   column_title_gp = gpar(fontface = "bold", fontsize = 13),
+  column_title_side = "top",
   heatmap_legend_param = list(at = c(0, 1), labels = c("No annotation", "Annotated"))
 )
 
 height <- max(7, 0.32 * nrow(mat) + 2.8)
+draw_with_scope <- function() {
+  draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
+  grid.text(
+    "Database gene-HPO context; not patient-specific phenotype matching. HON anchor terms are prioritized for display.",
+    x = unit(0.5, "npc"),
+    y = unit(0.012, "npc"),
+    gp = gpar(fontsize = 8.5)
+  )
+}
+
 pdf(pdf_file, width = 14, height = height, useDingbats = FALSE)
-draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
+draw_with_scope()
 dev.off()
 png(png_file, width = 14, height = height, units = "in", res = 400)
-draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
+draw_with_scope()
 dev.off()
 svglite(svg_file, width = 14, height = height)
-draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
+draw_with_scope()
 dev.off()
