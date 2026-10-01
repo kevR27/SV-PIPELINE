@@ -77,13 +77,13 @@ sniffles_min_alignment_length: 1000
 # Keep Sniffles' standard QC logic.  Leave this false in production.
 sniffles_no_qc: false
 
-# Keep Sniffles QC-failed candidates in the raw VCF/parsed evidence for audit,
-# but do not promote COV_VAR failures into the Jasmine master callset.
-# COV_VAR means Sniffles' coverage-variance QC was exceeded; large DEL/DUP
-# candidates remain reviewable in the raw evidence and can be reconsidered
-# manually if independent/complementary evidence supports them.
+# Keep Sniffles QC-failed candidates in the raw VCF/parsed evidence for audit.
+# Selected large DEL/DUP records failing only Sniffles COV_VAR QC are also
+# rescued into the Jasmine discovery set when they satisfy the support/size
+# criteria below. They remain explicitly flagged RESCUED_COV_VAR and require
+# read-depth/Samplot/manual review; rescue is not equivalent to validation.
 sniffles_keep_qc_failed_for_review: true
-sniffles_rescue_cov_var: false
+sniffles_rescue_cov_var: true
 sniffles_cov_var_min_support: 2
 sniffles_cov_var_min_svlen: 50000
 sniffles_cov_var_svtypes:
