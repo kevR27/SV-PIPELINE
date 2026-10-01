@@ -12,7 +12,8 @@ genes_file <- snakemake@input[["genes"]]
 pdf_file <- snakemake@output[["pdf"]]
 png_file <- snakemake@output[["png"]]
 svg_file <- snakemake@output[["svg"]]
-top_n <- as.integer(snakemake@params[["top_n"]])\ntop_genes <- as.integer(snakemake@params[["top_genes"]])
+top_n <- as.integer(snakemake@params[["top_n"]])
+top_genes <- as.integer(snakemake@params[["top_genes"]])
 
 dir.create(dirname(pdf_file), recursive = TRUE, showWarnings = FALSE)
 
