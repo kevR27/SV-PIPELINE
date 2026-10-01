@@ -217,6 +217,7 @@ def main():
         svtype,
         suffix="",
         context_only=False,
+        plot_title=None,
     ):
         gene_label = short_gene_label(primary_gene, genes)
         output_name = (
@@ -227,7 +228,7 @@ def main():
         output = outdir / output_name
         command = [
             "samplot", "plot",
-            "-n", args.sample,
+            "-n", plot_title or args.sample,
             "-b", args.bam,
             "-r", args.reference,
             "-o", str(output),
@@ -289,6 +290,17 @@ def main():
         if end <= start:
             end = start + 1
 
+        gnomad_af = str(row.get("GNOMAD_SV_AF", "."))
+        gnomad_match = str(row.get("GNOMAD_SV_EXACT_MATCH", "."))
+        gnomad_id = str(row.get("GNOMAD_SV_ID", "."))
+        needlr_af = str(row.get("NEEDLR_AF", "."))
+        title_parts = [args.sample]
+        if needlr_af not in {"", ".", "nan", "None"}:
+            title_parts.append(f"needLR AF={needlr_af}")
+        if gnomad_match == "YES" and gnomad_af not in {"", ".", "nan", "None"}:
+            title_parts.append(f"gnomAD-SV AF={gnomad_af}")
+        plot_title = " | ".join(title_parts)
+
         outputs = []
         failures = []
 
@@ -307,7 +319,7 @@ def main():
                 run_one(
                     rank, sv_id, primary_gene, genes, chrom,
                     region_start, region_end, svtype,
-                    "_insertion_context", True,
+                    "_insertion_context", True, plot_title,
                 ),
                 "INSERTION_BREAKPOINT_CONTEXT",
             )
@@ -320,6 +332,7 @@ def main():
                         svtype,
                         "_insertion_context_retry",
                         True,
+                        plot_title,
                     ),
                     "INSERTION_BREAKPOINT_CONTEXT_RETRY",
                 )
@@ -330,7 +343,7 @@ def main():
                     rank, sv_id, primary_gene, genes, chrom,
                     max(1, start - args.window),
                     start + args.window,
-                    svtype, "_bp1", True,
+                    svtype, "_bp1", True, plot_title,
                 ),
                 "BREAKPOINT_1_CONTEXT",
             )
@@ -340,7 +353,7 @@ def main():
                         rank, sv_id, primary_gene, genes, chrom,
                         max(1, start - 2 * args.window),
                         start + 2 * args.window,
-                        svtype, "_bp1_retry", True,
+                        svtype, "_bp1_retry", True, plot_title,
                     ),
                     "BREAKPOINT_1_CONTEXT_RETRY",
                 )
@@ -354,7 +367,7 @@ def main():
                             rank, sv_id, primary_gene, genes, chr2,
                             max(1, pos2 - args.window),
                             pos2 + args.window,
-                            svtype, "_bp2", True,
+                            svtype, "_bp2", True, plot_title,
                         ),
                         "BREAKPOINT_2_CONTEXT",
                     )
@@ -364,7 +377,7 @@ def main():
                                 rank, sv_id, primary_gene, genes, chr2,
                                 max(1, pos2 - 2 * args.window),
                                 pos2 + 2 * args.window,
-                                svtype, "_bp2_retry", True,
+                                svtype, "_bp2_retry", True, plot_title,
                             ),
                             "BREAKPOINT_2_CONTEXT_RETRY",
                         )
@@ -381,7 +394,7 @@ def main():
                         rank, sv_id, primary_gene, genes, chrom,
                         max(1, start - args.zoom),
                         start + args.zoom,
-                        svtype, "_bp1_large", True,
+                        svtype, "_bp1_large", True, plot_title,
                     ),
                     "BREAKPOINT_1_LARGE_SV",
                 )
@@ -390,7 +403,7 @@ def main():
                         rank, sv_id, primary_gene, genes, chrom,
                         max(1, end - args.zoom),
                         end + args.zoom,
-                        svtype, "_bp2_large", True,
+                        svtype, "_bp2_large", True, plot_title,
                     ),
                     "BREAKPOINT_2_LARGE_SV",
                 )
@@ -403,7 +416,7 @@ def main():
                 main_success = add_plot(
                     run_one(
                         rank, sv_id, primary_gene, genes, chrom,
-                        start, end, svtype,
+                        start, end, svtype, plot_title=plot_title,
                     ),
                     "SV_SIGNAL_PLOT",
                 )
@@ -415,7 +428,7 @@ def main():
                             rank, sv_id, primary_gene, genes, chrom,
                             max(1, start - args.window),
                             start + args.window,
-                            svtype, "_bp1_fallback", True,
+                            svtype, "_bp1_fallback", True, plot_title,
                         ),
                         "BREAKPOINT_1_FALLBACK",
                     )
@@ -424,7 +437,7 @@ def main():
                             rank, sv_id, primary_gene, genes, chrom,
                             max(1, end - args.window),
                             end + args.window,
-                            svtype, "_bp2_fallback", True,
+                            svtype, "_bp2_fallback", True, plot_title,
                         ),
                         "BREAKPOINT_2_FALLBACK",
                     )
@@ -459,6 +472,10 @@ def main():
                 "sv_gene_count": row.get("SV_GENE_COUNT", "."),
                 "population_tier": row.get("EVENT_POPULATION_TIER", "."),
                 "contains_panel_gene": "YES" if bool(row.get("_has_panel_event", False)) else "NO",
+                "GNOMAD_SV_EXACT_MATCH": gnomad_match,
+                "GNOMAD_SV_ID": gnomad_id,
+                "GNOMAD_SV_AF": gnomad_af,
+                "NEEDLR_AF": needlr_af,
                 "plot_scope": scope,
                 "plot_status": (
                     "FALLBACK"
