@@ -48,8 +48,8 @@ cpg_region: null
 # --conda-prefix still controls where Snakemake creates/reuses environments.
 
 # modkit 0.6.4 executable installed on the analysis server.
-# Retained for reference; the active rule uses the modkit executable supplied
-# by envs/modkit.yaml.
+# modkit itself is an external executable; envs/modkit.yaml supplies
+# htslib/tabix for indexing the BGZF bedMethyl output.
 #modkitenv: "/home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
 modkitenv: "/home/casadei7/.cargo/bin/modkit"
 
@@ -196,8 +196,10 @@ evidence_min_svlen: 50
 # BND/TRA records are retained only when both breakends are canonical.
 canonical_chromosomes_only: true
 
-# No upper SV-length hard filter in the master callset. Large events remain
-# available to Jasmine/AnnotSV/integrated analysis. needLR independently
+# No upper SV-length hard filter in the master callset. The active cuteSV
+# command also uses --max_size -1 so >100 kb and >=10 Mb events are not
+# silently lost at caller level. Large events remain available to
+# Jasmine/AnnotSV/integrated analysis. needLR independently
 # excludes BNDs and SVs >=10 Mb from population-frequency annotation.
 evidence_max_svlen: null
 
