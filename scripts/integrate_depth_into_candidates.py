@@ -54,6 +54,7 @@ def main():
         "MEDIAN_DEPTH_FLANKS",
         "DEPTH_RATIO",
         "DEPTH_PATTERN",
+        "DEPTH_INTERPRETATION_SCOPE",
         "PLOT_BIN_BP",
     ]
     if depth.empty:
