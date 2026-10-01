@@ -43,3 +43,14 @@ Relevant examples and approaches:
   https://www.nature.com/articles/s41576-025-00862-x
 - Long-read resolution of rare/pathogenic inversions:
   https://pubmed.ncbi.nlm.nih.gov/39486878/
+
+
+## Breakpoint annotation resolution
+
+The current automated interpretation establishes whether an inversion or
+breakend coordinate lies inside an annotated transcript, near a transcript, or
+outside it. It does not label the breakpoint as exonic or intronic from
+AnnotSV's general `Location` field, because that field is not a
+breakpoint-coordinate exon intersection. Exon-level breakpoint claims require
+an explicit exon-coordinate BED/GTF intersection and should not be inferred
+from interval-level annotation.
