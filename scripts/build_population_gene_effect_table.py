@@ -114,21 +114,46 @@ def gnomad_context(row):
 
 
 def population_class(row):
-    """Classify frequency evidence without calling an allele benign/pathogenic."""
+    """Combine needLR and exact-site gnomAD frequency without hiding conflicts."""
     nclass = needlr_class(row)
+    gclass = gnomad_exact_class(row)
     bclass = benign_afmax_class(row)
 
-    if nclass in {
+    needlr_common = nclass in {
         "VERY_COMMON_NEEDLR_GE_0.05",
         "COMMON_NEEDLR_GT_0.01",
-    }:
-        return "COMMON_BY_NEEDLR"
-
-    if nclass in {
+    }
+    needlr_low = nclass in {
         "NOT_OBSERVED_IN_NEEDLR_CONTROLS",
         "VERY_RARE_NEEDLR_LE_0.001",
         "RARE_NEEDLR_LE_0.01",
-    }:
+    }
+
+    gnomad_common = gclass in {
+        "EXACT_GNOMAD_COMMON_GT_0.01",
+        "EXACT_GNOMAD_VERY_COMMON_GE_0.05",
+    }
+    gnomad_low = gclass in {
+        "EXACT_GNOMAD_AF_ZERO",
+        "EXACT_GNOMAD_VERY_RARE_LE_0.001",
+        "EXACT_GNOMAD_RARE_LE_0.01",
+    }
+
+    if (needlr_common and gnomad_low) or (needlr_low and gnomad_common):
+        return "FREQUENCY_SOURCES_CONFLICT"
+
+    if needlr_common or gnomad_common:
+        if needlr_common and gnomad_common:
+            return "COMMON_SUPPORTED_BY_NEEDLR_AND_GNOMAD"
+        if gnomad_common:
+            return "COMMON_BY_EXACT_GNOMAD"
+        return "COMMON_BY_NEEDLR"
+
+    if needlr_low or gnomad_low:
+        if needlr_low and gnomad_low:
+            return "LOW_FREQUENCY_SUPPORTED_BY_NEEDLR_AND_GNOMAD"
+        if gnomad_low:
+            return "LOW_FREQUENCY_BY_EXACT_GNOMAD"
         return "LOW_FREQUENCY_BY_NEEDLR"
 
     if bclass in {
@@ -148,23 +173,46 @@ def population_class(row):
         return "POPULATION_AF_NOT_EVALUABLE"
     if nclass == "NO_NEEDLR_MATCH_AF_UNKNOWN":
         return "NO_NEEDLR_MATCH_AF_UNKNOWN"
+    if gclass == "GNOMAD_SV_RESOURCE_NOT_CONFIGURED":
+        return "GNOMAD_RESOURCE_NOT_CONFIGURED"
     return "POPULATION_FREQUENCY_UNKNOWN"
 
 
 def population_interpretation(row):
     cls = population_class(row)
-    if cls == "COMMON_BY_NEEDLR":
+
+    if cls == "FREQUENCY_SOURCES_CONFLICT":
+        return "NEEDLR_AND_GNOMAD_FREQUENCY_EVIDENCE_DISAGREE_REVIEW_EVENT_MATCHING"
+
+    if cls in {
+        "COMMON_SUPPORTED_BY_NEEDLR_AND_GNOMAD",
+        "COMMON_BY_EXACT_GNOMAD",
+        "COMMON_BY_NEEDLR",
+    }:
         return "COMMON_FREQUENCY_WEAKENS_CANDIDACY_FOR_A_HIGHLY_PENETRANT_RARE_MENDELIAN_ALLELE"
-    if cls == "LOW_FREQUENCY_BY_NEEDLR":
+
+    if cls in {
+        "LOW_FREQUENCY_SUPPORTED_BY_NEEDLR_AND_GNOMAD",
+        "LOW_FREQUENCY_BY_EXACT_GNOMAD",
+        "LOW_FREQUENCY_BY_NEEDLR",
+    }:
         return "LOW_FREQUENCY_SUPPORTS_RARITY_ONLY_NOT_PATHOGENICITY"
+
     if cls == "COMMON_BENIGN_REGION_OVERLAP_CONTEXT":
         return "COMMON_OVERLAPPING_BENIGN_SV_CONTEXT_REQUIRES_ALLELE_EQUIVALENCE_REVIEW"
+
     if cls == "LOW_AF_BENIGN_REGION_OVERLAP_CONTEXT":
         return "LOW_AF_OVERLAPPING_BENIGN_SV_CONTEXT_DOES_NOT_ESTABLISH_BENIGNITY"
+
     if cls == "NO_NEEDLR_MATCH_AF_UNKNOWN":
         return "NO_NEEDLR_MATCH_IS_NOT_EQUIVALENT_TO_AF_ZERO"
+
     if cls == "POPULATION_AF_NOT_EVALUABLE":
         return "NO_VALID_NEEDLR_AF_FOR_THIS_EVENT_CLASS"
+
+    if cls == "GNOMAD_RESOURCE_NOT_CONFIGURED":
+        return "NO_GNOMAD_SPECIFIC_SITE_FREQUENCY_AVAILABLE"
+
     return "INSUFFICIENT_POPULATION_FREQUENCY_EVIDENCE"
 
 
@@ -203,7 +251,9 @@ def main():
             columns=[
                 "GENE", "GENE_RELEVANCE_SCORE", "PANEL_STATUS", "SV_COUNT",
                 "LOW_FREQUENCY_NEEDLR_COUNT", "COMMON_NEEDLR_COUNT",
-                "GNOMAD_BENIGN_OVERLAP_COUNT", "COMMON_BENIGN_REGION_CONTEXT_COUNT",
+                "GNOMAD_EXACT_MATCH_COUNT", "LOW_FREQUENCY_GNOMAD_EXACT_COUNT",
+                "COMMON_GNOMAD_EXACT_COUNT", "GNOMAD_BENIGN_OVERLAP_COUNT",
+                "COMMON_BENIGN_REGION_CONTEXT_COUNT",
                 "POPULATION_CLASSES", "SV_EFFECTS",
             ]
         ).to_csv(args.gene_summary, sep="\t", index=False)
@@ -253,6 +303,16 @@ def main():
             "COMMON_NEEDLR_GT_0.01",
             "VERY_COMMON_NEEDLR_GE_0.05",
         })
+        exact_gnomad = group["GNOMAD_SV_EXACT_MATCH"].fillna("").eq("YES")
+        low_gnomad = group["GNOMAD_EXACT_AF_CLASS"].isin({
+            "EXACT_GNOMAD_AF_ZERO",
+            "EXACT_GNOMAD_VERY_RARE_LE_0.001",
+            "EXACT_GNOMAD_RARE_LE_0.01",
+        })
+        common_gnomad = group["GNOMAD_EXACT_AF_CLASS"].isin({
+            "EXACT_GNOMAD_COMMON_GT_0.01",
+            "EXACT_GNOMAD_VERY_COMMON_GE_0.05",
+        })
 
         summary_rows.append({
             "GENE": gene,
@@ -268,6 +328,15 @@ def main():
             ),
             "COMMON_NEEDLR_COUNT": int(
                 group.loc[common_needlr, "SV_ID"].nunique()
+            ),
+            "GNOMAD_EXACT_MATCH_COUNT": int(
+                group.loc[exact_gnomad, "SV_ID"].nunique()
+            ),
+            "LOW_FREQUENCY_GNOMAD_EXACT_COUNT": int(
+                group.loc[low_gnomad, "SV_ID"].nunique()
+            ),
+            "COMMON_GNOMAD_EXACT_COUNT": int(
+                group.loc[common_gnomad, "SV_ID"].nunique()
             ),
             "GNOMAD_BENIGN_OVERLAP_COUNT": int(
                 group.loc[
