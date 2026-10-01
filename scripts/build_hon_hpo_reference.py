@@ -319,6 +319,12 @@ def main():
                         "GENE_DISEASE_PREDICATE": gd.get("predicate", "."),
                         "PHENOTYPE_PREDICATE": hp.get("predicate", "."),
                         "PHENOTYPE_ASSOCIATION_SCOPE": phenotype_scope,
+                        "PHENOTYPE_EVIDENCE_SCOPE": (
+                            "GENE_DISEASE_PHENOTYPE_COMPATIBILITY_NOT_VARIANT_SPECIFIC"
+                        ),
+                        "SV_MECHANISM_COMPATIBILITY": (
+                            "REQUIRES_SEPARATE_SV_MECHANISM_ASSESSMENT"
+                        ),
                     }
                 )
 
@@ -344,6 +350,12 @@ def main():
             "GENE_DISEASE_PREDICATE": ".",
             "PHENOTYPE_PREDICATE": ".",
             "PHENOTYPE_ASSOCIATION_SCOPE": "NO_PHENOTYPE_ASSOCIATION",
+            "PHENOTYPE_EVIDENCE_SCOPE": (
+                "GENE_DISEASE_PHENOTYPE_COMPATIBILITY_NOT_VARIANT_SPECIFIC"
+            ),
+            "SV_MECHANISM_COMPATIBILITY": (
+                "REQUIRES_SEPARATE_SV_MECHANISM_ASSESSMENT"
+            ),
         })
 
     output = Path(args.output)
@@ -357,6 +369,7 @@ def main():
         "KNOWLEDGE_SOURCE",
         "GENE_MAPPING_STATUS", "GENE_DISEASE_PREDICATE", "PHENOTYPE_PREDICATE",
         "PHENOTYPE_ASSOCIATION_SCOPE",
+        "PHENOTYPE_EVIDENCE_SCOPE", "SV_MECHANISM_COMPATIBILITY",
     ]
     with output.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
