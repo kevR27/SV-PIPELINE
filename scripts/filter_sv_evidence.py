@@ -120,19 +120,16 @@ def main() -> int:
                      help="Require FILTER in {PASS,.} to pass (default: on)")
     ap.add_argument("--allow-any-filter", dest="require_pass", action="store_false",
                      help="Disable the FILTER=PASS/. requirement")
-    ap.add_argument("--rescue-cov-var", action="store_true",
-                     help="For Sniffles2 only, allow selected FILTER=COV_VAR calls "
-                          "to pass when they satisfy the dedicated support, size, "
-                          "and SVTYPE rescue criteria")
-    ap.add_argument("--rescue-cov-var-min-support", type=float, default=2,
-                     help="Minimum support for rescued Sniffles2 COV_VAR calls "
-                          "(default: 2)")
-    ap.add_argument("--rescue-cov-var-min-svlen", type=float, default=50000,
-                     help="Minimum absolute SV length for rescued Sniffles2 "
-                          "COV_VAR calls (default: 50000)")
-    ap.add_argument("--rescue-cov-var-svtypes", default="DEL,DUP",
-                     help="Comma-separated SVTYPEs eligible for COV_VAR rescue "
-                          "(default: DEL,DUP)")
+    ap.add_argument(
+        "--rescue-cov-var",
+        action="store_true",
+        help=(
+            "For Sniffles2 only, allow FILTER=COV_VAR calls of any SVTYPE "
+            "to bypass the FILTER=PASS gate. They must still satisfy the "
+            "normal support, size and chromosome filters and remain flagged "
+            "RESCUED_COV_VAR for manual review."
+        ),
+    )
     ap.add_argument("--min-gq", type=float, default=None,
                      help="Optional: flag (not drop) records below this genotype quality")
     ap.add_argument("--blacklist-bed", default=None,
@@ -148,12 +145,6 @@ def main() -> int:
     a = ap.parse_args()
 
     blacklist = load_blacklist(a.blacklist_bed)
-    rescue_svtypes = {
-        x.strip().upper()
-        for x in a.rescue_cov_var_svtypes.split(",")
-        if x.strip()
-    }
-
     out_tsv = Path(a.output_tsv)
     out_ids = Path(a.output_ids)
     out_tsv.parent.mkdir(parents=True, exist_ok=True)
@@ -211,17 +202,11 @@ def main() -> int:
                     a.rescue_cov_var
                     and a.caller.lower() == "sniffles2"
                     and filt == "COV_VAR"
-                    and support is not None
-                    and support >= a.rescue_cov_var_min_support
-                    and svlen_abs is not None
-                    and svlen_abs >= a.rescue_cov_var_min_svlen
-                    and svtype in rescue_svtypes
                 )
 
                 if a.require_pass and filt not in ("PASS", MISSING, "."):
                     if rescued_cov_var:
                         flags.append("RESCUED_COV_VAR")
-                        n_rescued_cov_var += 1
                     else:
                         fail_reasons.append("NON_PASS_FILTER")
 
@@ -289,6 +274,8 @@ def main() -> int:
                 status = "FAIL" if fail_reasons else "PASS"
                 if status == "PASS":
                     n_pass += 1
+                    if rescued_cov_var:
+                        n_rescued_cov_var += 1
 
                 row["EVIDENCE_STATUS"] = status
                 row["EVIDENCE_FAIL_REASONS"] = (
