@@ -146,7 +146,10 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             if start is not None and end is not None:
                 sv_size = abs(end - start)
 
-        phenotype_score = numeric_value(source, ["PHENOTYPE_SCORE"]) or 0.0
+        phenotype_score = numeric_value(
+            source,
+            ["HON_CONTEXT_SCORE", "hon_context_score", "PHENOTYPE_SCORE", "phenotype_score"],
+        ) or 0.0
         disease_score = numeric_value(source, ["GENE_DISEASE_EVIDENCE_SCORE"]) or 0.0
         gene_score = phenotype_score + disease_score
 
@@ -187,9 +190,12 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "ACMG_CNV_CLASS": text_value(source, ["ACMG_CNV_CLASS"]),
             "DOSAGE_RELEVANCE": text_value(source, ["DOSAGE_RELEVANCE"]),
             "PANEL_STATUS": text_value(source, ["PANEL_STATUS"]),
+            "HON_CONTEXT_SCORE": round(phenotype_score, 3),
             "PHENOTYPE_RELEVANCE_SCORE": round(phenotype_score, 3),
+            "PHENOTYPE_SCORE_SCOPE": "GENERIC_HON_ANCHOR_CONTEXT_NOT_PATIENT_SPECIFIC",
             "GENE_DISEASE_SCORE": round(disease_score, 3),
             "GENE_RELEVANCE_SCORE": round(gene_score, 3),
+            "GENE_RELEVANCE_SCOPE": "GENERIC_HON_CONTEXT_PLUS_CURATED_GENE_DISEASE_NOT_PATHOGENICITY",
             "GENE_DISEASE_EVIDENCE": text_value(source, ["GENE_DISEASE_EVIDENCE_LEVEL", "GENCC"]),
             "GENE_CATEGORY": compact_gene_category(source),
             "MITOCARTA": text_value(source, ["MITOCARTA_ENCODING", "MITOCARTA_STATUS"]),
@@ -254,7 +260,10 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
     rows = []
     for _, source in gene_ranking.iterrows():
         gene = str(source[gene_col]).strip()
-        phenotype = numeric_value(source, ["phenotype_score", "PHENOTYPE_SCORE"]) or 0.0
+        phenotype = numeric_value(
+            source,
+            ["hon_context_score", "HON_CONTEXT_SCORE", "phenotype_score", "PHENOTYPE_SCORE"],
+        ) or 0.0
         disease = numeric_value(source, ["gene_disease_evidence_score", "GENE_DISEASE_EVIDENCE_SCORE"]) or 0.0
         mito, pathways = mito_by_gene.get(gene, (".", "."))
 
@@ -263,10 +272,13 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
             "PANEL_STATUS": "PANEL_GENE" if text_value(source, ["panel_gene", "PANEL_STATUS"]).upper() in {"YES", "PANEL_GENE"} else "NON_PANEL",
             "HPO_COUNT": text_value(source, ["human_HPO_count"]),
             "OPTIC_NEUROPATHY_HPO_COUNT": text_value(source, ["optic_neuropathy_anchor_HPO_count"]),
+            "HON_CONTEXT_SCORE": round(phenotype, 3),
             "PHENOTYPE_RELEVANCE_SCORE": round(phenotype, 3),
+            "PHENOTYPE_SCORE_SCOPE": "GENERIC_HON_ANCHOR_CONTEXT_NOT_PATIENT_SPECIFIC",
             "GENE_DISEASE_EVIDENCE": text_value(source, ["gene_disease_evidence_level", "GENE_DISEASE_EVIDENCE_LEVEL"]),
             "GENE_DISEASE_SCORE": round(disease, 3),
             "GENE_RELEVANCE_SCORE": round(phenotype + disease, 3),
+            "GENE_RELEVANCE_SCOPE": "GENERIC_HON_CONTEXT_PLUS_CURATED_GENE_DISEASE_NOT_PATHOGENICITY",
             "SV_COUNT": text_value(source, ["SV_count"]),
             "SV_TYPES": text_value(source, ["SV_types"]),
             "SV_LT_100KB": text_value(source, ["SV_count_lt100kb"]),
