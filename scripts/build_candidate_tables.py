@@ -197,6 +197,10 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
                 source,
                 ["ANNOTSV_GENERAL_CLASSIFICATION", "ANNotsv_Classification"],
             ),
+            "ANNOTSV_CLASSIFICATION_SCOPE": text_value(
+                source,
+                ["ANNOTSV_CLASSIFICATION_SCOPE"],
+            ),
             "ACMG_CNV_CLASS": text_value(source, ["ACMG_CNV_CLASS"]),
             "DOSAGE_RELEVANCE": text_value(source, ["DOSAGE_RELEVANCE"]),
             "PANEL_STATUS": text_value(source, ["PANEL_STATUS"]),
