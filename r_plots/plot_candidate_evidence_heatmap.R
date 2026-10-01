@@ -46,7 +46,11 @@ effect_regulatory <- grepl(
   functional_context
 )
 depth_support <- if ("DEPTH_SUPPORT_CLASS" %in% names(dt)) {
-  flag(dt$DEPTH_SUPPORT_CLASS, "SUPPORTS_CALLED_COPY_CHANGE")
+  flag(
+    dt$DEPTH_SUPPORT_CLASS,
+    "SUPPORTS_CALLED_COPY_CHANGE",
+    c("NOT_APPLICABLE", "NO_DEPTH_RESULT", "NO_DEPTH_SUMMARY", "REVIEW")
+  )
 } else {
   rep(NA_real_, nrow(dt))
 }
@@ -79,9 +83,9 @@ rownames(evidence) <- paste0(
   format(as.numeric(dt$START), scientific = FALSE, trim = TRUE)
 )
 group_labels <- c(
-  "COPY_NUMBER_SV_GE_10MB" = "CNV >=10 Mb",
-  "LARGE_COPY_NUMBER_SV" = "Large CNV",
-  "COPY_NUMBER_SV" = "CNV",
+  "COPY_NUMBER_SV_GE_10MB" = "Copy-number-changing SV >=10 Mb",
+  "LARGE_COPY_NUMBER_SV" = "Large copy-number-changing SV",
+  "COPY_NUMBER_SV" = "Copy-number-changing SV",
   "INSERTION" = "Insertion",
   "BREAKPOINT_IN_GENE" = "Breakpoint in gene",
   "BREAKPOINT_NEAR_GENE" = "Breakpoint near gene",
