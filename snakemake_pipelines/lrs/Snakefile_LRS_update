@@ -325,6 +325,7 @@ rule cutesv:
             --diff_ratio_merging_DEL 0.3 \
             --min_support 2 \
             --min_size 50 \
+            --max_size -1 \
             --min_mapq 20 \
             --min_read_len 500 \
             --genotype
