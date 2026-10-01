@@ -28,11 +28,10 @@ def patient_hpo_path(sample):
 VEP_CACHE_DIR_EXT = config.get("vep_cache_dir")
 VEP_ASSEMBLY_EXT = config.get("vep_assembly", "GRCh38")
 
-SNV_SV_SAMPLES = [
-    sample
-    for sample in POSTPROCESS_SAMPLES
-    if os.path.exists(PATH + f"{sample}/phasing_longphase/{sample}.longphase.vcf.gz")
-]
+# LongPhase is a mandatory LRS-update output. Use the same ready samples as the
+# postprocess workflow rather than testing file existence at Snakefile parse
+# time; parse-time existence checks can silently omit work in clean runs.
+SNV_SV_SAMPLES = list(POSTPROCESS_SAMPLES)
 
 
 rule build_hon_hpo_reference:
