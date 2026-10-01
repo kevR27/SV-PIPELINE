@@ -1,7 +1,7 @@
-hpo_id	hpo_label
-HP:0000648	Optic atrophy
-HP:0007663	Reduced visual acuity
-HP:0000543	Optic disc pallor
-HP:0000529	Progressive visual loss
-HP:0000603	Central scotoma
-HP:0000576	Centrocecal scotoma
+hpo_id	hpo_label	hon_seed_role	notes
+HP:0000648	Optic atrophy	CORE_OCULAR_HON	Primary structural/clinical optic-nerve phenotype
+HP:0007663	Reduced visual acuity	CORE_OCULAR_HON	Common visual consequence of hereditary optic neuropathy
+HP:0000543	Optic disc pallor	CORE_OCULAR_HON	Clinical sign compatible with optic atrophy
+HP:0000529	Progressive visual loss	CORE_OCULAR_HON	Course descriptor relevant to hereditary optic neuropathy
+HP:0000603	Central scotoma	CORE_OCULAR_HON	Central visual-field defect relevant to mitochondrial optic neuropathy
+HP:0000576	Centrocecal scotoma	CORE_OCULAR_HON	Visual-field defect relevant to optic-nerve disease
