@@ -274,7 +274,7 @@ mark it as RESCUED_COV_VAR
 
 Other Sniffles QC failures remain excluded.
 
-**Why this was added:** testing on known large deletions showed that some true events can be detected by Sniffles but removed by its internal coverage-based QC. The rescue is therefore limited to this specific situation and remains visible in the evidence table.
+**Interpretation:** this is an exploratory sensitivity option, not a validation rule. A `COV_VAR` call failed Sniffles' coverage-based QC; retaining it keeps the hypothesis available for downstream multi-caller, read-depth and read-level review. The `RESCUED_COV_VAR` flag remains visible and the call must not be treated as technically confirmed merely because it was retained.
 
 ---
 
