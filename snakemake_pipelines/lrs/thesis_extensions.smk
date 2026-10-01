@@ -102,7 +102,7 @@ rule hpo_semantic_similarity:
 rule build_final_candidate_tables:
     input:
         genes=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
-        events=rules.rank_sv_gene_events.output.tsv,
+        events=rules.annotate_gnomad_sv_exact.output.tsv,
         script=SCRIPTS + "/build_candidate_tables.py",
         effects=SCRIPTS + "/sv_gene_effects.py"
     output:
