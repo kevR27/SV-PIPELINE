@@ -64,6 +64,7 @@ rule summarize_srs_wgs_qc:
         flagstat=rules.samtools_wgs_qc.output.flagstat,
         stats=rules.samtools_wgs_qc.output.stats,
         mosdepth=rules.mosdepth_coverage.output.summary,
+        mosdepth_global=rules.mosdepth_coverage.output.global_dist,
         script=SRS_SCRIPTS + "/summarize_srs_qc.py"
     output:
         tsv=PATH + "{sample}/qc/{sample}.srs_wgs_qc.tsv"
@@ -77,6 +78,7 @@ rule summarize_srs_wgs_qc:
             --flagstat {input.flagstat:q} \
             --stats {input.stats:q} \
             --mosdepth-summary {input.mosdepth:q} \
+            --mosdepth-global-dist {input.mosdepth_global:q} \
             --output {output.tsv:q}
         """
 
