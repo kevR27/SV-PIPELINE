@@ -67,7 +67,7 @@ survivor_require_same_strand: 1
 survivor_use_size_ratio: 0
 survivor_min_size: 50
 survivor_caller_order: "Manta,Delly"
-caller_concordant_min_supp: 2
+multi_caller_min_support: 2
 
 # ============================================================
 # GRIDSS — independent assembly/breakend evidence
