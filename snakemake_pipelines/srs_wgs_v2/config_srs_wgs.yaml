@@ -75,7 +75,7 @@ evidence_max_svlen: 250000000
 # SURVIVOR MERGE
 # ============================================================
 # Complete union: minimum one caller. SUPP>=2 is emitted separately as a
-# companion high-confidence set and does not replace the master callset.
+# multi-caller-supported companion set and does not replace the master callset.
 survivor_max_distance: 1000
 survivor_min_support: 1
 survivor_require_same_type: 1
@@ -126,6 +126,33 @@ mtdna_enabled: true
 mtdna_contig: "chrM"
 # Mutserve default and published workflow-compatible minimum heteroplasmy level.
 mutserve_level: 0.01
+
+
+# ============================================================
+# SRS-WGS V2 POSTPROCESSING / THESIS CONTEXT
+# ============================================================
+# These resources are used only by Snakefile_SRS_WGS_postprocess.
+gene_bed: "../../reference/gencode.genes.hg38.sorted.bed"
+
+# Keep these local and versioned deliberately. They are not downloaded by the
+# workflow because hidden network-dependent reference updates reduce
+# reproducibility.
+mitocarta_file: "../../reference/mitocarta/Human.MitoCarta3.0.xls"
+mitocarta_pathways_file: "../../reference/mitocarta/Human.MitoPathways3.0.gmx"
+
+# Optional official GRCh38 gnomAD-SV sites VCF + .tbi. If null, the output
+# explicitly reports RESOURCE_NOT_CONFIGURED rather than treating this as no
+# population overlap.
+gnomad_sv_vcf: null
+
+sv_gene_breakpoint_tolerance: 500
+
+# Short-read Samplot review. This SRS helper does not use --long_read.
+samplot_top_n: 20
+samplot_min_mapq: 20
+samplot_zoom_bp: 20000
+samplot_window_bp: 5000
+samplot_large_sv_threshold: 1000000
 
 # ============================================================
 # MELTv2 MOBILE-ELEMENT INSERTIONS
