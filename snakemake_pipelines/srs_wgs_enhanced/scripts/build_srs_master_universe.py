@@ -151,12 +151,12 @@ def main():
         svlen=(c["end"]-c["start"]+1) * (-1 if c["svtype"]=="DEL" else 1)
         info={
             "SVTYPE":c["svtype"],"END":str(c["end"]),"SVLEN":str(svlen),
-            "SRS_SOURCE":"CNVPytor","CNVPYTOR_ONLY":"1","CNVPYTOR_STATUS":c["status"],
+            "SRS_SOURCE":"CNVPytor","CNVPYTOR_ONLY":"True","CNVPYTOR_STATUS":c["status"],
             "CNVPYTOR_LEVEL":fmt(c["level"]),"CNVPYTOR_EVAL1":fmt(c["eval1"]),
             "CNVPYTOR_Q0":fmt(c["q0"]),"CNVPYTOR_PN":fmt(c["pn"]),"CNVPYTOR_FLAGS":c["flags"],
         }
         fields=[c["chrom"],str(c["start"]),f"CNVPYTOR_ONLY_{c['index']}","N",f"<{c['svtype']}>",".","PASS",
-                ";".join(f"{k}={v}" for k,v in info.items())]
+                ";".join(k if v=="True" else f"{k}={v}" for k,v in info.items())]
         if sample_cols:
             fields+=["GT"]+["./."]*sample_cols
         recs.append({"fields":fields,"info":info,"chrom":c["chrom"],"start":c["start"],"end":c["end"],"svtype":c["svtype"]})
