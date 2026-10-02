@@ -1,0 +1,169 @@
+# ============================================================
+# ENHANCED SRS PIPELINE — ILLUMINA WGS
+# Isolated from the LRS workflow. Edit paths before running.
+# ============================================================
+
+samples:
+  patient01: "/data/srs_bams/patient01.sorted.bam"
+  patient02: "/data/srs_bams/patient02.sorted.bam"
+
+# Optional non-standard BAM index names.
+# bam_indexes:
+#   patient01: "/data/srs_bams/patient01.sorted.bai"
+
+path: "/DATA/srs_results_enhanced"
+ref: "/DATA/Reference/hg38.fa"
+threads: 32
+
+# Existing repository resources (read-only from this workflow).
+condaenv: "../../envs/"
+bed: "../../PANEL_OA/optic_neuropathy_panel.bed"
+candidate_genes_list: "../../PANEL_OA/optic_neuropathy_genes.txt"
+exclude_bed: "../../reference/delly_hg38_exclude.bed"
+expansionhunter_catalog: "../../reference/variant_catalog_hg38_repeats.json"
+
+vep_cache_dir: "/DATA/Reference/vep"
+vep_assembly: "GRCh38"
+annotsv_annotations_dir: "/DATA/Reference/AnnotSV_annotations"
+annotsv_benign_af: 0.01
+hpo_terms: null
+
+monarch_nodes: "/DATA/Reference/monarch/monarch-kg_nodes.tsv"
+monarch_edges: "/DATA/Reference/monarch/monarch-kg_edges.tsv"
+discovery_hpo_file: "../../reference/optic_neuropathy_hpo_terms.tsv"
+
+# ============================================================
+# WGS QC
+# ============================================================
+# mosdepth + samtools flagstat/stats are mandatory outputs.
+# Sample identity/relatedness/sex QC remains appropriate for your separate
+# Somalier cohort workflow rather than being duplicated here.
+
+# ============================================================
+# MANTA / DELLY BREAKPOINT CALLING
+# ============================================================
+evidence_min_support: 2
+evidence_min_svlen: 50
+evidence_max_svlen: 250000000
+# evidence_min_gq: 10
+# evidence_blacklist_bed: "/DATA/Reference/low_mappability_segdup.bed"
+
+# SURVIVOR is used only to establish the Manta+DELLY breakpoint-event union.
+# SUPP>=2 is called "caller_concordant", NOT "high confidence".
+survivor_max_distance: 1000
+survivor_min_support: 1
+survivor_require_same_type: 1
+survivor_require_same_strand: 1
+survivor_use_size_ratio: 0
+survivor_min_size: 50
+survivor_caller_order: "Manta,Delly"
+caller_concordant_min_supp: 2
+
+# ============================================================
+# GRIDSS — independent assembly/breakend evidence
+# ============================================================
+gridss_enabled: true
+gridss_threads: 8
+# GRIDSS recommends the ENCODE hg38 exclusion list (ENCFF356LFX) for UCSC
+# chromosome naming. Leave null until that BED is installed locally.
+gridss_exclude_bed: null
+# Set true only when BAMs were aligned by an aligner that already writes SA
+# split-read tags correctly (e.g. bwa mem); false is the conservative default.
+gridss_skip_softclip_realignment: false
+
+# ============================================================
+# DEEPVARIANT — WHOLE-GENOME SNV/INDEL
+# ============================================================
+# No panel BED restriction. Panel/non-panel filtering happens downstream.
+
+# ============================================================
+# CNVpytor — independent read-depth CNV evidence + BAF context
+# ============================================================
+# 10 kb is the primary RD discovery scale; 100 kb is retained as a robust
+# large-CNV context scale. Small/exonic events remain primarily breakpoint-
+# driven because very small RD bins become noisy in ordinary Illumina WGS.
+cnvpytor_primary_bin: 10000
+cnvpytor_secondary_bin: 100000
+cnvpytor_chroms:
+  - chr1
+  - chr2
+  - chr3
+  - chr4
+  - chr5
+  - chr6
+  - chr7
+  - chr8
+  - chr9
+  - chr10
+  - chr11
+  - chr12
+  - chr13
+  - chr14
+  - chr15
+  - chr16
+  - chr17
+  - chr18
+  - chr19
+  - chr20
+  - chr21
+  - chr22
+  - chrX
+  - chrY
+
+# Conservative QC thresholds derived from documented CNVpytor filtering fields.
+# They determine whether an unmatched RD call can enter the master universe.
+cnvpytor_max_q0: 0.5
+cnvpytor_max_pn: 0.5
+cnvpytor_max_eval1: 0.0001
+cnvpytor_min_reciprocal_overlap: 0.5
+
+# ============================================================
+# mtDNA — Mutserve2
+# ============================================================
+mtdna_enabled: true
+mt_contig: "chrM"
+# Mutserve2 default minimum heteroplasmy level is 0.01.
+mutserve_level: 0.01
+
+# ============================================================
+# REPEAT EXPANSIONS — ExpansionHunter
+# ============================================================
+# Catalog-driven. It is a separate variant class and is not counted as another
+# generic SV caller.
+
+# ============================================================
+# MOBILE ELEMENT INSERTIONS — MELTv2
+# ============================================================
+melt_enabled: false
+melt_jar: "/DATA/Reference/MELTv2.2.2/MELT.jar"
+melt_genes_bed: "/DATA/Reference/MELTv2.2.2/add_bed_files/Hg38/Hg38.genes.bed"
+melt_java_memory_gb: 8
+melt_transposons:
+  ALU: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/ALU_MELT.zip"
+  LINE1: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/LINE1_MELT.zip"
+  SVA: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/SVA_MELT.zip"
+  HERVK: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/HERVK_MELT.zip"
+
+orthogonal_breakpoint_tolerance: 500
+
+# ============================================================
+# MITOCHONDRIAL-NUCLEAR GENE CONTEXT
+# ============================================================
+# Keep false until the local MitoCarta files are configured.
+mitocarta_enabled: false
+mitocarta_file: "/DATA/Reference/mitocarta/Human.MitoCarta3.0.xls"
+mitocarta_pathways_gmx: "/DATA/Reference/mitocarta/Human.MitoPathways3.0.gmx"
+
+# ============================================================
+# ALLELE-LEVEL RESEARCH ASSESSMENT
+# ============================================================
+# Optional metadata remains null because your current cohort does not have
+# systematic trios/patient-specific phenotype tables.
+allele_patient_context: null
+allele_disease_models: null
+allele_evidence: null
+allele_family_genotypes: null
+allele_rare_af: 0.01
+allele_min_support: 5
+allele_min_gq: 20
+allele_min_dp: 5
