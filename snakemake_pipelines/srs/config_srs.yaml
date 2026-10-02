@@ -137,6 +137,13 @@ mity_reference: "hg38"
 mity_contig: "chrM"
 mity_report_min_vaf: 0.01
 
+# Optional nuclear mitochondrial-context annotation. Keep disabled until these
+# local resources are installed; the workflow does not download them at run
+# time. This reuses the same MitoCarta 3.0 logic as the LRS interpretation.
+mitocarta_enabled: false
+mitocarta_file: null
+mitocarta_pathways_file: null
+
 # ============================================================
 # MELTv2 MOBILE-ELEMENT INSERTIONS
 # MELTv2 MOBILE-ELEMENT INSERTIONS
