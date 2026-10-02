@@ -85,7 +85,7 @@ class SRSEvidenceExtensionTests(unittest.TestCase):
             vcf.write_text(
                 "##fileformat=VCFv4.2\n"
                 "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n"
-                "chrM\t100\t.\tA\tG\t100\tPASS\t.\tDP:RO:AO\t1000:900:100\n",
+                "chrM\t100\t.\tA\tG\t100\tPASS\t.\tDP:RO:AO:VAF:tier:q\t1000:900:100:0.08:2:50\n",
                 encoding="utf-8",
             )
             output = tmp / "mity.tsv"
@@ -97,7 +97,59 @@ class SRSEvidenceExtensionTests(unittest.TestCase):
             )
             rows = read_tsv(output)
             self.assertEqual(len(rows), 1)
-            self.assertAlmostEqual(float(rows[0]["HETEROPLASMY_VAF"]), 0.1)
+            self.assertAlmostEqual(float(rows[0]["HETEROPLASMY_VAF"]), 0.08)
+            self.assertEqual(rows[0]["MITY_TIER"], "2")
+            self.assertEqual(rows[0]["MITY_Q"], "50")
+
+    def test_srs_qc_uses_cumulative_mosdepth_distribution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            flagstat = tmp / "flagstat.txt"
+            flagstat.write_text(
+                "1000 + 0 in total (QC-passed reads + QC-failed reads)\n"
+                "100 + 0 duplicates\n"
+                "950 + 0 mapped (95.00% : N/A)\n"
+                "900 + 0 properly paired (90.00% : N/A)\n",
+                encoding="utf-8",
+            )
+            stats = tmp / "stats.txt"
+            stats.write_text(
+                "SN\taverage length:\t150\n"
+                "SN\tinsert size average:\t350\n"
+                "SN\tinsert size standard deviation:\t50\n"
+                "SN\terror rate:\t0.001\n",
+                encoding="utf-8",
+            )
+            summary = tmp / "mosdepth.summary.txt"
+            summary.write_text(
+                "chrom\tlength\tbases\tmean\tmin\tmax\n"
+                "total\t1000\t30000\t30.0\t0\t80\n",
+                encoding="utf-8",
+            )
+            dist = tmp / "mosdepth.global.dist.txt"
+            dist.write_text(
+                "total\t0\t1.0\n"
+                "total\t10\t0.98\n"
+                "total\t20\t0.90\n"
+                "total\t29\t0.55\n"
+                "total\t30\t0.49\n",
+                encoding="utf-8",
+            )
+            output = tmp / "qc.tsv"
+            self.run_script(
+                "summarize_srs_qc.py",
+                "--sample", "S1",
+                "--flagstat", flagstat,
+                "--stats", stats,
+                "--mosdepth-summary", summary,
+                "--mosdepth-global-dist", dist,
+                "--output", output,
+            )
+            row = read_tsv(output)[0]
+            self.assertEqual(row["MEDIAN_COVERAGE_FROM_GLOBAL_DIST"], "29")
+            self.assertAlmostEqual(float(row["PERCENT_BASES_GE_10X"]), 98.0)
+            self.assertAlmostEqual(float(row["PERCENT_BASES_GE_20X"]), 90.0)
+            self.assertAlmostEqual(float(row["PERCENT_BASES_GE_30X"]), 49.0)
 
     def test_augment_keeps_master_and_emits_unmatched_cnv(self):
         with tempfile.TemporaryDirectory() as tmp:
