@@ -64,12 +64,20 @@ def main():
         svtype=str(r[tc]).upper()
         gene=str(r[gc]) if gc else "."
         sid=str(r[idc])
+        # BND/TRA END may represent a coordinate on a different chromosome.
+        # Never draw that as a same-chromosome interval in Samplot.
+        if svtype in {"BND","TRA","CTX"}:
+            end=start+1
         out=outdir/f"{rank:02d}_{safe(svtype,12)}_{safe(chrom,12)}_{start}_{end}_{safe(sid)}_{safe(gene,30)}.png"
         cmd=["samplot","plot","-n",a.sample,"-b",a.bam,"-r",a.reference,"-o",str(out),
              "-c",chrom,"-s",str(start),"-e",str(end),"-q",str(a.min_mapq)]
         if svtype in {"DEL","DUP","INV"}: cmd += ["-t",svtype]
-        if abs(end-start)>=a.large_sv_threshold: cmd += ["--zoom",str(a.zoom)]
-        else: cmd += ["--window",str(a.window)]
+        if svtype in {"BND","TRA","CTX"}:
+            cmd += ["--window",str(a.window)]
+        elif abs(end-start)>=a.large_sv_threshold:
+            cmd += ["--zoom",str(a.zoom)]
+        else:
+            cmd += ["--window",str(a.window)]
         if a.gene_annotation:
             cmd += ["-A",a.gene_annotation,"--annotation_filenames","Genes","--annotation_fontsize","7"]
         p=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
