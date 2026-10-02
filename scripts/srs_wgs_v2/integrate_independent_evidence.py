@@ -215,15 +215,23 @@ def main():
         svtype=normalize_type(row.get(c_type))
 
         best=None
+        cnv_matches=[]
         if svtype in {"DEL","DUP","CNV"} and start is not None and end is not None:
             for i,c in enumerate(cnvs):
                 if c["_CHROM"]!=chrom: continue
                 if svtype in {"DEL","DUP"} and c["_TYPE"]!=svtype: continue
                 score=reciprocal_overlap(start,end,c["_START"],c["_END"])
-                if score>=args.reciprocal_overlap and (best is None or score>best[0]):
-                    best=(score,i,c)
+                if score>=args.reciprocal_overlap:
+                    cnv_matches.append((score,i,c))
+                    if best is None or score>best[0]:
+                        best=(score,i,c)
         if best:
-            score,i,c=best; used_cnv.add(i)
+            # A biological CNV may be emitted at more than one CNVpytor bin.
+            # Mark every concordant multi-scale call as represented by this
+            # master event; report the best-overlap row as the attached evidence.
+            for _score,j,_call in cnv_matches:
+                used_cnv.add(j)
+            score,i,c=best
             row.update({
                 "CNVPYTOR_RD_MATCH":"YES",
                 "CNVPYTOR_RD_MATCH_ID":c.get("CNVPYTOR_ID",MISSING),
