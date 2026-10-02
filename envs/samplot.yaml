@@ -5,3 +5,4 @@ channels:
 dependencies:
   - python=3.12
   - bioconda::samplot=1.3.0
+  - bioconda::htslib
