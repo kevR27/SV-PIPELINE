@@ -421,6 +421,22 @@ def load_ranking(rows: list[dict]) -> dict[str, dict]:
     return index
 
 
+def load_vep_summary(rows: list[dict]):
+    by_key: dict[tuple[str, str], dict] = {}
+    event_ids: set[str] = set()
+    for row in rows:
+        sv_id = first(row, ["SV_ID", "ID"])
+        gene = first(row, ["GENE", "Gene", "SYMBOL"])
+        if sv_id == MISSING or gene == MISSING:
+            continue
+        key = (sv_id, gene.upper())
+        if key in by_key:
+            raise ValueError(f"Duplicate VEP summary row for {key}")
+        by_key[key] = row
+        event_ids.add(sv_id)
+    return by_key, event_ids
+
+
 def load_caller_summary(rows: list[dict]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for row in rows:
@@ -689,6 +705,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Create integrated SV/gene evidence TSV")
     parser.add_argument("--vcf", required=True, help="Merged master SV VCF")
     parser.add_argument("--annotsv", required=True, help="Genome-wide AnnotSV TSV")
+    parser.add_argument("--vep-summary", help="Per-SV/per-gene VEP transcript consequence summary")
     parser.add_argument("--annotsv-audit", help="Automatically generated AnnotSV availability JSON")
     parser.add_argument("--annotsv-unannotated", help="Skip log from the same, unchanged master VCF")
     parser.add_argument("--needlr", help="needLR RESULTS TSV")
@@ -709,6 +726,8 @@ def main() -> int:
 
     sv_rows, _ = read_vcf(args.vcf)
     annotsv_rows = read_tsv(args.annotsv)
+    vep_summary_rows = read_tsv(args.vep_summary)
+    vep_summary, vep_event_ids = load_vep_summary(vep_summary_rows)
     skip_notes = read_skip_log(args.annotsv_unannotated, sv_rows)
     availability_audit = load_audit(args.annotsv_audit, args.annotsv)
     needlr_enabled = bool(args.needlr)
@@ -790,6 +809,18 @@ def main() -> int:
             ranking_row = ranking.get(gene, {}) if gene != MISSING else {}
             sv_db = sv_database_evidence(ann_row, sv["SVTYPE"])
 
+            if args.vep_summary:
+                vep_row = vep_summary.get((sv_id, gene.upper()), {}) if gene != MISSING else {}
+                if vep_row:
+                    vep_status = "GENE_TRANSCRIPT_MATCH"
+                elif sv_id in vep_event_ids:
+                    vep_status = "EVENT_MATCH_OTHER_GENE_OR_NO_SYMBOL"
+                else:
+                    vep_status = "NO_EVENT_MATCH"
+            else:
+                vep_row = {}
+                vep_status = "NOT_SUPPLIED"
+
             row = OrderedDict(
                 [
                     ("SV_ID", sv["SV_ID"]),
@@ -812,6 +843,20 @@ def main() -> int:
                     ("CALLER_EVIDENCE_MATCH", evidence_match_method),
                     ("GENES", gene),
                     ("ANNOTSV_MATCH", ann_match_method),
+                    ("VEP_MATCH_STATUS", vep_status),
+                    ("VEP_MATCH_METHOD", first(vep_row, ["VEP_MATCH_METHOD"])),
+                    ("VEP_GENE_IDS", first(vep_row, ["VEP_GENE_IDS"])),
+                    ("VEP_TRANSCRIPT_COUNT", first(vep_row, ["VEP_TRANSCRIPT_COUNT"])),
+                    ("VEP_TRANSCRIPTS", first(vep_row, ["VEP_TRANSCRIPTS"])),
+                    ("VEP_CONSEQUENCES", first(vep_row, ["VEP_CONSEQUENCES"])),
+                    ("VEP_IMPACTS", first(vep_row, ["VEP_IMPACTS"])),
+                    ("VEP_BIOTYPES", first(vep_row, ["VEP_BIOTYPES"])),
+                    ("VEP_EXON", first(vep_row, ["VEP_EXON"])),
+                    ("VEP_INTRON", first(vep_row, ["VEP_INTRON"])),
+                    ("VEP_CANONICAL_TRANSCRIPTS", first(vep_row, ["VEP_CANONICAL_TRANSCRIPTS"])),
+                    ("VEP_PICK_TRANSCRIPTS", first(vep_row, ["VEP_PICK_TRANSCRIPTS"])),
+                    ("VEP_TRANSCRIPT_REGION_CLASS", first(vep_row, ["VEP_TRANSCRIPT_REGION_CLASS"])),
+                    ("VEP_STRUCTURAL_EFFECT", first(vep_row, ["VEP_STRUCTURAL_EFFECT"])),
                     ("NEEDLR_AF", population_frequency(needlr_row)[0]),
                     ("NEEDLR_AF_SOURCE_FIELD", population_frequency(needlr_row)[1]),
                     ("NEEDLR_AF_VALUE_STATUS", population_frequency(needlr_row)[2]),
@@ -1082,6 +1127,7 @@ def main() -> int:
 
             row.update(evidence_availability(ann_row, sv["SVTYPE"], availability_audit, bool(ann_matches)))
             row.update(record_info)
+            row["VEP_ROWS_JSON"] = first(vep_row, ["VEP_ROWS_JSON"])
             row["ANNOTSV_UNRESOLVED_GENE_ROWS_JSON"] = unresolved_json if gene == MISSING else "[]"
             row["ANNOTSV_GENE_STATUS"] = ann_row.get("_GENE_STATUS", "NO_GENE_SPECIFIC_ROW")
             row["ANNOTSV_GENE_ROWS_JSON"] = ann_row.get("_GENE_ROWS", "[]")
@@ -1145,6 +1191,20 @@ def main() -> int:
         "CALLER_EVIDENCE_MATCH",
         "GENES",
         "ANNOTSV_MATCH",
+        "VEP_MATCH_STATUS",
+        "VEP_MATCH_METHOD",
+        "VEP_GENE_IDS",
+        "VEP_TRANSCRIPT_COUNT",
+        "VEP_TRANSCRIPTS",
+        "VEP_CONSEQUENCES",
+        "VEP_IMPACTS",
+        "VEP_BIOTYPES",
+        "VEP_EXON",
+        "VEP_INTRON",
+        "VEP_CANONICAL_TRANSCRIPTS",
+        "VEP_PICK_TRANSCRIPTS",
+        "VEP_TRANSCRIPT_REGION_CLASS",
+        "VEP_STRUCTURAL_EFFECT",
         "NEEDLR_AF",
         "NEEDLR_STATUS",
         "NEEDLR_MATCH_DISTANCE",
@@ -1199,7 +1259,7 @@ def main() -> int:
     )
     extra_columns = ["NEEDLR_AF_SOURCE_FIELD", "NEEDLR_AF_VALUE_STATUS", "NEEDLR_MATCH_SCOPE",
                      "NEEDLR_SOURCE_ID", "ANNOTSV_GENE_STATUS", "ANNOTSV_GENE_ROWS_JSON",
-                     "CALLER_EVIDENCE_JSON", "BND_ORIENTATION"]
+                     "VEP_ROWS_JSON", "CALLER_EVIDENCE_JSON", "BND_ORIENTATION"]
     extra_columns += ["SV_PATHOGENIC_DB_STATUS", "SV_BENIGN_DB_STATUS"]
     extra_columns += [f"SV_DB_{db}_AVAILABILITY" for db in DATABASES]
     extra_columns += ["SV_SIZE_SCOPE", "ANNOTSV_RECORD_STATUS", "ANNOTSV_UNANNOTATED_REASON",
