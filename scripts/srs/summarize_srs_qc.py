@@ -70,6 +70,47 @@ def parse_stats(path: str) -> dict[str, str]:
     return out
 
 
+def parse_mosdepth_global_dist(path: str) -> dict[str, str]:
+    """Read mosdepth cumulative depth distribution for the total genome."""
+    depths = {}
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 3 or fields[0].lower() != "total":
+                continue
+            try:
+                depth = int(float(fields[1]))
+                fraction = float(fields[2])
+            except ValueError:
+                continue
+            depths[depth] = fraction
+
+    out = {
+        "MEDIAN_COVERAGE_FROM_GLOBAL_DIST": MISSING,
+        "FRACTION_BASES_GE_10X": MISSING,
+        "FRACTION_BASES_GE_20X": MISSING,
+        "FRACTION_BASES_GE_30X": MISSING,
+        "PERCENT_BASES_GE_10X": MISSING,
+        "PERCENT_BASES_GE_20X": MISSING,
+        "PERCENT_BASES_GE_30X": MISSING,
+    }
+    if not depths:
+        return out
+
+    # mosdepth global.dist is cumulative: fraction of bases at or above depth.
+    median_candidates = [depth for depth, fraction in depths.items() if fraction >= 0.5]
+    if median_candidates:
+        out["MEDIAN_COVERAGE_FROM_GLOBAL_DIST"] = str(max(median_candidates))
+
+    for threshold in (10, 20, 30):
+        fraction = depths.get(threshold)
+        if fraction is None:
+            continue
+        out[f"FRACTION_BASES_GE_{threshold}X"] = f"{fraction:.8g}"
+        out[f"PERCENT_BASES_GE_{threshold}X"] = f"{100.0 * fraction:.6f}"
+    return out
+
+
 def parse_mosdepth_summary(path: str) -> dict[str, str]:
     out = {
         "AUTOSOMAL_OR_TOTAL_MEAN_COVERAGE": MISSING,
@@ -108,6 +149,7 @@ def main() -> int:
     parser.add_argument("--flagstat", required=True)
     parser.add_argument("--stats", required=True)
     parser.add_argument("--mosdepth-summary", required=True)
+    parser.add_argument("--mosdepth-global-dist", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -115,6 +157,7 @@ def main() -> int:
     row.update(parse_flagstat(args.flagstat))
     row.update(parse_stats(args.stats))
     row.update(parse_mosdepth_summary(args.mosdepth_summary))
+    row.update(parse_mosdepth_global_dist(args.mosdepth_global_dist))
     row["DUPLICATE_PERCENT_OF_TOTAL"] = duplicate_percent(
         row["DUPLICATE_READS"], row["TOTAL_READS"]
     )
