@@ -560,7 +560,7 @@ rule cnvpytor_cnv_calling:
         cnvpytor -root {output.pytor} -ls > {output.info}
         cnvpytor -root {output.pytor} -his {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
         cnvpytor -root {output.pytor} -partition {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
-        cnvpytor -root {output.pytor} -snp {input.snv}
+        cnvpytor -root {output.pytor} -snp {input.snv} {CNVPYTOR_CHROM_FLAG}
         cnvpytor -root {output.pytor} -mask_snps
         cnvpytor -root {output.pytor} -baf {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
         cnvpytor -root {output.pytor} -call {CNVPYTOR_MAIN_BIN} > {output.primary}
