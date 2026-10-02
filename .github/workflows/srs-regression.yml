@@ -1,0 +1,35 @@
+name: SRS pipeline regression
+
+on:
+  push:
+    paths:
+      - 'snakemake_pipelines/srs/**'
+      - 'scripts/srs/**'
+      - 'envs/srs_*.yaml'
+      - 'tests/test_srs_evidence_extensions.py'
+      - '.github/workflows/srs-regression.yml'
+  pull_request:
+    paths:
+      - 'snakemake_pipelines/srs/**'
+      - 'scripts/srs/**'
+      - 'envs/srs_*.yaml'
+      - 'tests/test_srs_evidence_extensions.py'
+      - '.github/workflows/srs-regression.yml'
+
+jobs:
+  srs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install static-test dependencies
+        run: pip install pyyaml pysam snakemake==8.30.0
+      - name: Compile SRS helper scripts
+        run: python -m compileall -q scripts/srs
+      - name: Run SRS evidence tests
+        run: python -m unittest tests.test_srs_evidence_extensions -v
+      - name: Parse SRS Snakemake workflow
+        run: snakemake -s Snakefile_SRS --list-rules
+        working-directory: snakemake_pipelines/srs
