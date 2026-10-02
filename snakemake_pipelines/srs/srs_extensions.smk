@@ -25,11 +25,8 @@ GRIDSS_BLACKLIST = config.get("gridss_blacklist_bed")
 GRIDSS_JVM_HEAP_GB = int(config.get("gridss_jvm_heap_gb", 24))
 GRIDSS_SKIP_SOFTCLIP = bool(config.get("gridss_skip_softclip_realignment", False))
 GRIDSS_BWA_INDEXES = [REF + suffix for suffix in (".amb", ".ann", ".bwt", ".pac", ".sa")]
-GRIDSS_DICT = config.get(
-    "gridss_reference_dict",
-    os.path.splitext(REF)[0] + ".dict",
-)
 
+MITY_REFERENCE = config.get("mity_reference", "hg38")
 MITY_CONTIG = config.get("mity_contig", "chrM")
 MITY_REPORT_MIN_VAF = float(config.get("mity_report_min_vaf", 0.01))
 
@@ -255,18 +252,16 @@ rule gridss_reference_check:
     output:
         marker=PATH + "reference_checks/gridss_reference.ok"
     params:
-        bwa_indexes=lambda wc: " ".join(shlex.quote(x) for x in GRIDSS_BWA_INDEXES),
-        dictionary=lambda wc: shlex.quote(GRIDSS_DICT)
+        bwa_indexes=lambda wc: " ".join(shlex.quote(x) for x in GRIDSS_BWA_INDEXES)
     conda:
         CONDAENV + "srs_gridss.yaml"
     shell:
         """
         set -euo pipefail
-        for f in {params.bwa_indexes} {params.dictionary}; do
+        for f in {params.bwa_indexes}; do
             if [ ! -s "$f" ]; then
-                echo "[GRIDSS] missing required reference index: $f" >&2
-                echo "[GRIDSS] create BWA indexes with: bwa index {input.ref}" >&2
-                echo "[GRIDSS] create sequence dictionary with: samtools dict -o {GRIDSS_DICT} {input.ref}" >&2
+                echo "[GRIDSS] missing required BWA reference index: $f" >&2
+                echo "[GRIDSS] create indexes with: bwa index {input.ref}" >&2
                 exit 1
             fi
         done
@@ -366,6 +361,7 @@ rule mity_call:
         fi
 
         mity call \
+            --reference {MITY_REFERENCE} \
             --prefix {wildcards.sample:q} \
             --output-dir {params.outdir:q} \
             --region "$region" \
