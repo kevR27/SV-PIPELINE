@@ -69,7 +69,7 @@ SURVIVOR_REQUIRE_SAME_STRAND = config.get("survivor_require_same_strand", 1)
 SURVIVOR_USE_SIZE_RATIO = config.get("survivor_use_size_ratio", 0)
 SURVIVOR_MIN_SIZE = config.get("survivor_min_size", 50)
 SURVIVOR_CALLER_ORDER = config.get("survivor_caller_order", "Manta,Delly")
-CALLER_CONCORDANT_MIN_SUPP = config.get("caller_concordant_min_supp", 2)
+MULTI_CALLER_MIN_SUPPORT = config.get("multi_caller_min_support", 2)
 
 GRIDSS_ENABLED = config.get("gridss_enabled", True)
 GRIDSS_EXCLUDE_BED = config.get("gridss_exclude_bed")
@@ -183,15 +183,15 @@ rule all:
         expand(PATH + "{sample}/parsed/{sample}.manta.evidence.filtered.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/parsed/{sample}.delly.evidence.filtered.tsv", sample=SAMPLES),
 
-        # Manta+DELLY breakpoint union + concordant companion
+        # Manta+DELLY breakpoint union + multi-caller companion
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller.vcf.gz", sample=SAMPLES),
 
         # CNVpytor RD/BAF branch
         expand(PATH + "{sample}/cnv/cnvpytor/{sample}.pytor", sample=SAMPLES),
-        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.calls.primary.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.calls.secondary.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.calls.main_bin.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.calls.large_cnv_bin.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/cnv/cnvpytor/{sample}.reference_info.txt", sample=SAMPLES),
 
         # Integrated structural-variant callset
@@ -462,20 +462,20 @@ rule summarize_caller_support:
         vcf=rules.survivor_merge.output.vcf
     output:
         summary=PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv",
-        concordant=PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf.gz",
-        tbi=PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf.gz.tbi"
+        multi_caller=PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller.vcf.gz",
+        tbi=PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller.vcf.gz.tbi"
     params:
-        raw=PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf"
+        raw=PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller.vcf"
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
         """
         set -euo pipefail
         python {SCRIPTS}/summarize_sv_caller_support.py --vcf {input.vcf} --output {output.summary} \
-            --caller-order "{SURVIVOR_CALLER_ORDER}" --min-callers {CALLER_CONCORDANT_MIN_SUPP} \
+            --caller-order "{SURVIVOR_CALLER_ORDER}" --min-callers {MULTI_CALLER_MIN_SUPPORT} \
             --high-confidence-vcf {params.raw}
         bgzip -f {params.raw}
-        tabix -f -p vcf {output.concordant}
+        tabix -f -p vcf {output.multi_caller}
         """
 
 
@@ -543,8 +543,8 @@ rule cnvpytor_cnv_calling:
         snv_tbi=rules.deepvariant_snv_indel_calling.output.tbi
     output:
         pytor=PATH + "{sample}/cnv/cnvpytor/{sample}.pytor",
-        primary=PATH + "{sample}/cnv/cnvpytor/{sample}.calls.primary.tsv",
-        secondary=PATH + "{sample}/cnv/cnvpytor/{sample}.calls.secondary.tsv",
+        primary=PATH + "{sample}/cnv/cnvpytor/{sample}.calls.main_bin.tsv",
+        secondary=PATH + "{sample}/cnv/cnvpytor/{sample}.calls.large_cnv_bin.tsv",
         info=PATH + "{sample}/cnv/cnvpytor/{sample}.reference_info.txt"
     params:
         outdir=PATH + "{sample}/cnv/cnvpytor"
@@ -955,7 +955,7 @@ rule mutserve_mtdna_calling:
 rule add_supporting_evidence:
     input:
         integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
-        master=rules.combine_sv_and_cnv_calls.output.vcf,
+        integrated_vcf=rules.combine_sv_and_cnv_calls.output.vcf,
         expansionhunter=rules.expansionhunter_str.output.vcf,
         gridss=gridss_optional_input,
         melt=melt_optional_input
@@ -975,7 +975,7 @@ rule add_supporting_evidence:
     shell:
         """
         python {LOCAL_SCRIPTS}/add_supporting_evidence.py --integrated {input.integrated:q} \
-            --master-vcf {input.master:q} --expansionhunter {input.expansionhunter:q} \
+            --integrated-vcf {input.integrated_vcf:q} --expansionhunter {input.expansionhunter:q} \
             {params.gridss} {params.melt} --breakpoint-tolerance {SUPPORTING_BP_TOLERANCE} \
             --output {output.tsv:q}
         """
