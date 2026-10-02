@@ -446,3 +446,96 @@ rule augment_srs_evidence:
             --cnvpytor-only-output {output.cnvpytor_only:q} \
             --gridss-only-output {output.gridss_only:q}
         """
+
+
+############################################################
+# Internal cohort recurrence (not population frequency)    #
+############################################################
+
+def srs_cohort_sample_args():
+    return " ".join(
+        "--sample-input "
+        + shlex.quote(
+            sample
+            + "="
+            + PATH
+            + f"{sample}/gene_discovery/{sample}_integrated_SRS_evidence.tsv"
+        )
+        for sample in SAMPLES
+    )
+
+
+rule srs_cohort_recurrence:
+    input:
+        tables=expand(
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SRS_evidence.tsv",
+            sample=SAMPLES,
+        ),
+        script=SCRIPTS + "/build_cohort_sv_recurrence.py"
+    output:
+        summary=PATH + "cohort/srs_sv_recurrence.tsv",
+        members=PATH + "cohort/srs_sv_recurrence.members.tsv"
+    params:
+        sample_args=lambda wc: srs_cohort_sample_args(),
+        breakpoint_bp=config.get("srs_cohort_breakpoint_bp", 1000),
+        insertion_bp=config.get("srs_cohort_insertion_bp", 500)
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.summary})
+        python {input.script:q} \
+            {params.sample_args} \
+            --breakpoint-bp {params.breakpoint_bp} \
+            --insertion-bp {params.insertion_bp} \
+            --output {output.summary:q} \
+            --members-output {output.members:q}
+        test -s {output.summary}
+        test -s {output.members}
+        """
+
+
+############################################################
+# Optional MitoCarta context for nuclear SV-gene findings  #
+############################################################
+
+rule annotate_srs_mitocarta_context:
+    input:
+        integrated=rules.augment_srs_evidence.output.final,
+        ranking=rules.rank_genomewide_candidates.output.tsv,
+        mitocarta=lambda wc: MITOCARTA_FILE if MITOCARTA_ENABLED else [],
+        pathways=lambda wc: (
+            [MITOCARTA_PATHWAYS_FILE]
+            if MITOCARTA_ENABLED and MITOCARTA_PATHWAYS_FILE
+            else []
+        ),
+        script=SCRIPTS + "/annotate_mitocarta_context.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SRS_evidence.mitocarta.tsv",
+        summary=PATH + "{sample}/gene_discovery/{sample}_mitocarta_annotation_summary.tsv"
+    params:
+        pathway_arg=lambda wc: (
+            "--pathways-gmx " + shlex.quote(str(MITOCARTA_PATHWAYS_FILE))
+            if MITOCARTA_PATHWAYS_FILE
+            else ""
+        )
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        if [ "{MITOCARTA_ENABLED}" != "True" ]; then
+            echo "[MitoCarta] rule requested while mitocarta_enabled=false" >&2
+            exit 1
+        fi
+        python {input.script:q} \
+            --integrated {input.integrated:q} \
+            --mitocarta {input.mitocarta:q} \
+            {params.pathway_arg} \
+            --ranking {input.ranking:q} \
+            --output {output.tsv:q} \
+            --summary-output {output.summary:q}
+        test -s {output.tsv}
+        test -s {output.summary}
+        """
