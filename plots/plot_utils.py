@@ -63,11 +63,24 @@ def set_thesis_style() -> None:
     )
 
 
-def read_tsv(path: str | Path, required: Iterable[str] | None = None) -> pd.DataFrame:
+def read_tsv(
+    path: str | Path,
+    required: Iterable[str] | None = None,
+    usecols: Iterable[str] | None = None,
+) -> pd.DataFrame:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(path)
-    df = pd.read_csv(path, sep="\t", dtype=str, low_memory=False)
+    # Use object dtype deliberately. This preserves the historical plotting
+    # semantics across pandas versions and avoids routing very large evidence
+    # strings through pandas' nullable StringDtype machinery.
+    df = pd.read_csv(
+        path,
+        sep="\t",
+        dtype=object,
+        low_memory=False,
+        usecols=list(usecols) if usecols is not None else None,
+    )
     if required:
         missing = [c for c in required if c not in df.columns]
         if missing:
