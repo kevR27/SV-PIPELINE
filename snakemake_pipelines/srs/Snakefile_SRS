@@ -18,10 +18,10 @@ EH_CATALOG = config["expansionhunter_catalog"]
 
 CONDAENV = config["condaenv"]
 SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
+SRS_SCRIPTS = os.path.join(SCRIPTS, "srs")
 
-# DeepVariant is intentionally panel-targeted as a complementary SNV/indel
-# arm. Manta and DELLY remain genome-wide.
-DEEPVARIANT_REGIONS_FLAG = f'--regions "{PANEL_BED}"' if PANEL_BED else ""
+# DeepVariant is genome-wide for WGS. Panel views are derived downstream so
+# known-gene review and genome-wide discovery start from the same callset.
 
 # AnnotSV.
 ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
@@ -43,7 +43,7 @@ DISCOVERY_HPO_FILE = config.get(
 VEP_CACHE_DIR = config["vep_cache_dir"]
 VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 
-# Pre-SURVIVOR caller evidence filtering. Hard filters are deliberately
+# Pre-Jasmine caller evidence filtering. Hard filters are deliberately
 # conservative; GQ and blacklist overlap remain soft evidence flags.
 FILTER_SV_EVIDENCE_SCRIPT = config.get(
     "filter_sv_evidence_script",
@@ -55,16 +55,14 @@ EVIDENCE_MAX_SVLEN = config.get("evidence_max_svlen", 250_000_000)
 EVIDENCE_MIN_GQ = config.get("evidence_min_gq")
 EVIDENCE_BLACKLIST_BED = config.get("evidence_blacklist_bed")
 
-# SURVIVOR retains the complete union. The multi-caller VCF is derived later
-# and never replaces the master callset.
-SURVIVOR_MAX_DISTANCE = config.get("survivor_max_distance", 1000)
-SURVIVOR_MIN_SUPPORT = config.get("survivor_min_support", 1)
-SURVIVOR_REQUIRE_SAME_TYPE = config.get("survivor_require_same_type", 1)
-SURVIVOR_REQUIRE_SAME_STRAND = config.get("survivor_require_same_strand", 1)
-SURVIVOR_USE_SIZE_RATIO = config.get("survivor_use_size_ratio", 0)
-SURVIVOR_MIN_SIZE = config.get("survivor_min_size", 50)
-SURVIVOR_CALLER_ORDER = config.get("survivor_caller_order", "Manta,Delly")
-HIGH_CONFIDENCE_MIN_SUPP = config.get("high_confidence_min_supp", 2)
+# Jasmine defines the complete Manta/DELLY breakpoint-discovery universe.
+# Distance scales with SV length and is capped. The complete union remains the
+# master callset; caller concordance is only a companion evidence view.
+JASMINE_MAX_DIST = config.get("jasmine_max_dist", 5000)
+JASMINE_MAX_DIST_LINEAR = config.get("jasmine_max_dist_linear", 0.5)
+JASMINE_MIN_DIST = config.get("jasmine_min_dist", 50)
+JASMINE_CALLER_ORDER = config.get("jasmine_caller_order", "Manta,Delly")
+CALLER_CONCORDANT_MIN_SUPP = config.get("caller_concordant_min_supp", 2)
 
 # MELT is an independent Illumina MEI branch. Each transposon ZIP is run in an
 # isolated directory, then the family VCFs are concatenated and sorted.
@@ -115,10 +113,16 @@ rule all:
         # QC
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.flagstat.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.samtools.stats.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.idxstats.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.srs_wgs_qc.tsv", sample=SAMPLES),
 
-        # Complementary panel SNV/indel calls and short-read phasing
+        # Genome-wide SNV/indel calls; panel view is derived afterwards
         expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi", sample=SAMPLES),
+        expand(PATH + "{sample}/snp_deepvariant/{sample}.panel.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/snp_deepvariant/{sample}.panel.vcf.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
@@ -138,12 +142,12 @@ rule all:
         expand(PATH + "{sample}/sv/manta/{sample}_manta.filtered.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/sv/delly/{sample}_delly.filtered.vcf", sample=SAMPLES),
 
-        # Complete SURVIVOR master universe plus stricter companion set
+        # Complete Jasmine master universe plus caller-concordant companion set
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf.gz.tbi", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf.gz.tbi", sample=SAMPLES),
 
         # Annotation, phenotype discovery, and integrated evidence
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
@@ -163,6 +167,24 @@ rule all:
         # Independent SRS-specific branches
         expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
         expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.json", sample=SAMPLES),
+
+        # Read-depth / BAF CNV evidence and unmatched CNV candidates
+        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.calls.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.annotsv.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_cnvpytor_only_candidates.tsv", sample=SAMPLES),
+
+        # GRIDSS breakpoint/local-assembly evidence and unmatched events
+        expand(PATH + "{sample}/sv/gridss/{sample}.gridss.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/gridss/{sample}.gridss.events.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_gridss_only_events.tsv", sample=SAMPLES),
+
+        # Mitochondrial WGS branch
+        expand(PATH + "{sample}/mtdna/mity/{sample}.mity.normalise.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/mtdna/mity/{sample}.mity.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/mtdna/mity/{sample}.mity.report.xlsx", sample=SAMPLES),
+
+        # Final nuclear SRS evidence table
+        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SRS_evidence.tsv", sample=SAMPLES),
         MELT_TARGETS
 
 
@@ -245,7 +267,7 @@ rule delly_sv:
         """
         set -euo pipefail
         mkdir -p $(dirname {output.vcf})
-        delly call \
+        delly sr \
             -x {input.exclude} \
             -g {input.ref} \
             -o {output.bcf} \
@@ -364,10 +386,10 @@ rule filter_delly_sv:
 
 
 ########################################
-# SURVIVOR per-patient caller merge    #
+# Jasmine per-patient caller merge     #
 ########################################
 
-rule survivor_merge:
+rule jasmine_merge:
     input:
         manta=rules.filter_manta_sv.output.vcf,
         delly=rules.filter_delly_sv.output.vcf,
@@ -381,8 +403,9 @@ rule survivor_merge:
         outdir=PATH + "{sample}/sv/merged",
         sanitized_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.sanitized.vcf",
         sort_tmpdir=PATH + "{sample}/sv/merged/.bcftools_sort_tmp"
+    threads: THREADS
     conda:
-        CONDAENV + "survivor.yaml"
+        CONDAENV + "jasmine.yaml"
     shell:
         """
         set -euo pipefail
@@ -390,18 +413,19 @@ rule survivor_merge:
         rm -rf {params.sort_tmpdir}
         mkdir -p {params.sort_tmpdir}
 
-        # This order defines the meaning of SURVIVOR SUPP_VEC.
+        # Input order defines Jasmine IDLIST/SUPP_VEC provenance.
         printf "%s\n%s\n" {input.manta} {input.delly} > {output.list_file}
 
-        SURVIVOR merge \
-            {output.list_file} \
-            {SURVIVOR_MAX_DISTANCE} \
-            {SURVIVOR_MIN_SUPPORT} \
-            {SURVIVOR_REQUIRE_SAME_TYPE} \
-            {SURVIVOR_REQUIRE_SAME_STRAND} \
-            {SURVIVOR_USE_SIZE_RATIO} \
-            {SURVIVOR_MIN_SIZE} \
-            {output.raw_vcf}
+        jasmine \
+            file_list={output.list_file} \
+            out_file={output.raw_vcf} \
+            threads={threads} \
+            max_dist={JASMINE_MAX_DIST} \
+            max_dist_linear={JASMINE_MAX_DIST_LINEAR} \
+            min_dist={JASMINE_MIN_DIST} \
+            --mutual_distance \
+            --normalize_type \
+            --allow_intrasample
 
         python {SCRIPTS}/sanitize_jasmine_vcf.py \
             --input {output.raw_vcf} \
@@ -424,13 +448,13 @@ rule survivor_merge:
 
 rule summarize_caller_support:
     input:
-        vcf=rules.survivor_merge.output.vcf
+        vcf=rules.jasmine_merge.output.vcf
     output:
         summary=PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv",
-        high_conf_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf.gz",
-        tbi=PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf.gz.tbi"
+        caller_concordant_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf.gz",
+        tbi=PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf.gz.tbi"
     params:
-        raw_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf"
+        raw_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.caller_concordant.vcf"
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
@@ -439,16 +463,17 @@ rule summarize_caller_support:
         python {SCRIPTS}/summarize_sv_caller_support.py \
             --vcf {input.vcf} \
             --output {output.summary} \
-            --caller-order "{SURVIVOR_CALLER_ORDER}" \
-            --min-callers {HIGH_CONFIDENCE_MIN_SUPP} \
+            --caller-order "{JASMINE_CALLER_ORDER}" \
+            --min-callers {CALLER_CONCORDANT_MIN_SUPP} \
             --high-confidence-vcf {params.raw_vcf}
         bgzip -f {params.raw_vcf}
-        tabix -f -p vcf {output.high_conf_vcf}
+        tabix -f -p vcf {output.caller_concordant_vcf}
         """
 
 
+
 ###############################################################
-# AnnotSV — master genome-wide annotation from SURVIVOR VCF   #
+# AnnotSV — master genome-wide annotation from Jasmine VCF    #
 ###############################################################
 
 rule annotsv_annotations_check:
@@ -473,7 +498,7 @@ rule annotsv_annotations_check:
 
 rule annotsv_annotation:
     input:
-        vcf=rules.survivor_merge.output.vcf,
+        vcf=rules.jasmine_merge.output.vcf,
         annotations=rules.annotsv_annotations_check.output.marker
     output:
         tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",
@@ -622,7 +647,7 @@ rule integrated_sv_gene_table:
         audit_script=SCRIPTS + "/audit_annotsv_evidence.py",
         script=SCRIPTS + "/build_integrated_sv_gene_tsv.py",
         common=SCRIPTS + "/sv_evidence_common.py",
-        vcf=rules.survivor_merge.output.vcf,
+        vcf=rules.jasmine_merge.output.vcf,
         annotsv=rules.annotsv_annotation.output.tsv,
         ranking=rules.rank_genomewide_candidates.output.tsv,
         panel=GENE_LIST,
@@ -647,6 +672,7 @@ rule integrated_sv_gene_table:
             --caller-summary {input.caller_summary} \
             --caller-tsv {input.manta} \
             --caller-tsv {input.delly} \
+            --jasmine-id-prefixes \
             --output {output.tsv}
         """
 
@@ -657,7 +683,7 @@ rule integrated_sv_gene_table:
 
 rule vep_sv_annotation:
     input:
-        vcf=rules.survivor_merge.output.vcf
+        vcf=rules.jasmine_merge.output.vcf
     output:
         txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
     threads: THREADS
@@ -802,9 +828,9 @@ rule expansionhunter_str:
         """
 
 
-####################################################
-# Complementary panel SNV/indel calling + phasing #
-####################################################
+########################################################
+# Genome-wide WGS SNV/indel calling + short-read phase #
+########################################################
 
 rule deepvariant_snp:
     input:
@@ -816,8 +842,7 @@ rule deepvariant_snp:
         vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz",
         tbi=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi"
     params:
-        outdir=PATH + "{sample}/snp_deepvariant",
-        regions=DEEPVARIANT_REGIONS_FLAG
+        outdir=PATH + "{sample}/snp_deepvariant"
     threads: THREADS
     conda:
         CONDAENV + "deepvariant.yaml"
@@ -831,8 +856,7 @@ rule deepvariant_snp:
             --reads={input.bam} \
             --output_vcf={output.vcf} \
             --num_shards={threads} \
-            --intermediate_results_dir={params.outdir}/intermediate \
-            {params.regions}
+            --intermediate_results_dir={params.outdir}/intermediate
         test -s {output.vcf}
         test -s {output.tbi}
         """
@@ -910,6 +934,8 @@ rule intersect_srs_orthogonal_evidence:
             --output {output.tsv}
         """
 
+
+include: "srs_extensions.smk"
 
 include: "../common/allele_assessment.smk"
 
