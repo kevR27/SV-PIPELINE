@@ -20,8 +20,8 @@ threads: 16
 # ============================================================
 # TARGET PANEL AND REFERENCES
 # ============================================================
-# Manta and DELLY are genome-wide. This BED is used only for the complementary
-# DeepVariant SNV/indel arm. Panel-only SV tables are derived downstream.
+# All primary WGS callers are genome-wide. This BED is used only to derive
+# downstream panel views; it does not restrict DeepVariant or SV discovery.
 bed: "../../PANEL_OA/optic_neuropathy_panel.bed"
 candidate_genes_list: "../../PANEL_OA/optic_neuropathy_genes.txt"
 
@@ -53,7 +53,7 @@ monarch_edges: "/DATA/Reference/monarch/monarch-kg_edges.tsv"
 discovery_hpo_file: "../../reference/optic_neuropathy_hpo_terms.tsv"
 
 # ============================================================
-# PRE-SURVIVOR CALLER EVIDENCE FILTERING
+# PRE-JASMINE CALLER EVIDENCE FILTERING
 # ============================================================
 # Manta support = FORMAT PR_alt + SR_alt.
 # DELLY support = INFO PE + SR, with FORMAT DV + RV fallback.
@@ -69,26 +69,75 @@ evidence_max_svlen: 250000000
 # evidence_blacklist_bed: "/path/to/low_mappability_segdup.bed"
 
 # ============================================================
-# SURVIVOR MERGE
+# JASMINE MERGE OF MANTA + DELLY
 # ============================================================
-# Complete union: minimum one caller. SUPP>=2 is emitted separately as a
-# companion high-confidence set and does not replace the master callset.
-survivor_max_distance: 1000
-survivor_min_support: 1
-survivor_require_same_type: 1
-survivor_require_same_strand: 1
-survivor_use_size_ratio: 0
-survivor_min_size: 50
+# Complete union: a single-caller event remains in the master VCF.
+# max_dist_linear makes breakpoint tolerance scale with SV size, while
+# max_dist caps it. mutual_distance prevents one very permissive member from
+# pulling in a distant event. The caller-concordant VCF is a companion view
+# only and is NOT labelled "high confidence".
+jasmine_max_dist: 5000
+jasmine_max_dist_linear: 0.5
+jasmine_min_dist: 50
+jasmine_caller_order: "Manta,Delly"
+caller_concordant_min_supp: 2
 
-# This order must match the VCF-list order written by the Snakefile.
-survivor_caller_order: "Manta,Delly"
-high_confidence_min_supp: 2
-
-# Breakpoint distance used only to attach orthogonal MELT/EH locus evidence
-# to the integrated table. It does not change the master SV universe.
+# Breakpoint distance used only to attach independent/orthogonal computational
+# evidence. It does not alter the row-defining Jasmine master SV universe.
 orthogonal_breakpoint_tolerance: 500
 
 # ============================================================
+# SRS-SPECIFIC INDEPENDENT EVIDENCE BRANCHES
+# ============================================================
+# CNVpytor: read-depth CNV calling at 1 kb by default, with BAF evaluated at
+# a coarser 10 kb scale to avoid over-interpreting sparse SNPs. Raw calls are
+# retained; the thresholds below only generate review flags.
+cnvpytor_rd_bin: 1000
+cnvpytor_baf_bin: 10000
+cnvpytor_chromosomes:
+  - chr1
+  - chr2
+  - chr3
+  - chr4
+  - chr5
+  - chr6
+  - chr7
+  - chr8
+  - chr9
+  - chr10
+  - chr11
+  - chr12
+  - chr13
+  - chr14
+  - chr15
+  - chr16
+  - chr17
+  - chr18
+  - chr19
+  - chr20
+  - chr21
+  - chr22
+  - chrX
+  - chrY
+cnvpytor_use_1kg_mask: false
+cnvpytor_soft_max_q0: 0.5
+cnvpytor_soft_max_pn: 0.5
+cnvpytor_soft_min_gap_distance: 100000
+
+# GRIDSS remains a separate breakpoint/local-assembly evidence branch because
+# GRIDSS natively reports breakends. Do not use the DELLY exclusion file here:
+# use a GRIDSS/ENCODE-compatible blacklist if one is installed locally.
+gridss_blacklist_bed: null
+gridss_jvm_heap_gb: 24
+gridss_skip_softclip_realignment: false
+
+# mity is dedicated to mtDNA SNV/indel/heteroplasmy analysis. GRCh38 chrM is
+# rCRS (NC_012920.1); the exact region length is read from the reference .fai.
+mity_contig: "chrM"
+mity_report_min_vaf: 0.01
+
+# ============================================================
+# MELTv2 MOBILE-ELEMENT INSERTIONS
 # MELTv2 MOBILE-ELEMENT INSERTIONS
 # ============================================================
 # MELTv2 is a manual/registration-gated installation, not the unrelated
