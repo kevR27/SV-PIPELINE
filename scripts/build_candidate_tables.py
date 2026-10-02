@@ -213,6 +213,8 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "VEP_GENE_IDS": text_value(source, ["VEP_GENE_IDS"]),
             "VEP_TRANSCRIPT_COUNT": text_value(source, ["VEP_TRANSCRIPT_COUNT"]),
             "VEP_TRANSCRIPTS": text_value(source, ["VEP_TRANSCRIPTS"]),
+            "VEP_WHOLE_TRANSCRIPT_COUNT": text_value(source, ["VEP_WHOLE_TRANSCRIPT_COUNT"]),
+            "VEP_GENE_TRANSCRIPT_SCOPE": text_value(source, ["VEP_GENE_TRANSCRIPT_SCOPE"]),
             "VEP_CONSEQUENCES": text_value(source, ["VEP_CONSEQUENCES"]),
             "VEP_IMPACTS": text_value(source, ["VEP_IMPACTS"]),
             "VEP_BIOTYPES": text_value(source, ["VEP_BIOTYPES"]),
@@ -220,6 +222,8 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "VEP_INTRON": text_value(source, ["VEP_INTRON"]),
             "VEP_CANONICAL_TRANSCRIPTS": text_value(source, ["VEP_CANONICAL_TRANSCRIPTS"]),
             "VEP_PICK_TRANSCRIPTS": text_value(source, ["VEP_PICK_TRANSCRIPTS"]),
+            "VEP_OVERLAP_BP_MAX": text_value(source, ["VEP_OVERLAP_BP_MAX"]),
+            "VEP_OVERLAP_PC_MAX": text_value(source, ["VEP_OVERLAP_PC_MAX"]),
             "VEP_TRANSCRIPT_REGION_CLASS": text_value(source, ["VEP_TRANSCRIPT_REGION_CLASS"]),
             "VEP_STRUCTURAL_EFFECT": text_value(source, ["VEP_STRUCTURAL_EFFECT"]),
             "VEP_TRANSCRIPT_CONTEXT_STATUS": text_value(
