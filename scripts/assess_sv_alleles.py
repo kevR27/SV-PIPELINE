@@ -20,7 +20,7 @@ from sv_evidence_common import MISSING, number
 # INFO/read-name and transcript JSON fields can exceed the csv default of 128 KiB.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
-VERSION = "sv-allele-evidence-v1.2"
+VERSION = "sv-allele-evidence-v1.3"
 DOMAINS = ("POPULATION", "TECHNICAL", "DISRUPTION", "INHERITANCE", "PHENOTYPE", "DISEASE_MECHANISM")
 EFFECTS = {"LOF", "COPY_GAIN", "GOF", "DOMINANT_NEGATIVE", "NO_DISRUPTION", "OTHER", "UNKNOWN"}
 MOIS = {"AD", "AR", "XLD", "XLR", "MT", "UNKNOWN"}
@@ -169,6 +169,70 @@ def functional_context(row):
         else:
             effects.add("OVERLAP_WITHOUT_RESOLVED_FUNCTIONAL_EFFECT")
     return ";".join(sorted(effects))
+
+
+def vep_transcript_context(row):
+    """Cross-check AnnotSV breakpoint context with VEP transcript consequences.
+
+    VEP EXON/INTRON values describe affected transcript features. They are not
+    treated as proof that a breakpoint itself falls inside that exon/intron
+    unless the independent AnnotSV transcript-coordinate logic also places a
+    breakpoint inside the transcript.
+    """
+    match_status = row.get("VEP_MATCH_STATUS", "NOT_SUPPLIED")
+    if match_status != "GENE_TRANSCRIPT_MATCH":
+        return (
+            "NO_GENE_TRANSCRIPT_MATCH",
+            f"VEP_MATCH_STATUS={match_status}",
+        )
+
+    def values(name):
+        raw = row.get(name, ".")
+        if not known(raw):
+            return set()
+        return {x.strip() for x in re.split(r"[;,|]", str(raw)) if x.strip() and x.strip() != "."}
+
+    regions = values("VEP_TRANSCRIPT_REGION_CLASS")
+    effects = values("VEP_STRUCTURAL_EFFECT")
+    consequences = values("VEP_CONSEQUENCES")
+    annotations = json.loads(row.get("ANNOTSV_GENE_ROWS_JSON", "[]"))
+    breakpoint_in_transcript = any(transcript_breakpoints(row, ann) for ann in annotations)
+
+    detail = (
+        f"regions={';'.join(sorted(regions)) or '.'};"
+        f"structural_effects={';'.join(sorted(effects)) or '.'};"
+        f"consequences={';'.join(sorted(consequences)) or '.'};"
+        f"EXON={row.get('VEP_EXON', '.')};INTRON={row.get('VEP_INTRON', '.')};"
+        f"transcripts={row.get('VEP_TRANSCRIPTS', '.')};"
+        f"canonical={row.get('VEP_CANONICAL_TRANSCRIPTS', '.')};"
+        f"impact={row.get('VEP_IMPACTS', '.')};"
+        f"annotsv_breakpoint_inside_transcript={'YES' if breakpoint_in_transcript else 'NO'};"
+        "VEP exon/intron labels describe affected transcript features and are not, alone, "
+        "exact breakpoint coordinates"
+    )
+
+    if effects & {"WHOLE_TRANSCRIPT_LOSS", "WHOLE_TRANSCRIPT_GAIN"}:
+        return "VEP_WHOLE_TRANSCRIPT_EFFECT", detail
+
+    exonic = "EXONIC_OR_SPLICE" in regions
+    intronic = "INTRONIC" in regions
+
+    if breakpoint_in_transcript:
+        if exonic and intronic:
+            return "TRANSCRIPT_BREAKPOINT_WITH_MIXED_EXON_INTRON_CONTEXT", detail
+        if exonic:
+            return "TRANSCRIPT_BREAKPOINT_WITH_EXONIC_OR_SPLICE_CONTEXT", detail
+        if intronic:
+            return "TRANSCRIPT_BREAKPOINT_WITH_INTRONIC_CONTEXT", detail
+        return "TRANSCRIPT_BREAKPOINT_WITH_OTHER_VEP_CONTEXT", detail
+
+    if exonic and intronic:
+        return "VEP_MIXED_EXON_INTRON_OVERLAP_NO_BREAKPOINT_LOCALIZATION", detail
+    if exonic:
+        return "VEP_EXONIC_OR_SPLICE_OVERLAP_NO_BREAKPOINT_LOCALIZATION", detail
+    if intronic:
+        return "VEP_INTRONIC_OVERLAP_NO_BREAKPOINT_LOCALIZATION", detail
+    return "VEP_OTHER_TRANSCRIPT_CONTEXT", detail
 
 
 def disruption(row, evidence):
@@ -361,10 +425,13 @@ def assess(row, model, patient, evidence, family, gene_hpo, args):
     gene = row.get("GENES", ".")
     gt, gt_source = patient_genotype(row, evidence, family, args.sample, args.min_gq, args.min_dp)
     disruption_result, effect = disruption(row, evidence)
+    vep_status, vep_detail = vep_transcript_context(row)
     result = {"ALLELE_ASSESSMENT_VERSION": VERSION, "ALLELE_DISEASE_ID": model.get("disease_id", "."),
               "ALLELE_DISEASE_SOURCE": model.get("source", "."), "ALLELE_GENOTYPE": gt,
               "ALLELE_GENOTYPE_SOURCE": gt_source, "ALLELE_EFFECT": effect,
-              "ALLELE_FUNCTIONAL_CONTEXT": functional_context(row)}
+              "ALLELE_FUNCTIONAL_CONTEXT": functional_context(row),
+              "ALLELE_VEP_TRANSCRIPT_CONTEXT_STATUS": vep_status,
+              "ALLELE_VEP_TRANSCRIPT_CONTEXT_DETAIL": vep_detail}
     components = [population(row, evidence, args.rare_af), technical(row, args.min_support), disruption_result,
                   inheritance(row, model, patient, gt, family, args.min_gq, args.min_dp),
                   phenotype(gene, model, patient, gene_hpo), disease_mechanism(row, model, effect)]
