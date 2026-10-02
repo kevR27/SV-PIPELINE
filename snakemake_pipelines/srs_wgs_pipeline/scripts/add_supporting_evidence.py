@@ -251,7 +251,7 @@ def load_expansionhunter(path: str):
     return index
 
 
-def gridss_matches(
+def gridss_support(
     chromosome: str,
     start: int | None,
     end: int | None,
@@ -260,49 +260,120 @@ def gridss_matches(
     position_2: int | None,
     gridss_index,
     tolerance: int,
-) -> list[str]:
+):
     """
-    Check whether GRIDSS has breakend evidence near the candidate breakpoints.
+    Compare candidate breakpoints with GRIDSS breakends.
 
-    GRIDSS is used as supporting assembly/breakend evidence, not as an
-    additional SURVIVOR vote.
+    For DEL/DUP/INV/BND events with two defined breakpoints, strong GRIDSS
+    support requires both breakpoints to match the same GRIDSS record within
+    the configured distance. A one-breakpoint match is reported separately
+    and is not treated as equivalent to full event support.
+
+    For an event represented by only one local breakpoint, one matching
+    GRIDSS breakend is sufficient to report single-breakpoint support.
     """
-    expected_breakpoints = [(chromosome, start)]
+    if start is None:
+        return "NO", []
 
     if svtype == "BND" and position_2 is not None:
-        expected_breakpoints.append(
-            (chromosome_2, position_2)
-        )
+        candidate_1 = (chromosome, start)
+        candidate_2 = (chromosome_2, position_2)
     elif end is not None and end != start:
-        expected_breakpoints.append(
-            (chromosome, end)
-        )
+        candidate_1 = (chromosome, start)
+        candidate_2 = (chromosome, end)
+    else:
+        candidate_1 = (chromosome, start)
+        candidate_2 = None
 
-    matches: list[str] = []
+    full_matches: list[str] = []
+    partial_matches: list[str] = []
 
-    for expected_chromosome, expected_position in expected_breakpoints:
-        if expected_position is None:
+    # GRIDSS records are indexed by the chromosome of their first breakend.
+    # Search records starting near the first candidate breakpoint.
+    for gridss_position_1, gridss_chromosome_2, gridss_position_2, record in gridss_index.get(
+        candidate_1[0],
+        [],
+    ):
+        if gridss_position_1 is None:
             continue
 
-        for gridss_position, _, _, record in gridss_index.get(
-            expected_chromosome,
+        first_matches = (
+            abs(gridss_position_1 - candidate_1[1]) <= tolerance
+        )
+
+        # A paired GRIDSS breakend can also be represented in the opposite
+        # direction, so test both direct and swapped breakpoint order.
+        direct_second_matches = False
+        swapped_matches = False
+
+        if candidate_2 is not None and gridss_position_2 is not None:
+            direct_second_matches = (
+                gridss_chromosome_2 == candidate_2[0]
+                and abs(gridss_position_2 - candidate_2[1]) <= tolerance
+            )
+
+            swapped_matches = (
+                gridss_chromosome_2 == candidate_1[0]
+                and abs(gridss_position_2 - candidate_1[1]) <= tolerance
+                and record["chrom"] == candidate_2[0]
+                and record["pos"] is not None
+                and abs(record["pos"] - candidate_2[1]) <= tolerance
+            )
+
+        record_id = record["id"]
+        if record_id in {"", MISSING}:
+            record_id = f"{record['chrom']}:{record['pos']}"
+
+        if candidate_2 is None:
+            if first_matches:
+                full_matches.append(record_id)
+            continue
+
+        if (first_matches and direct_second_matches) or swapped_matches:
+            full_matches.append(record_id)
+        elif first_matches or direct_second_matches:
+            partial_matches.append(record_id)
+
+    # Also search the second candidate chromosome because GRIDSS can store the
+    # pair with either breakend first.
+    if candidate_2 is not None:
+        for gridss_position_1, gridss_chromosome_2, gridss_position_2, record in gridss_index.get(
+            candidate_2[0],
             [],
         ):
-            if gridss_position is None:
+            if gridss_position_1 is None:
                 continue
 
-            if abs(gridss_position - expected_position) <= tolerance:
-                record_id = record["id"]
+            first_matches_second = (
+                abs(gridss_position_1 - candidate_2[1]) <= tolerance
+            )
+            remote_matches_first = (
+                gridss_position_2 is not None
+                and gridss_chromosome_2 == candidate_1[0]
+                and abs(gridss_position_2 - candidate_1[1]) <= tolerance
+            )
 
-                if record_id in {"", MISSING}:
-                    record_id = (
-                        f"{expected_chromosome}:{gridss_position}"
-                    )
+            record_id = record["id"]
+            if record_id in {"", MISSING}:
+                record_id = f"{record['chrom']}:{record['pos']}"
 
-                matches.append(record_id)
+            if first_matches_second and remote_matches_first:
+                full_matches.append(record_id)
+            elif first_matches_second or remote_matches_first:
+                partial_matches.append(record_id)
 
-    return sorted(set(matches))
+    full_matches = sorted(set(full_matches))
+    partial_matches = sorted(set(partial_matches) - set(full_matches))
 
+    if full_matches:
+        if candidate_2 is None:
+            return "YES_SINGLE_BREAKPOINT", full_matches
+        return "YES_BOTH_BREAKPOINTS", full_matches
+
+    if partial_matches:
+        return "PARTIAL_ONE_BREAKPOINT", partial_matches
+
+    return "NO", []
 
 def melt_matches(
     chromosome: str,
@@ -485,7 +556,7 @@ def main() -> int:
             find_value(row, "POS2")
         )
 
-        gridss_records = gridss_matches(
+        gridss_status, gridss_records = gridss_support(
             chromosome,
             start,
             end,
@@ -497,9 +568,9 @@ def main() -> int:
         )
 
         row["GRIDSS_SUPPORT"] = (
-            "YES"
-            if gridss_records
-            else ("NO" if args.gridss else "NOT_RUN")
+            gridss_status
+            if args.gridss
+            else "NOT_RUN"
         )
         row["GRIDSS_RECORDS"] = (
             ";".join(gridss_records)
@@ -558,7 +629,10 @@ def main() -> int:
             row["CNVPYTOR_STATUS"] == "PASS"
             or row["CNVPYTOR_READ_DEPTH_MATCH"] == "DEPTH_ONLY"
         )
-        gridss_supported = row["GRIDSS_SUPPORT"] == "YES"
+        gridss_supported = row["GRIDSS_SUPPORT"] in {
+            "YES_BOTH_BREAKPOINTS",
+            "YES_SINGLE_BREAKPOINT",
+        }
         cnvpytor_only = "CNVPYTOR_ONLY" in vcf_info
 
         row["TECHNICAL_SUPPORT"] = technical_support_label(
