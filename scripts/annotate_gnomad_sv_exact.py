@@ -177,8 +177,15 @@ def main():
 
     vcf = pysam.VariantFile(str(vcf_path))
     cache = {}
+    results_by_id = {}
+    unique_svs = int(df["SV_ID"].nunique())
 
-    for sv_id, group in df.groupby("SV_ID", sort=False):
+    for sv_number, (sv_id, group) in enumerate(df.groupby("SV_ID", sort=False), start=1):
+        if sv_number == 1 or sv_number % 1000 == 0 or sv_number == unique_svs:
+            print(
+                f"[INFO] gnomAD-SV exact matching {sv_number}/{unique_svs} unique SVs",
+                flush=True,
+            )
         row = group.iloc[0]
         qtype = str(row.get("SVTYPE", ".")).upper()
 
@@ -236,11 +243,19 @@ def main():
                     ),
                 })
 
-        mask = df["SV_ID"].astype(str).eq(str(sv_id))
-        for col, value in result.items():
-            df.loc[mask, col] = value
+        results_by_id[str(sv_id)] = result
 
     vcf.close()
+
+    # Apply one annotation result per master SV in a single vectorized pass.
+    # The input may contain multiple SV-gene rows for the same SV; all such
+    # rows receive the same gnomAD site annotation without repeatedly scanning
+    # the full dataframe for every unique SV.
+    sv_ids = df["SV_ID"].astype(str)
+    for col in added:
+        df[col] = sv_ids.map(
+            lambda sv_id: results_by_id.get(sv_id, {}).get(col, ".")
+        )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
