@@ -124,7 +124,8 @@ def read_master_vcf(path: str):
             }
             by_id[sv_id] = record
             by_coord[(record["CHROM"], start, end)].append(record)
-            by_coord[(record["CHROM"], start, start)].append(record)
+            if end != start:
+                by_coord[(record["CHROM"], start, start)].append(record)
     return by_id, by_coord
 
 
@@ -253,8 +254,11 @@ def aggregate_group(sv_id: str, gene: str, rows: list[dict]) -> dict:
     effects = set()
     regions = set()
     transcripts = set()
+    whole_effect_transcripts = set()
     canonical = set()
     picked = set()
+    overlap_bp = []
+    overlap_pc = []
 
     for row in rows:
         row_effects, row_regions = classify_row(row)
@@ -264,18 +268,39 @@ def aggregate_group(sv_id: str, gene: str, rows: list[dict]) -> dict:
         feature = clean(row.get("Feature"))
         if feature != ".":
             transcripts.add(feature)
+            if row_effects & {"WHOLE_TRANSCRIPT_LOSS", "WHOLE_TRANSCRIPT_GAIN"}:
+                whole_effect_transcripts.add(feature)
             if clean(row.get("CANONICAL")).upper() in {"YES", "1"}:
                 canonical.add(feature)
             if clean(row.get("PICK")).upper() in {"YES", "1"}:
                 picked.add(feature)
+
+        for field, store in (("OverlapBP", overlap_bp), ("OverlapPC", overlap_pc)):
+            value = clean(row.get(field))
+            if value != ".":
+                try:
+                    store.append(float(value))
+                except ValueError:
+                    pass
+
+    transcript_count = len(transcripts)
+    whole_count = len(whole_effect_transcripts)
+    if transcript_count and whole_count == transcript_count:
+        gene_scope = "ALL_MATCHED_TRANSCRIPTS_WHOLE_EFFECT"
+    elif whole_count:
+        gene_scope = "SOME_MATCHED_TRANSCRIPTS_WHOLE_EFFECT"
+    else:
+        gene_scope = "NO_WHOLE_TRANSCRIPT_EFFECT"
 
     return {
         "SV_ID": sv_id,
         "GENE": gene,
         "VEP_MATCH_METHOD": join_values(r.get("_MATCH_METHOD") for r in rows),
         "VEP_GENE_IDS": join_values(r.get("Gene") for r in rows),
-        "VEP_TRANSCRIPT_COUNT": str(len(transcripts)),
+        "VEP_TRANSCRIPT_COUNT": str(transcript_count),
         "VEP_TRANSCRIPTS": join_values(transcripts),
+        "VEP_WHOLE_TRANSCRIPT_COUNT": str(whole_count),
+        "VEP_GENE_TRANSCRIPT_SCOPE": gene_scope,
         "VEP_CONSEQUENCES": join_values(
             term for r in rows for term in split_terms(r.get("Consequence"))
         ),
@@ -285,6 +310,8 @@ def aggregate_group(sv_id: str, gene: str, rows: list[dict]) -> dict:
         "VEP_INTRON": join_values(r.get("INTRON") for r in rows),
         "VEP_CANONICAL_TRANSCRIPTS": join_values(canonical),
         "VEP_PICK_TRANSCRIPTS": join_values(picked),
+        "VEP_OVERLAP_BP_MAX": str(int(max(overlap_bp))) if overlap_bp else ".",
+        "VEP_OVERLAP_PC_MAX": f"{max(overlap_pc):.3f}" if overlap_pc else ".",
         "VEP_TRANSCRIPT_REGION_CLASS": ";".join(sorted(regions)),
         "VEP_STRUCTURAL_EFFECT": ";".join(sorted(effects)),
         "VEP_ROWS_JSON": json.dumps(
@@ -307,6 +334,8 @@ def aggregate_group(sv_id: str, gene: str, rows: list[dict]) -> dict:
                         "CANONICAL",
                         "PICK",
                         "VARIANT_CLASS",
+                        "OverlapBP",
+                        "OverlapPC",
                         "DISTANCE",
                         "STRAND",
                     )
@@ -358,6 +387,8 @@ def main() -> int:
         "VEP_GENE_IDS",
         "VEP_TRANSCRIPT_COUNT",
         "VEP_TRANSCRIPTS",
+        "VEP_WHOLE_TRANSCRIPT_COUNT",
+        "VEP_GENE_TRANSCRIPT_SCOPE",
         "VEP_CONSEQUENCES",
         "VEP_IMPACTS",
         "VEP_BIOTYPES",
@@ -365,6 +396,8 @@ def main() -> int:
         "VEP_INTRON",
         "VEP_CANONICAL_TRANSCRIPTS",
         "VEP_PICK_TRANSCRIPTS",
+        "VEP_OVERLAP_BP_MAX",
+        "VEP_OVERLAP_PC_MAX",
         "VEP_TRANSCRIPT_REGION_CLASS",
         "VEP_STRUCTURAL_EFFECT",
         "VEP_ROWS_JSON",
