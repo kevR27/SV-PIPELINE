@@ -62,6 +62,11 @@ The original gene-discovery score remains available separately.
   evidence is invented. Header-only templates are in `reference/allele_assessment/`.
 - The score is an uncalibrated research aid (0–12), not ACMG classification,
   diagnostic probability, or a filter. Read statuses, provenance and review flags.
+- Structural-VEP transcript consequences are propagated into the integrated and
+  final SV-gene tables. The allele assessment reports a VEP transcript-context
+  cross-check (whole-transcript, exonic/splice, intronic, or other context), but
+  VEP does not add independent research-score points and does not replace AnnotSV
+  as the primary genome-wide SV-to-gene mapping layer.
 - Corrected exact panel labels, AnnotSV full/split scope, BND partner matching,
   ambiguous matches, AF parsing, HPO duplication and explicit methylation units.
 - SV phasing now uses `.longphase_SV.vcf.gz`; `.longphase.vcf.gz` remains the SNP
@@ -149,7 +154,8 @@ ONT WGS BAM
                                                   ├── caller-support summary
                                                   ├── AnnotSV genome-wide
                                                   │      └── panel-derived view
-                                                  ├── VEP supplementary annotation
+                                                  ├── VEP transcript/SV consequence annotation
+                                                  │      └── per-SV/per-gene transcript summary
                                                   ├── gene extraction
                                                   ├── Monarch/HPO prioritization
                                                   └── integrated SV/gene evidence table
@@ -608,6 +614,9 @@ The table combines:
 - normalized read support;
 - caller QC/evidence flags;
 - affected genes;
+- VEP transcript consequences, transcript IDs and impact categories;
+- VEP exon/intron context and canonical/picked transcripts;
+- VEP whole-transcript loss/gain, truncation/elongation and overlap proportion;
 - needLR population-frequency evidence;
 - OMIM and GenCC disease information;
 - gene-disease evidence level and score;
@@ -634,6 +643,15 @@ CALLER_EVIDENCE_FLAGS
 NEEDLR_AF / NEEDLR_STATUS
 
 GENES
+VEP_MATCH_STATUS / VEP_MATCH_METHOD
+VEP_TRANSCRIPT_COUNT / VEP_TRANSCRIPTS
+VEP_WHOLE_TRANSCRIPT_COUNT / VEP_GENE_TRANSCRIPT_SCOPE
+VEP_CONSEQUENCES / VEP_IMPACTS
+VEP_EXON / VEP_INTRON
+VEP_CANONICAL_TRANSCRIPTS / VEP_PICK_TRANSCRIPTS
+VEP_OVERLAP_BP_MAX / VEP_OVERLAP_PC_MAX
+VEP_TRANSCRIPT_REGION_CLASS / VEP_STRUCTURAL_EFFECT
+
 OMIM
 GENCC
 GENCC_DISEASE
