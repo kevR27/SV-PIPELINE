@@ -39,7 +39,23 @@ def main():
     summaries = []
     svtype_rows = []
     for sample, path in parse_mapping(args.sample_input):
-        raw = read_tsv(path)
+        # These integrated tables can contain very large JSON evidence columns
+        # (AnnotSV transcript rows, VEP rows, caller read evidence). The cohort
+        # comparison does not use them, so inspect only the header first and
+        # load the small subset of columns required for this figure.
+        header = pd.read_csv(path, sep="\t", nrows=0).columns.tolist()
+        wanted = {
+            "SV_ID", "ID", "AnnotSV_ID",
+            "GENES", "ANNotsv_Gene", "Gene", "GENE",
+            "SVTYPE", "SV_type",
+            "CALLER_COUNT", "SUPP",
+            "NEEDLR_AF",
+            "PANEL_STATUS", "panel_gene",
+            "PHENOTYPE_SCORE", "phenotype_score",
+            "GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score",
+        }
+        usecols = [column for column in header if column in wanted]
+        raw = read_tsv(path, usecols=usecols)
         master = unique_master_svs(raw)
         id_col = first_existing(raw, ["SV_ID", "ID"])
         gene_col = first_existing(raw, ["GENES", "ANNotsv_Gene", "Gene", "GENE"])
