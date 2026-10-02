@@ -6,3 +6,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::sniffles=2.6.2
+  - bioconda::htslib=1.20
