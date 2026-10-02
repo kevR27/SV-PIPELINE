@@ -365,6 +365,7 @@ rule filter_manta_sv:
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
             --max-svlen {EVIDENCE_MAX_SVLEN} \
+            --canonical-only \
             {params.min_gq} \
             {params.blacklist} \
             --output-tsv {output.tsv} \
@@ -398,6 +399,7 @@ rule filter_delly_sv:
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
             --max-svlen {EVIDENCE_MAX_SVLEN} \
+            --canonical-only \
             {params.min_gq} \
             {params.blacklist} \
             --output-tsv {output.tsv} \
