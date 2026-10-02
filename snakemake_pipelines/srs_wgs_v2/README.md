@@ -123,3 +123,55 @@ than copying GATK-SV:
 The workflow intentionally keeps the evidence types separate so that technical
 support can be interpreted biologically rather than reduced to a raw caller
 count.
+
+
+## SRS-specific thesis postprocessing
+
+The separate `Snakefile_SRS_WGS_postprocess` mirrors only the LRS downstream
+analyses whose assumptions remain valid for Illumina WGS:
+
+- MitoCarta gene/pathway context;
+- mechanism-aware SV-gene event ranking;
+- optional exact gnomAD-SV site matching;
+- genome-wide DeepVariant/VEP small-variant + SV same-gene review;
+- short-read Samplot read-level review;
+- cohort SV recurrence.
+
+It intentionally does **not** copy LRS methylation, TLDR, Straglr, long-read
+minimum-read-length Samplot settings, or long-range SV phasing assumptions.
+
+Run after or together with the main SRS DAG:
+
+```bash
+snakemake \
+  -s Snakefile_SRS_WGS_postprocess \
+  --configfile config_srs_wgs.yaml \
+  --use-conda \
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 \
+  all_srs_postprocess
+```
+
+The MitoCarta workbook and pathway GMX are deliberately configured as local
+resources. They must exist at the configured paths. The repository currently
+contains only the MitoCarta resource README, not the Broad data files
+themselves. The workflow therefore fails visibly when the resources are absent
+instead of silently substituting another dataset.
+
+## Interpretation limits
+
+`CALLER_COUNT` remains Manta/DELLY concordance only. A positive
+`GRIDSS_BREAKPOINT_MATCH` is independent breakpoint-assembly evidence, and a
+positive `CNVPYTOR_RD_MATCH` is independent read-depth evidence. These fields
+must not be arithmetically added as if all algorithms represented the same
+measurement.
+
+CNVpytor BAF is calculated and stored in the `.pytor` project for regional
+review, but the current enhanced TSV does not convert BAF into a binary
+pathogenicity/support flag. That is intentional: BAF interpretation depends on
+local SNP density, ploidy and event class and should not be reduced to a
+generic threshold without validation.
+
+The SRS SNV-SV table does not infer cis/trans between a small variant and an SV.
+WhatsHap can phase short-read SNVs locally, but the breakpoint SV is not
+long-range phased by this workflow.
