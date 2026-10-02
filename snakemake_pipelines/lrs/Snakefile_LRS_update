@@ -148,7 +148,6 @@ rule all:
 
         # needLR-compatible population-AF branch
         expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
@@ -694,8 +693,7 @@ rule sniffles2_needlr_query:
         bam=lambda wc: BAMS[wc.sample],
         ref=REF
     output:
-        vcf=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz",
-        tbi=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz.tbi"
+        vcf=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz"
     params:
         raw=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf"
     threads: THREADS
@@ -720,10 +718,8 @@ rule sniffles2_needlr_query:
             --threads {threads}
 
         bgzip -@ {threads} -f {params.raw}
-        tabix -f -p vcf {output.vcf}
 
         test -s {output.vcf}
-        test -s {output.tbi}
         """
 
 
