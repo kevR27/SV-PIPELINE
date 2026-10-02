@@ -121,7 +121,7 @@ cnvpytor_chroms:
   - chrY
 
 # Conservative QC thresholds derived from documented CNVpytor filtering fields.
-# They determine whether an unmatched RD call can enter the master universe.
+# They determine whether an unmatched read-depth CNV can enter the integrated SV callset.
 cnvpytor_max_q0: 0.5
 cnvpytor_max_pn: 0.5
 cnvpytor_max_eval1: 0.0001
