@@ -74,6 +74,21 @@ MELT_JAVA_MEMORY_GB = config.get("melt_java_memory_gb", 8)
 MELT_FAMILIES = list(MELT_TRANSPOSONS.keys())
 ORTHOGONAL_BP_TOLERANCE = config.get("orthogonal_breakpoint_tolerance", 500)
 
+MITOCARTA_ENABLED = bool(config.get("mitocarta_enabled", False))
+MITOCARTA_FILE = config.get("mitocarta_file")
+MITOCARTA_PATHWAYS_FILE = config.get("mitocarta_pathways_file")
+if MITOCARTA_ENABLED and not MITOCARTA_FILE:
+    raise ValueError("mitocarta_enabled is true but mitocarta_file is not configured")
+
+MITOCARTA_TARGETS = (
+    expand(
+        PATH + "{sample}/gene_discovery/{sample}_integrated_SRS_evidence.mitocarta.tsv",
+        sample=SAMPLES,
+    )
+    if MITOCARTA_ENABLED
+    else []
+)
+
 if MELT_ENABLED and not MELT_FAMILIES:
     raise ValueError("melt_enabled is true but melt_transposons is empty")
 
@@ -186,6 +201,12 @@ rule all:
 
         # Final nuclear SRS evidence table
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SRS_evidence.tsv", sample=SAMPLES),
+
+        # Internal cohort recurrence: artifact/cross-sample context, not population AF
+        PATH + "cohort/srs_sv_recurrence.tsv",
+        PATH + "cohort/srs_sv_recurrence.members.tsv",
+
+        MITOCARTA_TARGETS,
         MELT_TARGETS
 
 
