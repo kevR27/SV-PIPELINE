@@ -66,16 +66,17 @@ def main() -> int:
                 ao = pick_alt_value(fmt.get("AO", info.get("AO", MISSING)), alt_index)
                 ro = fmt.get("RO", info.get("RO", MISSING))
                 dp = fmt.get("DP", info.get("DP", MISSING))
-                ao_n, ro_n = number(ao), number(ro)
-                vaf = MISSING
-                if ao_n is not None and ro_n is not None and ao_n + ro_n > 0:
-                    vaf = f"{ao_n / (ao_n + ro_n):.8g}"
-                else:
-                    for key in ("VAF", "VF", "AF"):
-                        candidate = pick_alt_value(fmt.get(key, info.get(key, MISSING)), alt_index)
-                        if number(candidate) is not None:
-                            vaf = candidate
-                            break
+
+                # mity normalise explicitly writes FORMAT/VAF = AO / DP.
+                # Use that value first; only derive a fallback when VAF is
+                # absent so this parser does not redefine mity's heteroplasmy.
+                vaf = pick_alt_value(fmt.get("VAF", MISSING), alt_index)
+                if number(vaf) is None:
+                    ao_n, dp_n = number(ao), number(dp)
+                    if ao_n is not None and dp_n is not None and dp_n > 0:
+                        vaf = f"{ao_n / dp_n:.8g}"
+                    else:
+                        vaf = MISSING
 
                 rows.append({
                     "SAMPLE": args.sample,
@@ -90,12 +91,21 @@ def main() -> int:
                     "REF_DEPTH": ro,
                     "ALT_DEPTH": ao,
                     "HETEROPLASMY_VAF": vaf,
+                    "MITY_TIER": pick_alt_value(fmt.get("tier", MISSING), alt_index),
+                    "MITY_Q": pick_alt_value(fmt.get("q", MISSING), alt_index),
+                    "MITY_POS_FILTER": pick_alt_value(fmt.get("POS_filter", MISSING), alt_index),
+                    "MITY_SBR_FILTER": pick_alt_value(fmt.get("SBR_filter", MISSING), alt_index),
+                    "MITY_SBA_FILTER": pick_alt_value(fmt.get("SBA_filter", MISSING), alt_index),
+                    "MITY_MQMR_FILTER": pick_alt_value(fmt.get("MQMR_filter", MISSING), alt_index),
+                    "MITY_AQR_FILTER": pick_alt_value(fmt.get("AQR_filter", MISSING), alt_index),
                     "MITY_INFO_RAW": info_raw,
                 })
 
     columns = [
         "SAMPLE","CHROM","POS","ID","REF","ALT","QUAL","FILTER","TOTAL_DEPTH",
-        "REF_DEPTH","ALT_DEPTH","HETEROPLASMY_VAF","MITY_INFO_RAW",
+        "REF_DEPTH","ALT_DEPTH","HETEROPLASMY_VAF","MITY_TIER","MITY_Q",
+        "MITY_POS_FILTER","MITY_SBR_FILTER","MITY_SBA_FILTER",
+        "MITY_MQMR_FILTER","MITY_AQR_FILTER","MITY_INFO_RAW",
     ]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
