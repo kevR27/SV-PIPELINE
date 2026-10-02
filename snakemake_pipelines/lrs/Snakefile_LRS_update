@@ -1114,7 +1114,7 @@ rule vep_sv_annotation:
             --dir_cache {VEP_CACHE_DIR} \
             --assembly {VEP_ASSEMBLY} \
             --tab \
-            --fields "Uploaded_variation,Location,Allele,Gene,Feature,Feature_type,Consequence,IMPACT,SYMBOL,BIOTYPE,EXON,INTRON,CANONICAL,PICK,VARIANT_CLASS,DISTANCE,STRAND" \
+            --fields "Uploaded_variation,Location,Allele,Gene,Feature,Feature_type,Consequence,IMPACT,SYMBOL,BIOTYPE,EXON,INTRON,CANONICAL,PICK,VARIANT_CLASS,OverlapBP,OverlapPC,DISTANCE,STRAND" \
             --numbers \
             --variant_class \
             --canonical \
