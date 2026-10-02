@@ -57,7 +57,10 @@ discovery_hpo_file: "../../reference/optic_neuropathy_hpo_terms.tsv"
 # ============================================================
 # Manta support = FORMAT PR_alt + SR_alt.
 # DELLY support = INFO PE + SR, with FORMAT DV + RV fallback.
-evidence_min_support: 2
+# Keep PASS calls with at least one explicit supporting read signal. Stronger
+# technical support is assessed downstream; do not erase rare discovery calls
+# simply because they do not meet an arbitrary multi-read threshold here.
+evidence_min_support: 1
 evidence_min_svlen: 50
 
 # Preserve very large and complex clinically relevant events. BND/TRA records
