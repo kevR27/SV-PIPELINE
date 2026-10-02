@@ -153,6 +153,7 @@ rule all:
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.gene_summary.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt", sample=SAMPLES),
@@ -649,6 +650,7 @@ rule integrated_sv_gene_table:
         common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.jasmine_merge.output.vcf,
         annotsv=rules.annotsv_annotation.output.tsv,
+        vep_summary=PATH + "{sample}/sv/vep/{sample}_SV_VEP.gene_summary.tsv",
         ranking=rules.rank_genomewide_candidates.output.tsv,
         panel=GENE_LIST,
         caller_summary=rules.summarize_caller_support.output.summary,
@@ -667,6 +669,7 @@ rule integrated_sv_gene_table:
             --vcf {input.vcf} \
             --annotsv {input.annotsv} \
             --annotsv-audit {input.audit:q} \
+            --vep-summary {input.vep_summary:q} \
             --ranking {input.ranking} \
             --panel {input.panel} \
             --caller-summary {input.caller_summary} \
@@ -701,15 +704,40 @@ rule vep_sv_annotation:
             --offline \
             --dir_cache {VEP_CACHE_DIR} \
             --assembly {VEP_ASSEMBLY} \
+            --tab \
+            --fields "Uploaded_variation,Location,Allele,Gene,Feature,Feature_type,Consequence,IMPACT,SYMBOL,BIOTYPE,EXON,INTRON,CANONICAL,PICK,VARIANT_CLASS,OverlapBP,OverlapPC,DISTANCE,STRAND" \
+            --numbers \
+            --variant_class \
             --canonical \
             --overlaps \
             --flag_pick \
             --symbol \
             --biotype \
             --max_sv_size 250000000 \
-            --batch_size 100 \
+            --buffer_size 100 \
+            --force_overwrite \
             --fork {threads}
         test -s {output.txt}
+        """
+
+
+rule summarize_vep_sv_consequences:
+    input:
+        txt=rules.vep_sv_annotation.output.txt,
+        vcf=rules.jasmine_merge.output.vcf,
+        script=SCRIPTS + "/summarize_vep_sv_consequences.py"
+    output:
+        tsv=PATH + "{sample}/sv/vep/{sample}_SV_VEP.gene_summary.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script:q} \
+            --vep {input.txt:q} \
+            --vcf {input.vcf:q} \
+            --output {output.tsv:q}
+        test -s {output.tsv}
         """
 
 
