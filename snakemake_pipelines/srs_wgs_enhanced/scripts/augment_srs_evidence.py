@@ -97,7 +97,7 @@ def main():
     for row in rows:
         sid=first(row,"SV_ID","ID");m=master.get(sid)
         inf=m["info"] if m else {}
-        row["CNVPYTOR_RD_MATCH"]=inf.get("CNVPYTOR_MATCH","NO" if inf.get("CNVPYTOR_ONLY")!="1" else "DEPTH_ONLY")
+        row["CNVPYTOR_RD_MATCH"]=inf.get("CNVPYTOR_MATCH","NO" if "CNVPYTOR_ONLY" not in inf else "DEPTH_ONLY")
         row["CNVPYTOR_RD_STATUS"]=inf.get("CNVPYTOR_STATUS",".")
         row["CNVPYTOR_LEVEL"]=inf.get("CNVPYTOR_LEVEL",".")
         row["CNVPYTOR_EVAL1"]=inf.get("CNVPYTOR_EVAL1",".")
@@ -135,7 +135,7 @@ def main():
         cc=nf(first(row,"CALLER_COUNT","SUPP")) or 0
         rdpass=row["CNVPYTOR_RD_STATUS"]=="PASS" or row["CNVPYTOR_RD_MATCH"]=="DEPTH_ONLY"
         grid=row["GRIDSS_BREAKPOINT_MATCH"]=="YES"
-        if inf.get("CNVPYTOR_ONLY")=="1":
+        if "CNVPYTOR_ONLY" in inf:
             tech="RD_ONLY_CNV"
         elif cc>=2 and rdpass:
             tech="BREAKPOINT_CONCORDANT_PLUS_RD"
