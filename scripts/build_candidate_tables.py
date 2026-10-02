@@ -208,6 +208,28 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
                 source,
                 ["ANNOTSV_CLASSIFICATION_SCOPE"],
             ),
+            "VEP_MATCH_STATUS": text_value(source, ["VEP_MATCH_STATUS"]),
+            "VEP_MATCH_METHOD": text_value(source, ["VEP_MATCH_METHOD"]),
+            "VEP_GENE_IDS": text_value(source, ["VEP_GENE_IDS"]),
+            "VEP_TRANSCRIPT_COUNT": text_value(source, ["VEP_TRANSCRIPT_COUNT"]),
+            "VEP_TRANSCRIPTS": text_value(source, ["VEP_TRANSCRIPTS"]),
+            "VEP_CONSEQUENCES": text_value(source, ["VEP_CONSEQUENCES"]),
+            "VEP_IMPACTS": text_value(source, ["VEP_IMPACTS"]),
+            "VEP_BIOTYPES": text_value(source, ["VEP_BIOTYPES"]),
+            "VEP_EXON": text_value(source, ["VEP_EXON"]),
+            "VEP_INTRON": text_value(source, ["VEP_INTRON"]),
+            "VEP_CANONICAL_TRANSCRIPTS": text_value(source, ["VEP_CANONICAL_TRANSCRIPTS"]),
+            "VEP_PICK_TRANSCRIPTS": text_value(source, ["VEP_PICK_TRANSCRIPTS"]),
+            "VEP_TRANSCRIPT_REGION_CLASS": text_value(source, ["VEP_TRANSCRIPT_REGION_CLASS"]),
+            "VEP_STRUCTURAL_EFFECT": text_value(source, ["VEP_STRUCTURAL_EFFECT"]),
+            "VEP_TRANSCRIPT_CONTEXT_STATUS": text_value(
+                source,
+                ["ALLELE_VEP_TRANSCRIPT_CONTEXT_STATUS"],
+            ),
+            "VEP_TRANSCRIPT_CONTEXT_DETAIL": text_value(
+                source,
+                ["ALLELE_VEP_TRANSCRIPT_CONTEXT_DETAIL"],
+            ),
             "ACMG_CNV_CLASS": text_value(source, ["ACMG_CNV_CLASS"]),
             "DOSAGE_RELEVANCE": text_value(source, ["DOSAGE_RELEVANCE"]),
             "PANEL_STATUS": text_value(source, ["PANEL_STATUS"]),
@@ -262,6 +284,7 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
         raise ValueError("Gene ranking input has no gene column.")
 
     mito_by_gene = {}
+    vep_by_gene = {}
     if not sv_candidates.empty:
         for gene, group in sv_candidates.groupby("GENE"):
             mito = sorted({
@@ -280,6 +303,32 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
                 ";".join(pathways) if pathways else ".",
             )
 
+            effects = sorted({
+                item.strip()
+                for value in group["VEP_STRUCTURAL_EFFECT"]
+                for item in str(value).split(";")
+                if item.strip().upper() not in MISSING
+            })
+            regions = sorted({
+                item.strip()
+                for value in group["VEP_TRANSCRIPT_REGION_CLASS"]
+                for item in str(value).split(";")
+                if item.strip().upper() not in MISSING
+            })
+            vep_by_gene[gene] = {
+                "effects": ";".join(effects) if effects else ".",
+                "regions": ";".join(regions) if regions else ".",
+                "whole": int(group["VEP_STRUCTURAL_EFFECT"].astype(str).str.contains(
+                    "WHOLE_TRANSCRIPT_LOSS|WHOLE_TRANSCRIPT_GAIN", regex=True, na=False
+                ).sum()),
+                "exonic": int(group["VEP_TRANSCRIPT_REGION_CLASS"].astype(str).str.contains(
+                    "EXONIC_OR_SPLICE", regex=False, na=False
+                ).sum()),
+                "intronic": int(group["VEP_TRANSCRIPT_REGION_CLASS"].astype(str).str.contains(
+                    "INTRONIC", regex=False, na=False
+                ).sum()),
+            }
+
     rows = []
     for _, source in gene_ranking.iterrows():
         gene = str(source[gene_col]).strip()
@@ -289,6 +338,10 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
         ) or 0.0
         disease = numeric_value(source, ["gene_disease_evidence_score", "GENE_DISEASE_EVIDENCE_SCORE"]) or 0.0
         mito, pathways = mito_by_gene.get(gene, (".", "."))
+        vep = vep_by_gene.get(
+            gene,
+            {"effects": ".", "regions": ".", "whole": 0, "exonic": 0, "intronic": 0},
+        )
 
         rows.append({
             "GENE": gene,
@@ -311,6 +364,11 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
             "BREAKPOINT_SV_COUNT": text_value(source, ["breakpoint_defined_INV_BND_count"]),
             "MITOCARTA": mito,
             "MITO_PATHWAY": pathways,
+            "VEP_STRUCTURAL_EFFECTS": vep["effects"],
+            "VEP_TRANSCRIPT_REGION_CLASSES": vep["regions"],
+            "VEP_WHOLE_TRANSCRIPT_EVENT_COUNT": vep["whole"],
+            "VEP_EXONIC_OR_SPLICE_EVENT_COUNT": vep["exonic"],
+            "VEP_INTRONIC_EVENT_COUNT": vep["intronic"],
             "GENE_CATEGORY": compact_gene_category(source),
         })
 
