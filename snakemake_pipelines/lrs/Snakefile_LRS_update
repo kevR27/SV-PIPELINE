@@ -147,7 +147,8 @@ rule all:
         expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf.gz.tbi", sample=SAMPLES),
 
         # needLR-compatible population-AF branch
-        expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
@@ -693,7 +694,10 @@ rule sniffles2_needlr_query:
         bam=lambda wc: BAMS[wc.sample],
         ref=REF
     output:
-        vcf=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf"
+        vcf=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz",
+        tbi=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz.tbi"
+    params:
+        raw=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf"
     threads: THREADS
     conda:
         CONDAENV + "sniffles2_needlr.yaml"
@@ -703,16 +707,23 @@ rule sniffles2_needlr_query:
         mkdir -p $(dirname {output.vcf})
 
         # Dedicated Sniffles2 v2.6.2 query matching the caller used to build
-        # the needLR ONT reference as closely as possible. Do not substitute
-        # the cross-caller Jasmine consensus here.
+        # the needLR ONT reference as closely as possible. Keep the Snakemake
+        # output bgzipped because needLR may compress an uncompressed input
+        # in place, which would otherwise make the declared .vcf disappear.
         sniffles \
             --input {input.bam} \
             --reference {input.ref} \
             --output-rnames \
-            --vcf {output.vcf} \
+            --vcf {params.raw} \
             --allow-overwrite \
             --tandem-repeats {VNTR_BED} \
             --threads {threads}
+
+        bgzip -@ {threads} -f {params.raw}
+        tabix -f -p vcf {output.vcf}
+
+        test -s {output.vcf}
+        test -s {output.tbi}
         """
 
 
@@ -750,7 +761,10 @@ rule needlr_annotation:
             results_vcf=""
         fi
 
-        query_hash=$(sha256sum {input.vcf} | awk '{{print $1}}')
+        # Hash the uncompressed VCF text. This stays compatible with
+        # checksums created before the query VCF was bgzipped and avoids a
+        # gzip-container timestamp changing the identity of the same query.
+        query_hash=$(gzip -cd {input.vcf} | sha256sum | awk '{{print $1}}')
         hash_file="{params.outdir}/.needlr_query.sha256"
         reuse_native=0
 
