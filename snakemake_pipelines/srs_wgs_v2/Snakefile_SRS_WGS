@@ -1,0 +1,1368 @@
+import os
+from pathlib import Path
+
+
+configfile: "config_srs_wgs.yaml"
+
+SAMPLES = list(config["samples"].keys())
+BAMS = config["samples"]
+BAM_INDEXES = config.get("bam_indexes", {})
+PATH = config["path"].rstrip("/") + "/"
+REF = config["ref"]
+THREADS = config["threads"]
+
+PANEL_BED = config.get("bed")
+GENE_LIST = config["candidate_genes_list"]
+EXCLUDE_BED = config["exclude_bed"]
+EH_CATALOG = config["expansionhunter_catalog"]
+
+CONDAENV = config["condaenv"]
+SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
+SRS_V2_SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts/srs_wgs_v2"))
+SRS_V2_ENVS = os.path.abspath(os.path.join(workflow.basedir, "../../envs/srs_wgs_v2")) + "/"
+
+# SRS-WGS v2 independent evidence branches.
+GRIDSS_ENABLED = config.get("gridss_enabled", True)
+GRIDSS_BLACKLIST = config.get("gridss_blacklist")
+GRIDSS_JVM_HEAP = config.get("gridss_jvm_heap", "24g")
+GRIDSS_SKIP_SOFTCLIP_REALIGNMENT = config.get("gridss_skip_softclip_realignment", False)
+
+CNVPYTOR_ENABLED = config.get("cnvpytor_enabled", True)
+CNVPYTOR_BINS = [int(x) for x in config.get("cnvpytor_bins", [1000, 10000])]
+CNVPYTOR_PRIMARY_BIN = int(config.get("cnvpytor_primary_bin", 1000))
+if CNVPYTOR_PRIMARY_BIN not in CNVPYTOR_BINS:
+    raise ValueError("cnvpytor_primary_bin must be one of cnvpytor_bins")
+
+MTDNA_ENABLED = config.get("mtdna_enabled", True)
+MT_CONTIG = config.get("mtdna_contig", "chrM")
+MUTSERVE_LEVEL = config.get("mutserve_level", 0.01)
+
+INDEPENDENT_RECIPROCAL_OVERLAP = config.get("independent_reciprocal_overlap", 0.5)
+INDEPENDENT_BREAKPOINT_TOLERANCE = config.get("independent_breakpoint_tolerance", 500)
+
+# DeepVariant is intentionally genome-wide in this WGS workflow. Panel-only
+# subsets are downstream views, never the discovery input.
+
+# AnnotSV.
+ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
+HPO_TERMS = config.get("hpo_terms")
+ANNOTSV_ANNOTATIONS_DIR = config.get(
+    "annotsv_annotations_dir",
+    PATH + "reference/AnnotSV_annotations",
+)
+
+# Offline Monarch Knowledge Graph / phenotype discovery.
+MONARCH_NODES = config["monarch_nodes"]
+MONARCH_EDGES = config["monarch_edges"]
+DISCOVERY_HPO_FILE = config.get(
+    "discovery_hpo_file",
+    "reference/optic_neuropathy_hpo_terms.tsv",
+)
+
+# VEP.
+VEP_CACHE_DIR = config["vep_cache_dir"]
+VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
+
+# Pre-SURVIVOR caller evidence filtering. Hard filters are deliberately
+# conservative; GQ and blacklist overlap remain soft evidence flags.
+FILTER_SV_EVIDENCE_SCRIPT = config.get(
+    "filter_sv_evidence_script",
+    os.path.join(SCRIPTS, "filter_sv_evidence.py"),
+)
+EVIDENCE_MIN_SUPPORT = config.get("evidence_min_support", 2)
+EVIDENCE_MIN_SVLEN = config.get("evidence_min_svlen", 50)
+EVIDENCE_MAX_SVLEN = config.get("evidence_max_svlen", 250_000_000)
+EVIDENCE_MIN_GQ = config.get("evidence_min_gq")
+EVIDENCE_BLACKLIST_BED = config.get("evidence_blacklist_bed")
+
+# SURVIVOR retains the complete union. The multi-caller VCF is derived later
+# and never replaces the master callset.
+SURVIVOR_MAX_DISTANCE = config.get("survivor_max_distance", 1000)
+SURVIVOR_MIN_SUPPORT = config.get("survivor_min_support", 1)
+SURVIVOR_REQUIRE_SAME_TYPE = config.get("survivor_require_same_type", 1)
+SURVIVOR_REQUIRE_SAME_STRAND = config.get("survivor_require_same_strand", 1)
+SURVIVOR_USE_SIZE_RATIO = config.get("survivor_use_size_ratio", 0)
+SURVIVOR_MIN_SIZE = config.get("survivor_min_size", 50)
+SURVIVOR_CALLER_ORDER = config.get("survivor_caller_order", "Manta,Delly")
+MULTI_CALLER_MIN_SUPP = config.get("multi_caller_min_supp", config.get("high_confidence_min_supp", 2))
+
+# MELT is an independent Illumina MEI branch. Each transposon ZIP is run in an
+# isolated directory, then the family VCFs are concatenated and sorted.
+MELT_ENABLED = config.get("melt_enabled", False)
+MELT_JAR = config.get("melt_jar")
+MELT_TRANSPOSONS = config.get("melt_transposons", {})
+MELT_GENES_BED = config.get("melt_genes_bed")
+MELT_JAVA_MEMORY_GB = config.get("melt_java_memory_gb", 8)
+MELT_FAMILIES = list(MELT_TRANSPOSONS.keys())
+ORTHOGONAL_BP_TOLERANCE = config.get("orthogonal_breakpoint_tolerance", 500)
+
+if MELT_ENABLED and not MELT_FAMILIES:
+    raise ValueError("melt_enabled is true but melt_transposons is empty")
+
+
+def bam_index_for(sample):
+    """Use an explicit BAM index mapping or the conventional BAM.bai path."""
+    return BAM_INDEXES.get(sample, BAMS[sample] + ".bai")
+
+
+def melt_orthogonal_input(wildcards):
+    if not MELT_ENABLED:
+        return []
+    return PATH + f"{wildcards.sample}/mei/melt/{wildcards.sample}.MEI.merged.vcf.gz"
+
+
+MELT_TARGETS = []
+if MELT_ENABLED:
+    MELT_TARGETS = (
+        expand(
+            PATH + "{sample}/mei/melt/families/{sample}.{family}.final_comp.vcf",
+            sample=SAMPLES,
+            family=MELT_FAMILIES,
+        )
+        + expand(
+            PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf.gz",
+            sample=SAMPLES,
+        )
+        + expand(
+            PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf.gz.tbi",
+            sample=SAMPLES,
+        )
+    )
+
+
+GRIDSS_TARGETS = []
+if GRIDSS_ENABLED:
+    GRIDSS_TARGETS = (
+        expand(PATH + "{sample}/sv/gridss/{sample}.gridss.vcf.gz", sample=SAMPLES)
+        + expand(PATH + "{sample}/sv/gridss/{sample}.gridss.vcf.gz.tbi", sample=SAMPLES)
+        + expand(PATH + "{sample}/sv/gridss/{sample}.gridss.annotsv.tsv", sample=SAMPLES)
+    )
+
+CNVPYTOR_TARGETS = []
+if CNVPYTOR_ENABLED:
+    CNVPYTOR_TARGETS = (
+        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.pytor", sample=SAMPLES)
+        + expand(PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.calls.tsv", sample=SAMPLES)
+        + expand(PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.primary.vcf.gz", sample=SAMPLES)
+        + expand(PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.primary.vcf.gz.tbi", sample=SAMPLES)
+        + expand(PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.annotsv.tsv", sample=SAMPLES)
+    )
+
+MTDNA_TARGETS = []
+if MTDNA_ENABLED:
+    MTDNA_TARGETS = (
+        expand(PATH + "{sample}/mtdna/{sample}.mtDNA.vcf.gz", sample=SAMPLES)
+        + expand(PATH + "{sample}/mtdna/{sample}.mtDNA.vcf.gz.tbi", sample=SAMPLES)
+        + expand(PATH + "{sample}/mtdna/{sample}.mtDNA.vep.txt", sample=SAMPLES)
+    )
+
+
+def optional_gridss_vcf(wc):
+    return [PATH + f"{wc.sample}/sv/gridss/{wc.sample}.gridss.vcf.gz"] if GRIDSS_ENABLED else []
+
+
+def optional_gridss_annotsv(wc):
+    return [PATH + f"{wc.sample}/sv/gridss/{wc.sample}.gridss.annotsv.tsv"] if GRIDSS_ENABLED else []
+
+
+def optional_cnvpytor_calls(wc):
+    return [PATH + f"{wc.sample}/cnv/cnvpytor/{wc.sample}.cnvpytor.calls.tsv"] if CNVPYTOR_ENABLED else []
+
+
+def optional_cnvpytor_annotsv(wc):
+    return [PATH + f"{wc.sample}/cnv/cnvpytor/{wc.sample}.cnvpytor.annotsv.tsv"] if CNVPYTOR_ENABLED else []
+
+
+rule all:
+    input:
+        # QC
+        PATH + "reference_checks/srs_wgs_v2.preflight.ok",
+        expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.flagstat.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.samtools.stats.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.wgs_qc_summary.tsv", sample=SAMPLES),
+
+        # Complementary panel SNV/indel calls and short-read phasing
+        expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
+        expand(PATH + "{sample}/phasing/{sample}.phased.bam.bai", sample=SAMPLES),
+
+        # Genome-wide raw SV callers
+        expand(PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
+
+        # Caller-normalized evidence and transparent pre-merge filtering
+        expand(PATH + "{sample}/parsed/{sample}.manta.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.caller.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.manta.evidence.filtered.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.evidence.filtered.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.manta.pass.ids.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/parsed/{sample}.delly.pass.ids.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/manta/{sample}_manta.filtered.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/delly/{sample}_delly.filtered.vcf", sample=SAMPLES),
+
+        # Complete SURVIVOR master universe plus stricter companion set
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz.tbi", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller_supported.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller_supported.vcf.gz.tbi", sample=SAMPLES),
+
+        # Annotation, phenotype discovery, and integrated evidence
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_disease_hypotheses.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.manifest.json", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv", sample=SAMPLES),
+
+        # Independent SRS-specific branches
+        expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
+        expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.json", sample=SAMPLES),
+        MELT_TARGETS,
+        GRIDSS_TARGETS,
+        CNVPYTOR_TARGETS,
+        MTDNA_TARGETS,
+
+        # Evidence-layer integration. GRIDSS and CNVpytor remain independent
+        # evidence modalities and are not folded into caller count.
+        expand(PATH + "{sample}/gene_discovery/{sample}_SRS_evidence_enhanced.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_CNVpytor_only_candidates.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_GRIDSS_only_candidates.tsv", sample=SAMPLES)
+
+
+################
+# QC           #
+################
+
+rule srs_wgs_preflight:
+    input:
+        ref=REF,
+        fai=REF + ".fai",
+        panel=PANEL_BED,
+        genes=GENE_LIST,
+        bams=lambda wc: list(BAMS.values()),
+        bais=lambda wc: [bam_index_for(s) for s in SAMPLES],
+        script=SRS_V2_SCRIPTS + "/preflight_srs_wgs.py"
+    output:
+        marker=PATH + "reference_checks/srs_wgs_v2.preflight.ok"
+    params:
+        bam_args=lambda wc, input: " ".join(f"--bam {x}" for x in input.bams),
+        bai_args=lambda wc, input: " ".join(f"--bai {x}" for x in input.bais),
+        gridss="true" if GRIDSS_ENABLED else "false",
+        mt="true" if MTDNA_ENABLED else "false"
+    conda:
+        SRS_V2_ENVS + "qc.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script:q} \
+            --reference {input.ref:q} \
+            --panel-bed {input.panel:q} \
+            --gene-list {input.genes:q} \
+            --gridss-enabled {params.gridss} \
+            --mt-enabled {params.mt} \
+            --mt-contig {MT_CONTIG:q} \
+            {params.bam_args} {params.bai_args} \
+            --output {output.marker:q}
+        """
+
+
+rule samtools_flagstat:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample)
+    output:
+        txt=PATH + "{sample}/qc/{sample}.flagstat.txt"
+    threads: min(THREADS, 8)
+    conda:
+        SRS_V2_ENVS + "qc.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.txt})
+        samtools flagstat -@ {threads} {input.bam:q} > {output.txt:q}
+        """
+
+
+rule samtools_stats:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample)
+    output:
+        txt=PATH + "{sample}/qc/{sample}.samtools.stats.txt"
+    threads: min(THREADS, 8)
+    conda:
+        SRS_V2_ENVS + "qc.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.txt})
+        samtools stats -@ {threads} {input.bam:q} > {output.txt:q}
+        """
+
+
+rule build_wgs_qc_summary:
+    input:
+        flagstat=rules.samtools_flagstat.output.txt,
+        stats=rules.samtools_stats.output.txt,
+        mosdepth=PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt",
+        script=SRS_V2_SCRIPTS + "/build_qc_summary.py"
+    output:
+        tsv=PATH + "{sample}/qc/{sample}.wgs_qc_summary.tsv"
+    conda:
+        SRS_V2_ENVS + "qc.yaml"
+    shell:
+        """
+        python {input.script:q} --sample {wildcards.sample:q} \
+            --flagstat {input.flagstat:q} --stats {input.stats:q} \
+            --mosdepth-summary {input.mosdepth:q} --output {output.tsv:q}
+        """
+
+
+rule mosdepth_coverage:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample)
+    output:
+        global_dist=PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt",
+        summary=PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt"
+    params:
+        prefix=PATH + "{sample}/coverage/{sample}"
+    threads: THREADS
+    conda:
+        CONDAENV + "mosdepth.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.global_dist})
+        mosdepth -t {threads} {params.prefix} {input.bam}
+        test -s {output.global_dist}
+        test -s {output.summary}
+        """
+
+
+#################################
+# Genome-wide SV calling        #
+#################################
+
+rule manta_sv:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        ref=REF,
+        fai=REF + ".fai"
+    output:
+        vcf=PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz",
+        tbi=PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz.tbi"
+    params:
+        rundir=PATH + "{sample}/sv/manta/rundir"
+    threads: THREADS
+    conda:
+        CONDAENV + "manta.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.vcf})
+        rm -rf {params.rundir}
+        configManta.py \
+            --bam {input.bam} \
+            --referenceFasta {input.ref} \
+            --runDir {params.rundir}
+        {params.rundir}/runWorkflow.py -m local -j {threads}
+        cp {params.rundir}/results/variants/diploidSV.vcf.gz {output.vcf}
+        tabix -f -p vcf {output.vcf}
+        test -s {output.vcf}
+        test -s {output.tbi}
+        """
+
+
+rule delly_sv:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        ref=REF,
+        fai=REF + ".fai",
+        exclude=EXCLUDE_BED
+    output:
+        bcf=temp(PATH + "{sample}/sv/delly/{sample}_delly.bcf"),
+        vcf=PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz",
+        tbi=PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz.tbi"
+    threads: THREADS
+    conda:
+        CONDAENV + "delly.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.vcf})
+        delly call \
+            -x {input.exclude} \
+            -g {input.ref} \
+            -o {output.bcf} \
+            {input.bam}
+        bcftools view {output.bcf} -Oz -o {output.vcf}
+        tabix -f -p vcf {output.vcf}
+        test -s {output.vcf}
+        test -s {output.tbi}
+        """
+
+
+############################################
+# Caller evidence normalization + filter  #
+############################################
+
+rule manta_caller_parse:
+    input:
+        parser_script=SCRIPTS + "/parse_sv_caller_vcf.py",
+        parser_common=SCRIPTS + "/sv_evidence_common.py",
+        vcf=rules.manta_sv.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.manta.caller.tsv"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf} \
+            --caller Manta \
+            --output {output.tsv}
+        """
+
+
+rule delly_caller_parse:
+    input:
+        parser_script=SCRIPTS + "/parse_sv_caller_vcf.py",
+        parser_common=SCRIPTS + "/sv_evidence_common.py",
+        vcf=rules.delly_sv.output.vcf
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.delly.caller.tsv"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.tsv})
+        python {SCRIPTS}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf} \
+            --caller Delly \
+            --output {output.tsv}
+        """
+
+
+rule filter_manta_sv:
+    input:
+        filter_script=FILTER_SV_EVIDENCE_SCRIPT,
+        filter_common=SCRIPTS + "/sv_evidence_common.py",
+        caller_vcf=rules.manta_sv.output.vcf,
+        caller_tsv=rules.manta_caller_parse.output.tsv
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.manta.evidence.filtered.tsv",
+        ids=PATH + "{sample}/parsed/{sample}.manta.pass.ids.txt",
+        vcf=PATH + "{sample}/sv/manta/{sample}_manta.filtered.vcf"
+    params:
+        min_gq=lambda wc: f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else "",
+        blacklist=lambda wc: f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {FILTER_SV_EVIDENCE_SCRIPT} \
+            --caller-tsv {input.caller_tsv} \
+            --caller Manta \
+            --min-support {EVIDENCE_MIN_SUPPORT} \
+            --min-svlen {EVIDENCE_MIN_SVLEN} \
+            --max-svlen {EVIDENCE_MAX_SVLEN} \
+            {params.min_gq} \
+            {params.blacklist} \
+            --output-tsv {output.tsv} \
+            --output-ids {output.ids}
+        bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.caller_vcf}
+        test -s {output.vcf}
+        """
+
+
+rule filter_delly_sv:
+    input:
+        filter_script=FILTER_SV_EVIDENCE_SCRIPT,
+        filter_common=SCRIPTS + "/sv_evidence_common.py",
+        caller_vcf=rules.delly_sv.output.vcf,
+        caller_tsv=rules.delly_caller_parse.output.tsv
+    output:
+        tsv=PATH + "{sample}/parsed/{sample}.delly.evidence.filtered.tsv",
+        ids=PATH + "{sample}/parsed/{sample}.delly.pass.ids.txt",
+        vcf=PATH + "{sample}/sv/delly/{sample}_delly.filtered.vcf"
+    params:
+        min_gq=lambda wc: f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else "",
+        blacklist=lambda wc: f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {FILTER_SV_EVIDENCE_SCRIPT} \
+            --caller-tsv {input.caller_tsv} \
+            --caller Delly \
+            --min-support {EVIDENCE_MIN_SUPPORT} \
+            --min-svlen {EVIDENCE_MIN_SVLEN} \
+            --max-svlen {EVIDENCE_MAX_SVLEN} \
+            {params.min_gq} \
+            {params.blacklist} \
+            --output-tsv {output.tsv} \
+            --output-ids {output.ids}
+        bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.caller_vcf}
+        test -s {output.vcf}
+        """
+
+
+########################################
+# SURVIVOR per-patient caller merge    #
+########################################
+
+rule survivor_merge:
+    input:
+        manta=rules.filter_manta_sv.output.vcf,
+        delly=rules.filter_delly_sv.output.vcf,
+        fai=REF + ".fai"
+    output:
+        list_file=PATH + "{sample}/sv/merged/{sample}_vcf_list.txt",
+        raw_vcf=temp(PATH + "{sample}/sv/merged/{sample}_merged_SV.raw.vcf"),
+        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz",
+        tbi=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz.tbi"
+    params:
+        outdir=PATH + "{sample}/sv/merged",
+        sanitized_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.sanitized.vcf",
+        sort_tmpdir=PATH + "{sample}/sv/merged/.bcftools_sort_tmp"
+    conda:
+        CONDAENV + "survivor.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p {params.outdir}
+        rm -rf {params.sort_tmpdir}
+        mkdir -p {params.sort_tmpdir}
+
+        # This order defines the meaning of SURVIVOR SUPP_VEC.
+        printf "%s\n%s\n" {input.manta} {input.delly} > {output.list_file}
+
+        SURVIVOR merge \
+            {output.list_file} \
+            {SURVIVOR_MAX_DISTANCE} \
+            {SURVIVOR_MIN_SUPPORT} \
+            {SURVIVOR_REQUIRE_SAME_TYPE} \
+            {SURVIVOR_REQUIRE_SAME_STRAND} \
+            {SURVIVOR_USE_SIZE_RATIO} \
+            {SURVIVOR_MIN_SIZE} \
+            {output.raw_vcf}
+
+        python {SCRIPTS}/sanitize_jasmine_vcf.py \
+            --input {output.raw_vcf} \
+            --output {params.sanitized_vcf} \
+            --reference-fai {input.fai}
+
+        bcftools sort \
+            -T {params.sort_tmpdir} \
+            -Oz \
+            -o {output.vcf} \
+            {params.sanitized_vcf}
+        tabix -f -p vcf {output.vcf}
+        test -s {output.vcf}
+        test -s {output.tbi}
+
+        rm -rf {params.sort_tmpdir}
+        rm -f {params.sanitized_vcf}
+        """
+
+
+rule summarize_caller_support:
+    input:
+        vcf=rules.survivor_merge.output.vcf
+    output:
+        summary=PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv",
+        high_conf_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller_supported.vcf.gz",
+        tbi=PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller_supported.vcf.gz.tbi"
+    params:
+        raw_vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.high_confidence.vcf"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/summarize_sv_caller_support.py \
+            --vcf {input.vcf} \
+            --output {output.summary} \
+            --caller-order "{SURVIVOR_CALLER_ORDER}" \
+            --min-callers {MULTI_CALLER_MIN_SUPP} \
+            --high-confidence-vcf {params.raw_vcf}
+        bgzip -f {params.raw_vcf}
+        tabix -f -p vcf {output.high_conf_vcf}
+        """
+
+
+###############################################################
+# AnnotSV — master genome-wide annotation from SURVIVOR VCF   #
+###############################################################
+
+rule annotsv_annotations_check:
+    input:
+        script=SCRIPTS + "/check_annotsv_gene_resource.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
+        genes=lambda wc: [str(p) for p in (Path(ANNOTSV_ANNOTATIONS_DIR) / "Annotations_Human" / "Genes" / "GRCh38").glob("genes.ENSEMBL.sorted*.bed")]
+    output:
+        marker=PATH + "reference_checks/annotsv_annotations.ok"
+    params:
+        annotations=ANNOTSV_ANNOTATIONS_DIR
+    shell:
+        """
+        set -euo pipefail
+        test -d {params.annotations}/Annotations_Human
+        test -d {params.annotations}/Annotations_Exomiser
+        python {input.script:q} --annotations-dir {params.annotations:q}
+        mkdir -p $(dirname {output.marker})
+        touch {output.marker}
+        """
+
+
+rule annotsv_annotation:
+    input:
+        vcf=rules.survivor_merge.output.vcf,
+        annotations=rules.annotsv_annotations_check.output.marker
+    output:
+        tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",
+        unannotated=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.unannotated.tsv"
+    params:
+        outdir=PATH + "{sample}/sv/annotsv",
+        hpo_flag=lambda wc: f"-hpo {HPO_TERMS}" if HPO_TERMS else ""
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p {params.outdir}
+        : > {output.unannotated:q}
+        AnnotSV \
+            -SVinputFile {input.vcf} \
+            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
+            -outputDir {params.outdir} \
+            -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {GENE_LIST} \
+            -candidateGenesFiltering 0 \
+            -tx ENSEMBL \
+            -REreport 1 \
+            -benignAF {ANNOTSV_BENIGN_AF} \
+            {params.hpo_flag}
+        test -s {output.tsv}
+        """
+
+
+rule annotsv_annotation_panel_only:
+    input:
+        tsv=rules.annotsv_annotation.output.tsv,
+        genes=GENE_LIST
+    output:
+        tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/filter_annotsv_panel.py \
+            --annotsv {input.tsv} \
+            --genes {input.genes} \
+            --output {output.tsv}
+        """
+
+
+####################################
+# Genome-wide human gene discovery #
+####################################
+
+rule extract_sv_genes:
+    input:
+        script=SCRIPTS + "/extract_annotsv_genes.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
+        annotsv=rules.annotsv_annotation.output.tsv
+    output:
+        genes=PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.genes})
+        python {SCRIPTS}/extract_annotsv_genes.py \
+            --annotsv {input.annotsv} \
+            --output {output.genes}
+        """
+
+
+rule extract_nonpanel_genes:
+    input:
+        genes=rules.extract_sv_genes.output.genes,
+        panel=GENE_LIST
+    output:
+        genes=PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/extract_nonpanel_genes.py \
+            --genes {input.genes} \
+            --panel {input.panel} \
+            --output {output.genes}
+        """
+
+
+rule human_gene_phenotypes:
+    input:
+        genes=rules.extract_sv_genes.output.genes,
+        hpo=DISCOVERY_HPO_FILE,
+        nodes=MONARCH_NODES,
+        edges=MONARCH_EDGES
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/monarch_human_gene_phenotypes.py \
+            --genes {input.genes} \
+            --hpo-anchors {input.hpo} \
+            --nodes {input.nodes} \
+            --edges {input.edges} \
+            --output {output.tsv}
+        """
+
+
+rule rank_genomewide_candidates:
+    input:
+        script=SCRIPTS + "/rank_sv_gene_candidates.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
+        annotsv=rules.annotsv_annotation.output.tsv,
+        genes=rules.extract_nonpanel_genes.output.genes,
+        phenotypes=rules.human_gene_phenotypes.output.tsv,
+        panel=GENE_LIST
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/rank_sv_gene_candidates.py \
+            --annotsv {input.annotsv} \
+            --genes {input.genes} \
+            --phenotypes {input.phenotypes} \
+            --panel {input.panel} \
+            --output {output.tsv}
+        """
+
+
+############################################
+# Integrated master SV / gene evidence TSV #
+############################################
+
+rule integrated_sv_gene_table:
+    input:
+        record_audit=PATH + "{sample}/sv/annotsv/{sample}_annotation_records.tsv",
+        reconciliation=SCRIPTS + "/annotsv_reconciliation.py",
+        unannotated=rules.annotsv_annotation.output.unannotated,
+        audit=PATH + "{sample}/sv/annotsv/{sample}_annotation_availability.json",
+        audit_script=SCRIPTS + "/audit_annotsv_evidence.py",
+        script=SCRIPTS + "/build_integrated_sv_gene_tsv.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
+        vcf=rules.survivor_merge.output.vcf,
+        annotsv=rules.annotsv_annotation.output.tsv,
+        ranking=rules.rank_genomewide_candidates.output.tsv,
+        panel=GENE_LIST,
+        caller_summary=rules.summarize_caller_support.output.summary,
+        manta=rules.filter_manta_sv.output.tsv,
+        delly=rules.filter_delly_sv.output.tsv
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/build_integrated_sv_gene_tsv.py \
+            --sequencing-type SRS \
+            --annotsv-unannotated {input.unannotated:q} \
+            --vcf {input.vcf} \
+            --annotsv {input.annotsv} \
+            --annotsv-audit {input.audit:q} \
+            --ranking {input.ranking} \
+            --panel {input.panel} \
+            --caller-summary {input.caller_summary} \
+            --caller-tsv {input.manta} \
+            --caller-tsv {input.delly} \
+            --output {output.tsv}
+        """
+
+
+#############################################################
+# VEP — supplementary annotation of the same master VCF     #
+#############################################################
+
+rule vep_sv_annotation:
+    input:
+        vcf=rules.survivor_merge.output.vcf
+    output:
+        txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
+    threads: THREADS
+    conda:
+        CONDAENV + "vep.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.txt})
+        vep \
+            --input_file {input.vcf} \
+            --format vcf \
+            --output_file {output.txt} \
+            --cache \
+            --offline \
+            --dir_cache {VEP_CACHE_DIR} \
+            --assembly {VEP_ASSEMBLY} \
+            --canonical \
+            --overlaps \
+            --flag_pick \
+            --symbol \
+            --biotype \
+            --max_sv_size 250000000 \
+            --batch_size 100 \
+            --fork {threads}
+        test -s {output.txt}
+        """
+
+
+rule vep_sv_annotation_panel_only:
+    input:
+        txt=rules.vep_sv_annotation.output.txt,
+        genes=GENE_LIST
+    output:
+        txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+    conda:
+        CONDAENV + "vep.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/filter_vep_panel.py \
+            --vep {input.txt} \
+            --genes {input.genes} \
+            --output {output.txt}
+        """
+
+
+############################################################
+# Independent Illumina mobile-element insertion branch      #
+############################################################
+
+rule melt_mei_family:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        ref=REF,
+        fai=REF + ".fai",
+        transposon=lambda wc: MELT_TRANSPOSONS[wc.family],
+        genes=lambda wc: MELT_GENES_BED,
+        jar=lambda wc: MELT_JAR
+    output:
+        vcf=PATH + "{sample}/mei/melt/families/{sample}.{family}.final_comp.vcf"
+    params:
+        workdir=PATH + "{sample}/mei/melt/work/{family}",
+        memory=MELT_JAVA_MEMORY_GB
+    conda:
+        CONDAENV + "melt.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/run_melt_single.py \
+            --jar {input.jar} \
+            --bam {input.bam} \
+            --reference {input.ref} \
+            --genes-bed {input.genes} \
+            --transposon {input.transposon} \
+            --workdir {params.workdir} \
+            --memory-gb {params.memory} \
+            --output {output.vcf}
+        """
+
+
+rule melt_merge_families:
+    input:
+        vcfs=lambda wc: [
+            PATH
+            + f"{wc.sample}/mei/melt/families/{wc.sample}.{family}.final_comp.vcf"
+            for family in MELT_FAMILIES
+        ]
+    output:
+        vcf=PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf.gz",
+        tbi=PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf.gz.tbi"
+    params:
+        tmpdir=PATH + "{sample}/mei/melt/.bcftools_sort_tmp"
+    conda:
+        CONDAENV + "melt.yaml"
+    shell:
+        """
+        set -euo pipefail
+        rm -rf {params.tmpdir}
+        mkdir -p {params.tmpdir}
+        bcftools concat -a -Ov {input.vcfs} \
+            | bcftools sort -T {params.tmpdir} -Oz -o {output.vcf}
+        tabix -f -p vcf {output.vcf}
+        rm -rf {params.tmpdir}
+        test -s {output.vcf}
+        test -s {output.tbi}
+        """
+
+
+########################################
+# Targeted repeat expansion genotyping #
+########################################
+
+rule expansionhunter_str:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        ref=REF,
+        fai=REF + ".fai",
+        catalog=EH_CATALOG
+    output:
+        vcf=PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf",
+        json=PATH + "{sample}/str/expansionhunter/{sample}_EH.json"
+    params:
+        prefix=PATH + "{sample}/str/expansionhunter/{sample}_EH"
+    threads: THREADS
+    conda:
+        CONDAENV + "expansionhunter.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.vcf})
+        ExpansionHunter \
+            --reads {input.bam} \
+            --reference {input.ref} \
+            --variant-catalog {input.catalog} \
+            --output-prefix {params.prefix} \
+            --threads {threads}
+        test -s {output.vcf}
+        test -s {output.json}
+        """
+
+
+####################################################
+# Complementary panel SNV/indel calling + phasing #
+####################################################
+
+rule deepvariant_snp:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        ref=REF,
+        fai=REF + ".fai"
+    output:
+        vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz",
+        tbi=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi"
+    params:
+        outdir=PATH + "{sample}/snp_deepvariant"
+    threads: THREADS
+    conda:
+        CONDAENV + "deepvariant.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p {params.outdir}
+        run_deepvariant \
+            --model_type=WGS \
+            --ref={input.ref} \
+            --reads={input.bam} \
+            --output_vcf={output.vcf} \
+            --num_shards={threads} \
+            --intermediate_results_dir={params.outdir}/intermediate
+        test -s {output.vcf}
+        test -s {output.tbi}
+        """
+
+
+rule whatshap_phasing:
+    input:
+        vcf=rules.deepvariant_snp.output.vcf,
+        tbi=rules.deepvariant_snp.output.tbi,
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        ref=REF,
+        fai=REF + ".fai"
+    output:
+        phased=PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
+        phased_tbi=PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi",
+        haplotag=PATH + "{sample}/phasing/{sample}.phased.bam",
+        haplotag_bai=PATH + "{sample}/phasing/{sample}.phased.bam.bai"
+    conda:
+        CONDAENV + "whatshap.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.phased})
+        whatshap phase \
+            --reference {input.ref} \
+            -o {output.phased} \
+            {input.vcf} \
+            {input.bam} \
+            --ignore-read-groups
+        tabix -f -p vcf {output.phased}
+        whatshap haplotag \
+            -o {output.haplotag} \
+            --reference {input.ref} \
+            {output.phased} \
+            {input.bam} \
+            --ignore-read-groups
+        samtools index {output.haplotag}
+        test -s {output.phased}
+        test -s {output.phased_tbi}
+        test -s {output.haplotag}
+        test -s {output.haplotag_bai}
+        """
+
+
+########################################################
+# Orthogonal SRS evidence attached to the master table #
+########################################################
+
+rule intersect_srs_orthogonal_evidence:
+    input:
+        integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
+        script=SCRIPTS + "/intersect_srs_orthogonal_evidence.py",
+        expansionhunter=rules.expansionhunter_str.output.vcf,
+        melt=melt_orthogonal_input
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_orthogonal_evidence.tsv"
+    params:
+        melt_flag=lambda wc: (
+            f"--melt {PATH}{wc.sample}/mei/melt/{wc.sample}.MEI.merged.vcf.gz"
+            if MELT_ENABLED
+            else ""
+        ),
+        tolerance=ORTHOGONAL_BP_TOLERANCE
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {SCRIPTS}/intersect_srs_orthogonal_evidence.py \
+            --integrated {input.integrated} \
+            --expansionhunter {input.expansionhunter} \
+            {params.melt_flag} \
+            --breakpoint-tolerance {params.tolerance} \
+            --output {output.tsv}
+        """
+
+
+
+############################################################
+# GRIDSS: independent breakpoint-assembly evidence          #
+############################################################
+
+rule gridss_sv:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        ref=REF,
+        fai=REF + ".fai",
+        preflight=rules.srs_wgs_preflight.output.marker
+    output:
+        vcf=PATH + "{sample}/sv/gridss/{sample}.gridss.vcf.gz",
+        tbi=PATH + "{sample}/sv/gridss/{sample}.gridss.vcf.gz.tbi"
+    params:
+        raw=PATH + "{sample}/sv/gridss/{sample}.gridss.raw.vcf",
+        assembly=PATH + "{sample}/sv/gridss/{sample}.gridss.assembly.bam",
+        workdir=PATH + "{sample}/sv/gridss/work",
+        blacklist=lambda wc: f"--blacklist {GRIDSS_BLACKLIST}" if GRIDSS_BLACKLIST else "",
+        skip=lambda wc: "--skipsoftcliprealignment" if GRIDSS_SKIP_SOFTCLIP_REALIGNMENT else "",
+        heap=GRIDSS_JVM_HEAP
+    threads: THREADS
+    conda:
+        SRS_V2_ENVS + "gridss.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.vcf})
+        rm -rf {params.workdir}
+        mkdir -p {params.workdir}
+        gridss \
+            --reference {input.ref:q} \
+            --output {params.raw:q} \
+            --assembly {params.assembly:q} \
+            --workingdir {params.workdir:q} \
+            --threads {threads} \
+            --jvmheap {params.heap} \
+            {params.blacklist} {params.skip} \
+            {input.bam:q}
+        bcftools sort -Oz -o {output.vcf:q} {params.raw:q}
+        tabix -f -p vcf {output.vcf:q}
+        test -s {output.vcf}
+        test -s {output.tbi}
+        """
+
+
+rule gridss_annotsv:
+    input:
+        vcf=rules.gridss_sv.output.vcf,
+        annotations=rules.annotsv_annotations_check.output.marker
+    output:
+        tsv=PATH + "{sample}/sv/gridss/{sample}.gridss.annotsv.tsv"
+    params:
+        outdir=PATH + "{sample}/sv/gridss"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        AnnotSV \
+            -SVinputFile {input.vcf:q} \
+            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR:q} \
+            -outputDir {params.outdir:q} \
+            -outputFile {wildcards.sample}.gridss.annotsv.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {GENE_LIST:q} \
+            -candidateGenesFiltering 0 \
+            -tx ENSEMBL \
+            -REreport 1 \
+            -benignAF {ANNOTSV_BENIGN_AF}
+        test -s {output.tsv}
+        """
+
+
+############################################################
+# CNVpytor: independent read-depth + BAF evidence           #
+############################################################
+
+rule cnvpytor_wgs:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        snv=rules.deepvariant_snp.output.vcf,
+        snv_tbi=rules.deepvariant_snp.output.tbi,
+        preflight=rules.srs_wgs_preflight.output.marker,
+        parser=SRS_V2_SCRIPTS + "/parse_cnvpytor_calls.py"
+    output:
+        root=PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.pytor",
+        calls=PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.calls.tsv",
+        vcf=PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.primary.vcf.gz",
+        tbi=PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.primary.vcf.gz.tbi"
+    params:
+        bins=" ".join(str(x) for x in CNVPYTOR_BINS),
+        primary=CNVPYTOR_PRIMARY_BIN,
+        workdir=PATH + "{sample}/cnv/cnvpytor/work",
+        rawvcf=PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.primary.vcf"
+    conda:
+        SRS_V2_ENVS + "cnvpytor.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p {params.workdir}
+        rm -f {output.root}
+        cnvpytor -root {output.root:q} -rd {input.bam:q}
+        cnvpytor -root {output.root:q} -his {params.bins}
+        cnvpytor -root {output.root:q} -partition {params.bins}
+
+        VCF_SAMPLE=$(bcftools query -l {input.snv:q} | head -n 1)
+        test -n "$VCF_SAMPLE"
+        cnvpytor -root {output.root:q} -snp {input.snv:q} -sample "$VCF_SAMPLE"
+        cnvpytor -root {output.root:q} -baf {params.bins}
+
+        CALL_ARGS=""
+        for BIN in {params.bins}; do
+            CALL_FILE="{params.workdir}/calls.$BIN.tsv"
+            cnvpytor -root {output.root:q} -call "$BIN" > "$CALL_FILE"
+            CALL_ARGS="$CALL_ARGS --call $BIN=$CALL_FILE"
+        done
+
+        python {input.parser:q} $CALL_ARGS \
+            --primary-bin {params.primary} \
+            --output-tsv {output.calls:q} \
+            --output-vcf {params.rawvcf:q}
+
+        bcftools sort -Oz -o {output.vcf:q} {params.rawvcf:q}
+        tabix -f -p vcf {output.vcf:q}
+        test -s {output.calls}
+        test -s {output.vcf}
+        """
+
+
+rule cnvpytor_annotsv:
+    input:
+        vcf=rules.cnvpytor_wgs.output.vcf,
+        annotations=rules.annotsv_annotations_check.output.marker
+    output:
+        tsv=PATH + "{sample}/cnv/cnvpytor/{sample}.cnvpytor.annotsv.tsv"
+    params:
+        outdir=PATH + "{sample}/cnv/cnvpytor"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        set -euo pipefail
+        AnnotSV \
+            -SVinputFile {input.vcf:q} \
+            -annotationsDir {ANNOTSV_ANNOTATIONS_DIR:q} \
+            -outputDir {params.outdir:q} \
+            -outputFile {wildcards.sample}.cnvpytor.annotsv.tsv \
+            -genomeBuild GRCh38 \
+            -candidateGenesFile {GENE_LIST:q} \
+            -candidateGenesFiltering 0 \
+            -tx ENSEMBL \
+            -REreport 1 \
+            -benignAF {ANNOTSV_BENIGN_AF}
+        test -s {output.tsv}
+        """
+
+
+############################################################
+# mtDNA: Mutserve heteroplasmy/homoplasmy branch            #
+############################################################
+
+rule extract_mtdna_reference:
+    input:
+        ref=REF,
+        fai=REF + ".fai"
+    output:
+        fa=PATH + "reference_checks/mtDNA.reference.fa",
+        fai=PATH + "reference_checks/mtDNA.reference.fa.fai"
+    conda:
+        SRS_V2_ENVS + "qc.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.fa})
+        samtools faidx {input.ref:q} {MT_CONTIG:q} > {output.fa:q}
+        samtools faidx {output.fa:q}
+        """
+
+
+rule extract_mtdna_bam:
+    input:
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample)
+    output:
+        bam=PATH + "{sample}/mtdna/{sample}.chrM.bam",
+        bai=PATH + "{sample}/mtdna/{sample}.chrM.bam.bai"
+    threads: min(THREADS, 8)
+    conda:
+        SRS_V2_ENVS + "mutserve.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.bam})
+        samtools view -@ {threads} -b {input.bam:q} {MT_CONTIG:q} -o {output.bam:q}
+        samtools index -@ {threads} {output.bam:q}
+        """
+
+
+rule mutserve_mtdna:
+    input:
+        bam=rules.extract_mtdna_bam.output.bam,
+        bai=rules.extract_mtdna_bam.output.bai,
+        ref=rules.extract_mtdna_reference.output.fa,
+        fai=rules.extract_mtdna_reference.output.fai
+    output:
+        vcf=PATH + "{sample}/mtdna/{sample}.mtDNA.vcf.gz",
+        tbi=PATH + "{sample}/mtdna/{sample}.mtDNA.vcf.gz.tbi"
+    threads: min(THREADS, 16)
+    conda:
+        SRS_V2_ENVS + "mutserve.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mutserve call \
+            --reference {input.ref:q} \
+            --output {output.vcf:q} \
+            --threads {threads} \
+            --level {MUTSERVE_LEVEL} \
+            {input.bam:q}
+        tabix -f -p vcf {output.vcf:q}
+        test -s {output.vcf}
+        """
+
+
+rule vep_mtdna:
+    input:
+        vcf=rules.mutserve_mtdna.output.vcf
+    output:
+        txt=PATH + "{sample}/mtdna/{sample}.mtDNA.vep.txt"
+    threads: min(THREADS, 8)
+    conda:
+        CONDAENV + "vep.yaml"
+    shell:
+        """
+        set -euo pipefail
+        vep \
+            --input_file {input.vcf:q} \
+            --format vcf \
+            --output_file {output.txt:q} \
+            --cache --offline \
+            --dir_cache {VEP_CACHE_DIR:q} \
+            --assembly {VEP_ASSEMBLY} \
+            --canonical --symbol --biotype --fork {threads}
+        test -s {output.txt}
+        """
+
+
+############################################################
+# Final SRS evidence-layer integration                      #
+############################################################
+
+rule integrate_srs_independent_evidence:
+    input:
+        master=rules.intersect_srs_orthogonal_evidence.output.tsv,
+        gridss=optional_gridss_vcf,
+        gridss_ann=optional_gridss_annotsv,
+        cnvpytor=optional_cnvpytor_calls,
+        cnvpytor_ann=optional_cnvpytor_annotsv,
+        script=SRS_V2_SCRIPTS + "/integrate_independent_evidence.py"
+    output:
+        enhanced=PATH + "{sample}/gene_discovery/{sample}_SRS_evidence_enhanced.tsv",
+        cnv_only=PATH + "{sample}/gene_discovery/{sample}_CNVpytor_only_candidates.tsv",
+        gridss_only=PATH + "{sample}/gene_discovery/{sample}_GRIDSS_only_candidates.tsv"
+    params:
+        gridss=lambda wc: (
+            f"--gridss {PATH}{wc.sample}/sv/gridss/{wc.sample}.gridss.vcf.gz "
+            f"--gridss-annotsv {PATH}{wc.sample}/sv/gridss/{wc.sample}.gridss.annotsv.tsv"
+            if GRIDSS_ENABLED else ""
+        ),
+        cnvpytor=lambda wc: (
+            f"--cnvpytor {PATH}{wc.sample}/cnv/cnvpytor/{wc.sample}.cnvpytor.calls.tsv "
+            f"--cnvpytor-annotsv {PATH}{wc.sample}/cnv/cnvpytor/{wc.sample}.cnvpytor.annotsv.tsv"
+            if CNVPYTOR_ENABLED else ""
+        )
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script:q} \
+            --master {input.master:q} \
+            {params.cnvpytor} {params.gridss} \
+            --reciprocal-overlap {INDEPENDENT_RECIPROCAL_OVERLAP} \
+            --breakpoint-tolerance {INDEPENDENT_BREAKPOINT_TOLERANCE} \
+            --output {output.enhanced:q} \
+            --cnvpytor-only {output.cnv_only:q} \
+            --gridss-only {output.gridss_only:q}
+        """
+
+
+include: "../common/allele_assessment.smk"
+
+include: "../common/annotsv_evidence_audit.smk"
