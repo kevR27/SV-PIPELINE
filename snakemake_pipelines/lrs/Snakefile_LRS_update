@@ -148,6 +148,7 @@ rule all:
 
         # needLR-compatible population-AF branch
         expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz.tbi", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz", sample=SAMPLES),
 
@@ -171,8 +172,9 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_allele_disease_hypotheses.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.manifest.json", sample=SAMPLES),
 
-        # Supplementary VEP
+        # VEP transcript consequence annotation
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.gene_summary.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
 
         # Methylation, SV-aware phasing, MEI confirmation
@@ -693,7 +695,8 @@ rule sniffles2_needlr_query:
         bam=lambda wc: BAMS[wc.sample],
         ref=REF
     output:
-        vcf=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz"
+        vcf=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz",
+        tbi=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf.gz.tbi"
     params:
         raw=PATH + "{sample}/sv/needlr_query/{sample}.needlr.sniffles.vcf"
     threads: THREADS
@@ -718,8 +721,10 @@ rule sniffles2_needlr_query:
             --threads {threads}
 
         bgzip -@ {threads} -f {params.raw}
+        tabix -f -p vcf {output.vcf}
 
         test -s {output.vcf}
+        test -s {output.tbi}
         """
 
 
@@ -1042,6 +1047,7 @@ rule integrated_sv_gene_table:
         common=SCRIPTS + "/sv_evidence_common.py",
         vcf=rules.jasmine_merge.output.vcf,
         annotsv=rules.annotsv_annotation.output.tsv,
+        vep_summary=PATH + "{sample}/sv/vep/{sample}_SV_VEP.gene_summary.tsv",
         needlr=rules.needlr_annotation.output.tsv,
         ranking=rules.rank_genomewide_candidates.output.tsv,
         panel=GENE_LIST,
@@ -1065,6 +1071,7 @@ rule integrated_sv_gene_table:
             --vcf {input.vcf} \
             --annotsv {input.annotsv} \
             --annotsv-audit {input.audit:q} \
+            --vep-summary {input.vep_summary} \
             --needlr {input.needlr} \
             --ranking {input.ranking} \
             --panel {input.panel} \
@@ -1093,6 +1100,11 @@ rule vep_sv_annotation:
         set -euo pipefail
         mkdir -p $(dirname {output.txt})
 
+        # Keep every transcript consequence. --flag_pick marks a preferred
+        # transcript but does not discard the other transcript rows.
+        # EXON/INTRON are retained for transcript-region review, while
+        # transcript_ablation/amplification and feature truncation/elongation
+        # describe structural effects across the transcript.
         vep \
             --input_file {input.vcf} \
             --format vcf \
@@ -1101,6 +1113,10 @@ rule vep_sv_annotation:
             --offline \
             --dir_cache {VEP_CACHE_DIR} \
             --assembly {VEP_ASSEMBLY} \
+            --tab \
+            --fields "Uploaded_variation,Location,Allele,Gene,Feature,Feature_type,Consequence,IMPACT,SYMBOL,BIOTYPE,EXON,INTRON,CANONICAL,PICK,VARIANT_CLASS,DISTANCE,STRAND" \
+            --numbers \
+            --variant_class \
             --canonical \
             --overlaps \
             --flag_pick \
@@ -1110,6 +1126,28 @@ rule vep_sv_annotation:
             --buffer_size 100 \
             --force_overwrite \
             --fork {threads}
+
+        test -s {output.txt}
+        """
+
+
+rule summarize_vep_sv_consequences:
+    input:
+        txt=rules.vep_sv_annotation.output.txt,
+        vcf=rules.jasmine_merge.output.vcf,
+        script=SCRIPTS + "/summarize_vep_sv_consequences.py"
+    output:
+        tsv=PATH + "{sample}/sv/vep/{sample}_SV_VEP.gene_summary.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --vep {input.txt} \
+            --vcf {input.vcf} \
+            --output {output.tsv}
+        test -s {output.tsv}
         """
 
 
