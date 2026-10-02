@@ -1,0 +1,11 @@
+name: srs_gridss
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::gridss=2.13.2
+  - bioconda::samtools=1.22.1
+  - bioconda::bcftools=1.22
+  - bioconda::htslib=1.22
+  - bioconda::bwa=0.7.19
+  - python=3.12
