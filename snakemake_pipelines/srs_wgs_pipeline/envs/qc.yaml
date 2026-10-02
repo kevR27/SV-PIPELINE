@@ -1,0 +1,7 @@
+name: srs-qc
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - samtools>=1.20
+  - mosdepth>=0.3.8
