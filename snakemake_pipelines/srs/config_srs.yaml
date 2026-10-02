@@ -133,6 +133,7 @@ gridss_skip_softclip_realignment: false
 
 # mity is dedicated to mtDNA SNV/indel/heteroplasmy analysis. GRCh38 chrM is
 # rCRS (NC_012920.1); the exact region length is read from the reference .fai.
+mity_reference: "hg38"
 mity_contig: "chrM"
 mity_report_min_vaf: 0.01
 
