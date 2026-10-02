@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Create a panel-only view from VEP tab-delimited output."""
+"""Create a panel-only view from VEP tab-delimited output.
+
+Supports both the legacy default VEP format with an Extra column and explicit
+--tab output where SYMBOL and other annotations are already separate columns.
+"""
 
 from __future__ import annotations
 
@@ -35,51 +39,42 @@ def main() -> int:
     args = parser.parse_args()
 
     genes = load_genes(args.genes)
-    base_fields = None
-    extra_idx = None
-    extra_keys: list[str] = []
-    extra_keys_seen: set[str] = set()
-    matched_rows: list[tuple[list[str], dict[str, str]]] = []
+    header: list[str] | None = None
+    matched_rows: list[list[str]] = []
 
     with open(args.vep, encoding="utf-8", errors="replace") as fin:
         for line in fin:
             if line.startswith("##"):
                 continue
             if line.startswith("#"):
-                base_fields = line.lstrip("#").rstrip("\n").split("\t")
-                extra_idx = base_fields.index("Extra") if "Extra" in base_fields else None
+                fields = line.lstrip("#").rstrip("\n").split("\t")
+                if "Uploaded_variation" in fields:
+                    header = fields
                 continue
-            if base_fields is None or extra_idx is None:
+            if header is None:
                 continue
 
             fields = line.rstrip("\n").split("\t")
-            if extra_idx >= len(fields):
-                continue
-            extra_dict = parse_extra(fields[extra_idx])
-            symbol = extra_dict.get("SYMBOL", "").upper()
-            if not symbol or symbol not in genes:
-                continue
+            if len(fields) < len(header):
+                fields.extend([""] * (len(header) - len(fields)))
+            row = dict(zip(header, fields))
 
-            for key in extra_dict:
-                if key not in extra_keys_seen:
-                    extra_keys_seen.add(key)
-                    extra_keys.append(key)
-            matched_rows.append((fields, extra_dict))
+            symbol = row.get("SYMBOL", "").strip().upper()
+            if not symbol and "Extra" in row:
+                symbol = parse_extra(row.get("Extra", "")).get("SYMBOL", "").upper()
 
-    if base_fields is None:
+            if symbol in genes:
+                matched_rows.append(fields[: len(header)])
+
+    if header is None:
         raise SystemExit("No VEP header line found in input file.")
-    if extra_idx is None:
-        raise SystemExit("VEP output has no Extra column; cannot filter by SYMBOL.")
 
-    out_base_fields = [field for i, field in enumerate(base_fields) if i != extra_idx]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as fout:
-        fout.write("\t".join(out_base_fields + extra_keys) + "\n")
-        for fields, extra_dict in matched_rows:
-            out_fields = [field for i, field in enumerate(fields) if i != extra_idx]
-            out_fields += [extra_dict.get(key, "") for key in extra_keys]
-            fout.write("\t".join(out_fields) + "\n")
+        fout.write("\t".join(header) + "\n")
+        for fields in matched_rows:
+            fout.write("\t".join(fields) + "\n")
 
     print(f"[OK] panel_rows={len(matched_rows)} output={output}")
     return 0
