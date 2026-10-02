@@ -146,7 +146,19 @@ def read_vep(path: str) -> list[dict]:
             values = line.rstrip("\n").split("\t")
             if len(values) < len(header):
                 values.extend(["."] * (len(header) - len(values)))
-            rows.append(dict(zip(header, values)))
+            row = dict(zip(header, values))
+
+            # Legacy default VEP output stores SYMBOL/BIOTYPE/CANONICAL/PICK
+            # and other annotations inside the semicolon-delimited Extra field.
+            extra = clean(row.get("Extra"))
+            if extra != ".":
+                for item in extra.split(";"):
+                    if "=" not in item:
+                        continue
+                    key, value = item.split("=", 1)
+                    row.setdefault(key, value)
+
+            rows.append(row)
     if header is None:
         raise ValueError(f"No VEP tabular header found in {path}")
     return rows
