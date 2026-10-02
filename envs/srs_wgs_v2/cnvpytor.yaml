@@ -1,0 +1,9 @@
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - cnvpytor=1.3.2
+  - samtools
+  - bcftools
+  - htslib
