@@ -97,7 +97,17 @@ Only after the single-patient validation should the same workflow be expanded ac
 
 ## Downstream interpretation
 
-The independent post-processing workflow adds complementary computational evidence from Straglr, TLDR, LongPhase, WhatsHap, methylation and Samplot. These analyses reuse the same sequencing dataset and are not described as independent experimental validation.
+The independent post-processing workflow adds complementary computational evidence from Straglr, TLDR, LongPhase, WhatsHap, methylation, MitoCarta, optional exact gnomAD-SV matching and Samplot. These analyses reuse the same sequencing dataset and are not described as independent experimental validation.
+
+The persistent row-level endpoint is:
+
+```text
+<sample>/gene_discovery/<sample>_integrated_SV_gene_analysis.final.tsv.gz
+```
+
+Mechanism-aware event ranking is performed first because inversion/BND interpretation still needs the detailed AnnotSV transcript audit rows. Once those relationships are derived, bulky AnnotSV/VEP/caller JSON and nonessential raw `INFO_*` fields are dropped. The subsequent complementary, multimodal and MitoCarta stages use compressed Snakemake `temp()` tables, so they are removed after the final integrated table is produced rather than retained as multiple near-identical copies.
+
+AnnotSV gnomAD overlap evidence and the dedicated gnomAD-SV comparison are intentionally distinct. AnnotSV contributes broader benign/pathogenic database-overlap context. The optional dedicated gnomAD step checks the explicitly configured gnomAD-SV VCF for conservative same-type exact site matches and reports site ID/AF/AC/AN/filter fields. A failure to obtain an exact match is not interpreted as proof that the SV is absent from the population.
 
 Large DEL/DUP calls >=100 kb receive a separate mosdepth comparison of event versus flanking depth. The result is written back into the final SV-gene candidate table. A geometric deletion/duplication label from caller coordinates is therefore kept separate from whether read depth shows the expected copy-number shift.
 
