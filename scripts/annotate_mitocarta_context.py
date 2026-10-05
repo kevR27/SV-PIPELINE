@@ -238,6 +238,7 @@ def main():
         required=True,
         help="*_ranked_candidates.tsv with ON-anchor HPO evidence",
     )
+    p.add_argument("--annotation-only", action="store_true", help="Write only MitoCarta annotation columns plus an internal row key.")
     p.add_argument("--output", required=True)
     p.add_argument("--summary-output", default=None)
     args = p.parse_args()
@@ -286,7 +287,9 @@ def main():
                 ";".join(combined) if combined else "."
             )
 
+    base_columns = set(sv.columns)
     out = sv.copy()
+    out["_INTEGRATED_ROW_INDEX"] = range(len(out))
     genes = out[gene_col].fillna(".").astype(str).str.upper().str.strip()
     if panel_col:
         panel_text = out[panel_col].fillna("").astype(str).str.upper().str.strip()
@@ -379,7 +382,15 @@ def main():
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(output, sep="\t", index=False)
+    if args.annotation_only:
+        annotation_columns = [
+            c for c in out.columns
+            if c not in base_columns and c != "_INTEGRATED_ROW_INDEX"
+        ]
+        output_df = out[["_INTEGRATED_ROW_INDEX"] + annotation_columns]
+    else:
+        output_df = out.drop(columns=["_INTEGRATED_ROW_INDEX"], errors="ignore")
+    output_df.to_csv(output, sep="\t", index=False)
 
     nuclear = out["MITOCARTA_ENCODING"].eq("NUCLEAR_MITOCHONDRIAL_GENE")
     on = out["MITO_ON_CONTEXT"].eq("YES")
