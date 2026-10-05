@@ -233,112 +233,6 @@ rule all:
 # Complementary evidence integration                          #
 ############################################################
 
-rule integrate_complementary_sv_evidence:
-    input:
-        integrated=PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.ranked.compact.tsv.gz",
-        longphase=lambda wc: [longphase_path(wc.sample)] if longphase_path(wc.sample) else [],
-        common=SCRIPTS + "/sv_evidence_common.py",
-        straglr=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
-        tldr=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",
-        script=PLOTS + "/intersect_complementary_sv_evidence.py"
-    output:
-        tsv=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.complementary.tsv.gz"),
-        independent=PATH + "{sample}/gene_discovery/{sample}_independent_complementary_findings.tsv"
-    params:
-        straglr_tol=COMPLEMENTARY_STRAGLR_BP_TOL,
-        tldr_tol=COMPLEMENTARY_TLDR_BP_TOL,
-        longphase_tol=COMPLEMENTARY_LONGPHASE_BP_TOL,
-        longphase_arg=lambda wc: longphase_arg(wc.sample)
-    conda:
-        CONDAENV + "plots.yaml"
-    shell:
-        """
-        set -euo pipefail
-        mkdir -p $(dirname {output.tsv})
-
-        python {input.script} \
-            --integrated {input.integrated} \
-            --straglr {input.straglr} \
-            --tldr {input.tldr} \
-            {params.longphase_arg} \
-            --straglr-breakpoint-tol {params.straglr_tol} \
-            --tldr-breakpoint-tol {params.tldr_tol} \
-            --longphase-breakpoint-tol {params.longphase_tol} \
-            --independent-output {output.independent} \
-            --output {output.tsv}
-
-        test -s {output.tsv}
-        test -e {output.independent}
-        """
-
-
-rule integrate_candidate_context:
-    input:
-        integrated=rules.integrate_complementary_sv_evidence.output.tsv,
-        script=PLOTS + "/integrate_candidate_context.py",
-        methylation=lambda wc: [methylation_path(wc.sample)] if methylation_path(wc.sample) else [],
-        whatshap=lambda wc: [whatshap_path(wc.sample)] if whatshap_path(wc.sample) else [],
-        methylation_index=lambda wc: [x for x in [str(methylation_path(wc.sample)) + ".tbi", str(methylation_path(wc.sample)) + ".csi"] if os.path.exists(x)]
-    output:
-        tsv=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.multimodal.tsv.gz")
-    params:
-        methylation_units=config.get("methylation_units", "percent"),
-        methylation_arg=lambda wc: (
-            f"--methylation-bed {methylation_path(wc.sample)}"
-            if methylation_path(wc.sample)
-            else ""
-        ),
-        whatshap_arg=lambda wc: (
-            f"--whatshap-vcf {whatshap_path(wc.sample)}"
-            if whatshap_path(wc.sample)
-            else ""
-        )
-    conda:
-        CONDAENV + "plots.yaml"
-    shell:
-        """
-        set -euo pipefail
-
-        python {input.script} \
-            --integrated {input.integrated} \
-            {params.methylation_arg} \
-            {params.whatshap_arg} \
-            --methylation-units {params.methylation_units} \
-            --output {output.tsv}
-
-        test -s {output.tsv}
-        """
-
-
-rule annotate_mitocarta_context:
-    input:
-        integrated=rules.integrate_candidate_context.output.tsv,
-        mitocarta=MITOCARTA_FILE,
-        pathways=MITOCARTA_PATHWAYS_FILE,
-        ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
-        script=SCRIPTS + "/annotate_mitocarta_context.py"
-    output:
-        tsv=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.mitocarta.tsv.gz"),
-        summary=PATH + "{sample}/gene_discovery/{sample}_mitocarta_annotation_summary.tsv"
-    conda:
-        CONDAENV + "plots.yaml"
-    shell:
-        """
-        set -euo pipefail
-
-        python {input.script} \
-            --integrated {input.integrated} \
-            --mitocarta {input.mitocarta} \
-            --pathways-gmx {input.pathways} \
-            --ranking {input.ranking} \
-            --output {output.tsv} \
-            --summary-output {output.summary}
-
-        test -s {output.tsv}
-        test -s {output.summary}
-        """
-
-
 rule rank_sv_gene_events:
     input:
         integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
@@ -363,13 +257,122 @@ rule rank_sv_gene_events:
         """
 
 
+rule integrate_complementary_sv_evidence:
+    input:
+        integrated=rules.rank_sv_gene_events.output.tsv,
+        longphase=lambda wc: [longphase_path(wc.sample)] if longphase_path(wc.sample) else [],
+        common=SCRIPTS + "/sv_evidence_common.py",
+        straglr=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
+        tldr=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",
+        script=PLOTS + "/intersect_complementary_sv_evidence.py"
+    output:
+        delta=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.complementary.delta.tsv.gz"),
+        independent=PATH + "{sample}/gene_discovery/{sample}_independent_complementary_findings.tsv"
+    params:
+        straglr_tol=COMPLEMENTARY_STRAGLR_BP_TOL,
+        tldr_tol=COMPLEMENTARY_TLDR_BP_TOL,
+        longphase_tol=COMPLEMENTARY_LONGPHASE_BP_TOL,
+        longphase_arg=lambda wc: longphase_arg(wc.sample)
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.delta})
+
+        python {input.script} \
+            --integrated {input.integrated} \
+            --straglr {input.straglr} \
+            --tldr {input.tldr} \
+            {params.longphase_arg} \
+            --straglr-breakpoint-tol {params.straglr_tol} \
+            --tldr-breakpoint-tol {params.tldr_tol} \
+            --longphase-breakpoint-tol {params.longphase_tol} \
+            --independent-output {output.independent} \
+            --annotation-only \
+            --output {output.delta}
+
+        test -s {output.delta}
+        test -e {output.independent}
+        """
+
+
+rule integrate_candidate_context:
+    input:
+        integrated=rules.rank_sv_gene_events.output.tsv,
+        script=PLOTS + "/integrate_candidate_context.py",
+        methylation=lambda wc: [methylation_path(wc.sample)] if methylation_path(wc.sample) else [],
+        whatshap=lambda wc: [whatshap_path(wc.sample)] if whatshap_path(wc.sample) else [],
+        methylation_index=lambda wc: [x for x in [str(methylation_path(wc.sample)) + ".tbi", str(methylation_path(wc.sample)) + ".csi"] if os.path.exists(x)]
+    output:
+        delta=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.multimodal.delta.tsv.gz")
+    params:
+        methylation_units=config.get("methylation_units", "percent"),
+        methylation_arg=lambda wc: (
+            f"--methylation-bed {methylation_path(wc.sample)}"
+            if methylation_path(wc.sample)
+            else ""
+        ),
+        whatshap_arg=lambda wc: (
+            f"--whatshap-vcf {whatshap_path(wc.sample)}"
+            if whatshap_path(wc.sample)
+            else ""
+        )
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        python {input.script} \
+            --integrated {input.integrated} \
+            {params.methylation_arg} \
+            {params.whatshap_arg} \
+            --methylation-units {params.methylation_units} \
+            --annotation-only \
+            --output {output.delta}
+
+        test -s {output.delta}
+        """
+
+
+rule annotate_mitocarta_context:
+    input:
+        integrated=rules.rank_sv_gene_events.output.tsv,
+        mitocarta=MITOCARTA_FILE,
+        pathways=MITOCARTA_PATHWAYS_FILE,
+        ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
+        script=SCRIPTS + "/annotate_mitocarta_context.py"
+    output:
+        delta=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.mitocarta.delta.tsv.gz"),
+        summary=PATH + "{sample}/gene_discovery/{sample}_mitocarta_annotation_summary.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        python {input.script} \
+            --integrated {input.integrated} \
+            --mitocarta {input.mitocarta} \
+            --pathways-gmx {input.pathways} \
+            --ranking {input.ranking} \
+            --annotation-only \
+            --output {output.delta} \
+            --summary-output {output.summary}
+
+        test -s {output.delta}
+        test -s {output.summary}
+        """
+
+
 rule annotate_gnomad_sv_exact:
     input:
-        events=rules.annotate_mitocarta_context.output.tsv,
+        events=rules.rank_sv_gene_events.output.tsv,
         gnomad=gnomad_sv_inputs,
         script=SCRIPTS + "/annotate_gnomad_sv_exact.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz"
+        delta=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.gnomad.delta.tsv.gz")
     params:
         gnomad_arg=gnomad_sv_arg
     conda:
@@ -380,15 +383,43 @@ rule annotate_gnomad_sv_exact:
         python {input.script} \
             --input {input.events} \
             {params.gnomad_arg} \
+            --annotation-only \
+            --output {output.delta}
+        test -s {output.delta}
+        """
+
+
+rule merge_integrated_annotations:
+    input:
+        base=rules.rank_sv_gene_events.output.tsv,
+        complementary=rules.integrate_complementary_sv_evidence.output.delta,
+        multimodal=rules.integrate_candidate_context.output.delta,
+        mitocarta=rules.annotate_mitocarta_context.output.delta,
+        gnomad=rules.annotate_gnomad_sv_exact.output.delta,
+        script=SCRIPTS + "/merge_integrated_annotation_deltas.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+
+        python {input.script} \
+            --base {input.base} \
+            --delta {input.complementary} \
+            --delta {input.multimodal} \
+            --delta {input.mitocarta} \
+            --delta {input.gnomad} \
             --output {output.tsv}
+
         test -s {output.tsv}
         """
 
 
-
 rule build_gene_multimodal_summary:
     input:
-        integrated=rules.annotate_gnomad_sv_exact.output.tsv,
+        integrated=rules.merge_integrated_annotations.output.tsv,
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         script=PLOTS + "/build_gene_evidence_summary.py"
@@ -443,8 +474,8 @@ def existing_plot_inputs(wc):
 
 rule thesis_plots_sample:
     input:
-        integrated=rules.annotate_gnomad_sv_exact.output.tsv,
-        candidate_events=rules.annotate_gnomad_sv_exact.output.tsv,
+        integrated=rules.merge_integrated_annotations.output.tsv,
+        candidate_events=rules.merge_integrated_annotations.output.tsv,
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
         available=existing_plot_inputs,
         plot_scripts=[
