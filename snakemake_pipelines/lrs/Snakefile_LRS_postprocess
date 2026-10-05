@@ -152,11 +152,12 @@ def multimodal_context_table(sample):
     )
 
 
-def mitocarta_context_table(sample):
+def final_integrated_table(sample):
+    """Single persistent post-processing SV-gene table."""
     return (
         PATH
         + f"{sample}/gene_discovery/"
-        + f"{sample}_integrated_SV_gene_with_mitocarta.tsv"
+        + f"{sample}_integrated_SV_gene_analysis.final.tsv.gz"
     )
 
 
@@ -203,12 +204,13 @@ if SKIPPED_POSTPROCESS_SAMPLES:
 
 
 # Default post-processing target:
-# build the extended interpretation table for every completed sample.
+# retain one compressed, authoritative SV-gene table per completed sample.
+# Large intermediate annotation copies are temporary and removed by Snakemake.
 # Thesis plots remain a separate explicit target.
 rule all:
     input:
         expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_complementary_evidence.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
@@ -216,19 +218,11 @@ rule all:
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
+            PATH + "{sample}/gene_discovery/{sample}_mitocarta_annotation_summary.tsv",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
             PATH + "{sample}/gene_discovery/{sample}_gene_multimodal_evidence_summary.tsv",
-            sample=POSTPROCESS_SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv",
-            sample=POSTPROCESS_SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
-            sample=POSTPROCESS_SAMPLES,
-        ),
-        expand(
-            PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.tsv",
             sample=POSTPROCESS_SAMPLES,
         )
 
@@ -239,14 +233,14 @@ rule all:
 
 rule integrate_complementary_sv_evidence:
     input:
-        integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
+        integrated=PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.ranked.compact.tsv.gz",
         longphase=lambda wc: [longphase_path(wc.sample)] if longphase_path(wc.sample) else [],
         common=SCRIPTS + "/sv_evidence_common.py",
         straglr=PATH + "{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
         tldr=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt",
         script=PLOTS + "/intersect_complementary_sv_evidence.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_complementary_evidence.tsv",
+        tsv=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.complementary.tsv.gz"),
         independent=PATH + "{sample}/gene_discovery/{sample}_independent_complementary_findings.tsv"
     params:
         straglr_tol=COMPLEMENTARY_STRAGLR_BP_TOL,
@@ -284,7 +278,7 @@ rule integrate_candidate_context:
         whatshap=lambda wc: [whatshap_path(wc.sample)] if whatshap_path(wc.sample) else [],
         methylation_index=lambda wc: [x for x in [str(methylation_path(wc.sample)) + ".tbi", str(methylation_path(wc.sample)) + ".csi"] if os.path.exists(x)]
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_multimodal_context.tsv"
+        tsv=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.multimodal.tsv.gz")
     params:
         methylation_units=config.get("methylation_units", "percent"),
         methylation_arg=lambda wc: (
@@ -322,7 +316,7 @@ rule annotate_mitocarta_context:
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         script=SCRIPTS + "/annotate_mitocarta_context.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
+        tsv=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.mitocarta.tsv.gz"),
         summary=PATH + "{sample}/gene_discovery/{sample}_mitocarta_annotation_summary.tsv"
     conda:
         CONDAENV + "plots.yaml"
@@ -345,10 +339,10 @@ rule annotate_mitocarta_context:
 
 rule rank_sv_gene_events:
     input:
-        integrated=rules.annotate_mitocarta_context.output.tsv,
+        integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
         script=SCRIPTS + "/rank_sv_gene_events.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.tsv"
+        tsv=temp(PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.ranked.compact.tsv.gz")
     params:
         breakpoint_tolerance=SV_GENE_BREAKPOINT_TOLERANCE
     conda:
@@ -360,7 +354,8 @@ rule rank_sv_gene_events:
         python {input.script} \
             --input {input.integrated} \
             --output {output.tsv} \
-            --breakpoint-gene-tolerance {params.breakpoint_tolerance}
+            --breakpoint-gene-tolerance {params.breakpoint_tolerance} \
+            --compact-output
 
         test -s {output.tsv}
         """
@@ -368,11 +363,11 @@ rule rank_sv_gene_events:
 
 rule annotate_gnomad_sv_exact:
     input:
-        events=rules.rank_sv_gene_events.output.tsv,
+        events=rules.annotate_mitocarta_context.output.tsv,
         gnomad=gnomad_sv_inputs,
         script=SCRIPTS + "/annotate_gnomad_sv_exact.py"
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.gnomad.tsv"
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz"
     params:
         gnomad_arg=gnomad_sv_arg
     conda:
@@ -391,7 +386,7 @@ rule annotate_gnomad_sv_exact:
 
 rule build_gene_multimodal_summary:
     input:
-        integrated=rules.annotate_mitocarta_context.output.tsv,
+        integrated=rules.annotate_gnomad_sv_exact.output.tsv,
         ranking=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         script=PLOTS + "/build_gene_evidence_summary.py"
@@ -446,7 +441,7 @@ def existing_plot_inputs(wc):
 
 rule thesis_plots_sample:
     input:
-        integrated=rules.annotate_mitocarta_context.output.tsv,
+        integrated=rules.annotate_gnomad_sv_exact.output.tsv,
         candidate_events=rules.annotate_gnomad_sv_exact.output.tsv,
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
         available=existing_plot_inputs,
@@ -543,7 +538,7 @@ rule samplot_candidate_breakpoints:
         # Use the mechanism-aware event ranking so read-level review includes
         # small, large and breakpoint-defined candidates rather than only the
         # highest generic gene scores.
-        integrated=PATH + "{sample}/gene_discovery/{sample}_ranked_SV_gene_events.gnomad.tsv",
+        integrated=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
         bam=lambda wc: BAMS[wc.sample],
         genes=rules.prepare_samplot_gene_annotation.output.bed,
         gene_index=rules.prepare_samplot_gene_annotation.output.index,
@@ -591,7 +586,7 @@ def cohort_sample_args():
         + shlex.quote(
             sample
             + "="
-            + mitocarta_context_table(sample)
+            + final_integrated_table(sample)
         )
         for sample in POSTPROCESS_SAMPLES
     )
@@ -613,7 +608,7 @@ COHORT_PLOT_OUTPUTS = (
 rule cohort_thesis_comparison:
     input:
         tables=expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
             sample=POSTPROCESS_SAMPLES,
         ),
         script=PLOTS + "/plot_cohort_sv_comparison.py"
