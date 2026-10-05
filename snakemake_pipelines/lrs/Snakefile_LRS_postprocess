@@ -8,11 +8,13 @@ configfile: "config_lrs.yaml"
 # ============================================================
 #
 # This workflow intentionally does NOT perform variant calling.
-# Run Snakefile_LRS_update first. This Snakefile only:
-#   1. attaches complementary Straglr/TLDR evidence to the completed
-#      integrated Jasmine SV-gene table; and
-#   2. generates thesis plots on request.
+# Run Snakefile_LRS_update first. This Snakefile:
+#   1. derives mechanism-aware SV-gene event ranking;
+#   2. attaches complementary, multimodal, MitoCarta and optional exact
+#      gnomAD-SV evidence; and
+#   3. retains one compressed final integrated SV-gene table.
 #
+# Large intermediate annotation tables are temporary Snakemake outputs.
 # Plotting is intentionally excluded from this Snakefile's rule all.
 
 SAMPLES = list(config["samples"].keys())
