@@ -113,11 +113,21 @@ def main():
     )
 
     caller_summary = sample_root / "sv" / "merged" / f"{s}_caller_support_summary.tsv"
+    integrated_final = (
+        sample_root
+        / "gene_discovery"
+        / f"{s}_integrated_SV_gene_analysis.final.tsv.gz"
+    )
     integrated_base = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_analysis.tsv"
+    # New post-processing keeps a single persistent, compressed integrated table.
+    # The legacy fallbacks are retained only so older completed runs can still be
+    # plotted without regenerating upstream analyses.
     integrated_extended = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_complementary_evidence.tsv"
     integrated_multimodal = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_multimodal_context.tsv"
     integrated_mitocarta = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_mitocarta.tsv"
-    if integrated_mitocarta.exists():
+    if integrated_final.exists():
+        integrated = integrated_final
+    elif integrated_mitocarta.exists():
         integrated = integrated_mitocarta
     elif integrated_multimodal.exists():
         integrated = integrated_multimodal
@@ -128,7 +138,7 @@ def main():
     if args.candidate_table:
         candidate_events = Path(args.candidate_table).expanduser().resolve()
     else:
-        candidate_events = sample_root / "gene_discovery" / f"{s}_ranked_SV_gene_events.tsv"
+        candidate_events = integrated
 
     candidate_source = candidate_events if candidate_events.exists() else integrated
 
