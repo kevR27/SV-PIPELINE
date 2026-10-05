@@ -36,6 +36,7 @@ def parse_args():
     p.add_argument("--longphase-breakpoint-tol", type=int, default=500)
     p.add_argument("--include-nonpass-tldr", action="store_true")
     p.add_argument("--independent-output", default=None)
+    p.add_argument("--annotation-only", action="store_true", help="Write only newly added annotation columns plus an internal row key.")
     p.add_argument("--output", required=True)
     return p.parse_args()
 
@@ -286,7 +287,9 @@ def main():
     tldr_by_chrom = chrom_index(tldr)
     lp_by_id, lp_by_bin = longphase_indexes(longphase, max(args.longphase_breakpoint_tol, 1))
 
+    base_columns = set(df.columns)
     out = df.copy()
+    out["_INTEGRATED_ROW_INDEX"] = range(len(out))
     for column, default in [
         ("STRAGLR_MATCH", "NO" if args.straglr else "NOT_AVAILABLE"),
         ("STRAGLR_LOCI", "."),
@@ -433,7 +436,15 @@ def main():
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(output, sep="\t", index=False)
+    if args.annotation_only:
+        annotation_columns = [
+            c for c in out.columns
+            if c not in base_columns and c != "_INTEGRATED_ROW_INDEX"
+        ]
+        output_df = out[["_INTEGRATED_ROW_INDEX"] + annotation_columns]
+    else:
+        output_df = out.drop(columns=["_INTEGRATED_ROW_INDEX"], errors="ignore")
+    output_df.to_csv(output, sep="\t", index=False)
 
     if args.independent_output:
         independent_rows = []
