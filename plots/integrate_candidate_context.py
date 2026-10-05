@@ -29,6 +29,7 @@ def parse_args():
     p.add_argument("--min-methylation-coverage", type=int, default=5)
     p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent",
                    help="modkit bedMethyl column 11 is percent; no value-based inference")
+    p.add_argument("--annotation-only", action="store_true", help="Write only newly added annotation columns plus an internal row key.")
     p.add_argument("--output", required=True)
     return p.parse_args()
 
@@ -225,7 +226,9 @@ def main():
     scale = methylation_scale(args.methylation_units) if methylation_available else 1.0
     tabix = open_tabix(methylation_path) if methylation_available else None
 
+    base_columns = set(df.columns)
     out = df.copy()
+    out["_INTEGRATED_ROW_INDEX"] = range(len(out))
     defaults = {
         "WHATSHAP_CONTEXT": "NOT_AVAILABLE" if not args.whatshap_vcf else "NO_NEARBY_PHASED_HET",
         "WHATSHAP_WINDOW_BP": args.whatshap_window,
@@ -319,7 +322,15 @@ def main():
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(output, sep="\t", index=False)
+    if args.annotation_only:
+        annotation_columns = [
+            c for c in out.columns
+            if c not in base_columns and c != "_INTEGRATED_ROW_INDEX"
+        ]
+        output_df = out[["_INTEGRATED_ROW_INDEX"] + annotation_columns]
+    else:
+        output_df = out.drop(columns=["_INTEGRATED_ROW_INDEX"], errors="ignore")
+    output_df.to_csv(output, sep="\t", index=False)
 
     unique = out.drop_duplicates(id_col)
     methyl_eval = int((unique["METHYLATION_CONTEXT"] == "EVALUATED").sum())
