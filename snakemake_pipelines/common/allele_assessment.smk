@@ -36,7 +36,8 @@ rule assess_sv_alleles:
         rare_af=config.get("allele_rare_af", 0.01),
         min_support=config.get("allele_min_support", 5),
         min_gq=config.get("allele_min_gq", 20),
-        min_dp=config.get("allele_min_dp", 5)
+        min_dp=config.get("allele_min_dp", 5),
+        compact_flag="--compact-output" if config.get("allele_compact_output", False) else ""
     conda:
         CONDAENV + "monarch.yaml"
     shell:
@@ -46,6 +47,7 @@ rule assess_sv_alleles:
             --phenotypes {input.phenotypes:q} {params.optional} \
             --rare-af {params.rare_af} --min-support {params.min_support} \
             --min-gq {params.min_gq} --min-dp {params.min_dp} \
+            {params.compact_flag} \
             --output {output.tsv:q} --hypotheses-output {output.hypotheses:q} \
             --manifest {output.manifest:q}
         """
