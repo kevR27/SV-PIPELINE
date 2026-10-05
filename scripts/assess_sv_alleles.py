@@ -472,6 +472,33 @@ def write_table(path, data, columns):
         writer.writerows(data)
 
 
+def compact_output_columns(columns):
+    """Keep interpretation fields while dropping bulky audit payloads after use."""
+    drop_exact = {
+        "ANNOTSV_UNRESOLVED_GENE_ROWS_JSON",
+        "VEP_ROWS_JSON",
+        "CALLER_EVIDENCE_JSON",
+    }
+    keep_info = {
+        "INFO_IDLIST",
+        "INFO_IDLIST_EXT",
+        "INFO_INTRASAMPLE_IDLIST",
+    }
+    return [
+        column
+        for column in columns
+        if column not in drop_exact
+        and (
+            not column.startswith("INFO_")
+            or column in keep_info
+        )
+    ]
+
+
+def compact_output_row(row, columns):
+    return {column: row.get(column, ".") for column in columns}
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--integrated", required=True)
@@ -488,6 +515,15 @@ def main():
     p.add_argument("--output", required=True)
     p.add_argument("--hypotheses-output", required=True)
     p.add_argument("--manifest", required=True)
+    p.add_argument(
+        "--compact-output",
+        action="store_true",
+        help=(
+            "After allele assessment, omit bulky caller/VEP/raw INFO payloads "
+            "that are no longer required. AnnotSV gene-row JSON is retained "
+            "for downstream inversion/breakpoint relationship classification."
+        ),
+    )
     args = p.parse_args()
     if not 0 <= args.rare_af <= 1 or min(args.min_support, args.min_gq, args.min_dp) < 0:
         p.error("Invalid research thresholds")
@@ -526,9 +562,31 @@ def main():
     args.evidence_index = evidence_index
     for record in data:
         args.gene_rows[record["GENES"]].append(record)
+    input_columns = (
+        list(data[0])
+        if data
+        else list(csv.DictReader(open(args.integrated), delimiter="\t").fieldnames or [])
+    )
+    output_base_columns = (
+        compact_output_columns(input_columns)
+        if args.compact_output
+        else input_columns
+    )
+    if args.compact_output:
+        print(
+            f"[INFO] compact_output dropped_columns="
+            f"{len(input_columns) - len(output_base_columns)} "
+            f"retained_base_columns={len(output_base_columns)}"
+        )
+
     all_hypotheses, enriched = [], []
     for row in data:
         gene = row["GENES"].upper()
+        base_row = (
+            compact_output_row(row, output_base_columns)
+            if args.compact_output
+            else row
+        )
         assessments = []
         for model in by_gene.get(gene, [{}]):
             ev = evidence_index.get((args.sample, row["SV_ID"], gene, model.get("disease_id", ".")),
@@ -537,16 +595,16 @@ def main():
             assessment["ALLELE_DISEASE_MOI"] = model.get("moi", "UNKNOWN")
             assessment["ALLELE_DISEASE_MECHANISM"] = model.get("mechanism", "UNKNOWN")
             assessments.append(assessment)
-            all_hypotheses.append({**row, **assessment})
+            all_hypotheses.append({**base_row, **assessment})
         # No evidence is combined across different diseases. Ties are deterministic.
         best = sorted(assessments, key=lambda r: (-r["ALLELE_RESEARCH_SCORE"], r["ALLELE_DISEASE_ID"], r["ALLELE_DISEASE_MOI"], r["ALLELE_DISEASE_MECHANISM"]))[0]
-        enriched.append({**row, **best, "ALLELE_DISEASE_HYPOTHESIS_COUNT": len(assessments)})
+        enriched.append({**base_row, **best, "ALLELE_DISEASE_HYPOTHESIS_COUNT": len(assessments)})
     scores = sorted({r["ALLELE_RESEARCH_SCORE"] for r in enriched}, reverse=True)
     ranks = {score: i + 1 for i, score in enumerate(scores)}
     for r in enriched:
         r["ALLELE_RESEARCH_RANK"] = ranks[r["ALLELE_RESEARCH_SCORE"]]
     all_hypotheses.sort(key=lambda r: (-r["ALLELE_RESEARCH_SCORE"], r["SV_ID"], r["GENES"], r["ALLELE_DISEASE_ID"]))
-    original_columns = list(data[0]) if data else list(csv.DictReader(open(args.integrated), delimiter="\t").fieldnames or [])
+    original_columns = output_base_columns
     # Stable schema also for an empty master callset.
     empty = assess({"SV_ID": ".", "GENES": "."}, {}, {}, {}, {}, {}, args)
     extra = list(empty) + ["ALLELE_DISEASE_MOI", "ALLELE_DISEASE_MECHANISM"]
