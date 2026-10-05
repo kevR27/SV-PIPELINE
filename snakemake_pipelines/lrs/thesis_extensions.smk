@@ -103,13 +103,13 @@ def gnomad_optional_input(wc):
     return [GNOMAD_SV_VCF] if GNOMAD_SV_VCF else []
 
 
-# gnomAD-SV annotation is defined once in Snakefile_LRS_postprocess.
-# This extension consumes rules.annotate_gnomad_sv_exact.output.tsv.
+# gnomAD-SV annotation is produced as a compact delta and merged once into
+# the authoritative final integrated table in Snakefile_LRS_postprocess.
 
 rule build_final_candidate_tables:
     input:
         genes=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
-        events=rules.annotate_gnomad_sv_exact.output.tsv,
+        events=rules.merge_integrated_annotations.output.tsv,
         script=SCRIPTS + "/build_candidate_tables.py",
         effects=SCRIPTS + "/sv_gene_effects.py"
     output:
