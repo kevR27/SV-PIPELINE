@@ -379,12 +379,48 @@ def main():
     )
     args = parser.parse_args()
 
-    df = pd.read_csv(
-        args.input,
-        sep="\t",
-        dtype=str,
-        low_memory=False,
-    )
+    if args.compact_output:
+        # Inspect only the header first so very large raw evidence columns are
+        # never loaded into memory. Keep AnnotSV transcript JSON temporarily
+        # because it is required to classify INV/BND/gene relationships.
+        header = pd.read_csv(args.input, sep="\t", nrows=0).columns.tolist()
+        keep_info_columns = {
+            "INFO_IDLIST",
+            "INFO_IDLIST_EXT",
+            "INFO_INTRASAMPLE_IDLIST",
+        }
+        skip_on_read = {
+            "ANNOTSV_UNRESOLVED_GENE_ROWS_JSON",
+            "VEP_ROWS_JSON",
+            "CALLER_EVIDENCE_JSON",
+        }
+        usecols = [
+            column
+            for column in header
+            if column not in skip_on_read
+            and (
+                not column.startswith("INFO_")
+                or column in keep_info_columns
+            )
+        ]
+        df = pd.read_csv(
+            args.input,
+            sep="\t",
+            dtype=str,
+            low_memory=False,
+            usecols=usecols,
+        )
+        print(
+            f"[INFO] compact_input loaded_columns={len(usecols)} "
+            f"skipped_columns={len(header) - len(usecols)}"
+        )
+    else:
+        df = pd.read_csv(
+            args.input,
+            sep="\t",
+            dtype=str,
+            low_memory=False,
+        )
 
     id_col = first_existing(df, ["SV_ID", "ID"])
     gene_col = first_existing(
