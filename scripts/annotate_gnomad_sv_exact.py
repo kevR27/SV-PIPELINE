@@ -143,10 +143,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--input", required=True)
     p.add_argument("--gnomad-vcf", default=None)
+    p.add_argument("--annotation-only", action="store_true", help="Write only gnomAD-SV annotation columns plus an internal row key.")
     p.add_argument("--output", required=True)
     args = p.parse_args()
 
     df = pd.read_csv(args.input, sep="\t", dtype=str, low_memory=False)
+    base_columns = set(df.columns)
+    df["_INTEGRATED_ROW_INDEX"] = range(len(df))
 
     added = [
         "GNOMAD_SV_EXACT_MATCH",
@@ -167,7 +170,11 @@ def main():
             "NO_GNOMAD_VCF_CONFIGURED;ANNOTSV_OVERLAP_IS_SEPARATE"
         )
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(args.output, sep="\t", index=False)
+        if args.annotation_only:
+            output_df = df[["_INTEGRATED_ROW_INDEX"] + added]
+        else:
+            output_df = df.drop(columns=["_INTEGRATED_ROW_INDEX"], errors="ignore")
+        output_df.to_csv(args.output, sep="\t", index=False)
         print(f"[OK] gnomad_resource=not_configured rows={len(df)} output={args.output}")
         return
 
@@ -259,7 +266,11 @@ def main():
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output, sep="\t", index=False)
+    if args.annotation_only:
+        output_df = df[["_INTEGRATED_ROW_INDEX"] + added]
+    else:
+        output_df = df.drop(columns=["_INTEGRATED_ROW_INDEX"], errors="ignore")
+    output_df.to_csv(output, sep="\t", index=False)
 
     exact = int(df.drop_duplicates("SV_ID")["GNOMAD_SV_EXACT_MATCH"].eq("YES").sum())
     print(f"[OK] exact_gnomad_matches={exact} svs={df['SV_ID'].nunique()} output={output}")
