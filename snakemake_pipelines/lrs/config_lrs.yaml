@@ -228,6 +228,10 @@ allele_rare_af: 0.01
 allele_min_support: 5
 allele_min_gq: 20
 allele_min_dp: 5
+# After the allele-level score has consumed caller/VEP audit payloads, keep a
+# compact LRS table for downstream interpretation. AnnotSV gene-row JSON is
+# retained until the inversion/breakpoint event-ranking step has used it.
+allele_compact_output: true
 methylation_units: "percent"  # modkit bedMethyl column 11
 
 
