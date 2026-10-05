@@ -88,14 +88,6 @@ def postprocess_required_files(sample):
     ]
 
 
-def extended_table(sample):
-    return (
-        PATH
-        + f"{sample}/gene_discovery/"
-        + f"{sample}_integrated_SV_gene_with_complementary_evidence.tsv"
-    )
-
-
 def independent_findings_table(sample):
     return (
         PATH
@@ -144,14 +136,6 @@ def methylation_path(sample):
         PATH + f"{sample}/methylation/{sample}.bedmethyl.gz",
         PATH + f"{sample}/methylation/{sample}.bed.gz",
     ])
-
-
-def multimodal_context_table(sample):
-    return (
-        PATH
-        + f"{sample}/gene_discovery/"
-        + f"{sample}_integrated_SV_gene_with_multimodal_context.tsv"
-    )
 
 
 def final_integrated_table(sample):
