@@ -368,6 +368,15 @@ def main():
         type=int,
         default=10_000,
     )
+    parser.add_argument(
+        "--compact-output",
+        action="store_true",
+        help=(
+            "After using detailed AnnotSV/caller audit fields for event interpretation, "
+            "drop bulky JSON and raw INFO columns that are not needed downstream. "
+            "Jasmine ID-list INFO fields are retained for LongPhase matching."
+        ),
+    )
     args = parser.parse_args()
 
     df = pd.read_csv(
@@ -664,6 +673,39 @@ def main():
             "_PANEL_RANK",
         ]
     )
+
+    if args.compact_output:
+        # These fields are useful for upstream audit/allele assessment, but are
+        # extremely large and are not required after SV-gene relationship and
+        # technical-review features have been derived above.
+        heavy_audit_columns = {
+            "ANNOTSV_GENE_ROWS_JSON",
+            "ANNOTSV_UNRESOLVED_GENE_ROWS_JSON",
+            "VEP_ROWS_JSON",
+            "CALLER_EVIDENCE_JSON",
+        }
+        # Keep only the Jasmine provenance IDs that the complementary-evidence
+        # matcher can use for exact LongPhase ID lookup. In particular, RNAMES
+        # and other raw INFO payloads can dominate table size.
+        keep_info_columns = {
+            "INFO_IDLIST",
+            "INFO_IDLIST_EXT",
+            "INFO_INTRASAMPLE_IDLIST",
+        }
+        drop_columns = [
+            column
+            for column in out.columns
+            if column in heavy_audit_columns
+            or (
+                column.startswith("INFO_")
+                and column not in keep_info_columns
+            )
+        ]
+        out = out.drop(columns=drop_columns, errors="ignore")
+        print(
+            f"[INFO] compact_output dropped_columns={len(drop_columns)} "
+            f"retained_columns={len(out.columns)}"
+        )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
