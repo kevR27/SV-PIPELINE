@@ -768,36 +768,37 @@ Methylation is treated as additional biological context, not as direct proof tha
 
 The post-processing workflow is run after the main LRS workflow is complete.
 
-It does not call new integrated discovery SVs. Instead, it keeps the Jasmine complete discovery callset as the backbone and adds other evidence around it.
+It does not call new integrated discovery SVs. The Jasmine complete discovery callset remains the backbone, while event ranking, Straglr/TLDR/LongPhase evidence, local WhatsHap/methylation context, MitoCarta context and the optional dedicated gnomAD-SV comparison are added around the same SV-gene rows.
 
-It creates:
+To avoid duplicating very large tables, the post-processing workflow now keeps **one persistent integrated SV-gene table**:
 
 ```text
-<sample>_integrated_SV_gene_with_complementary_evidence.tsv
+<sample>/gene_discovery/<sample>_integrated_SV_gene_analysis.final.tsv.gz
+```
+
+Intermediate ranked, complementary, multimodal and MitoCarta-enriched tables are written as Snakemake `temp()` files under `.postprocess_tmp/`, compressed as `.tsv.gz`, and removed automatically after their downstream consumers finish. The event-ranking step first uses the detailed AnnotSV/caller audit payloads, then removes bulky JSON and raw VCF `INFO_*` fields that are no longer required downstream. Jasmine ID-list fields needed for LongPhase matching are retained.
+
+Small non-duplicative outputs remain separate where they represent a different analysis product rather than another copy of the integrated table:
+
+```text
 <sample>_independent_complementary_findings.tsv
-<sample>_integrated_SV_gene_with_multimodal_context.tsv
+<sample>_mitocarta_annotation_summary.tsv
 <sample>_gene_multimodal_evidence_summary.tsv
 ```
 
-### Integrated complementary-evidence table
+The final integrated table therefore contains the compact row-level evidence required for interpretation: mechanism-aware SV-gene relationship, caller support/QC summaries, needLR population context, complementary Straglr/TLDR/LongPhase evidence, WhatsHap/methylation context, MitoCarta annotation, and dedicated gnomAD-SV exact-match fields when a gnomAD VCF is configured.
 
-Adds coordinate-aware Straglr, TLDR, and optional LongPhase evidence to the allele-assessed integrated discovery SVs. These analyses reuse the same sequencing dataset and are therefore complementary computational evidence, not independent experimental validation.
+### Why keep the dedicated gnomAD-SV comparison?
+
+AnnotSV already exposes gnomAD among its benign SV overlap resources. Those AnnotSV fields are retained and remain useful as database-overlap evidence. The dedicated gnomAD-SV step is not used as a replacement for AnnotSV and is not counted as an independent pathogenicity signal. Its purpose is narrower: against the explicitly configured gnomAD-SV VCF, it tests a conservative same-type exact site match and reports the matched site ID plus AF/AC/AN and filter status. This keeps AnnotSV's broader overlap evidence and the explicit gnomAD site-frequency evidence conceptually separate without storing a second full annotation table.
 
 ### Independent complementary findings
 
-Keeps relevant Straglr or TLDR findings that do not have a compatible Jasmine SV.
-
-This is useful because a repeat expansion or mobile-element insertion may still be relevant even if it is not represented by the main SV callers in exactly the same way.
-
-### Multimodal-context table
-
-Adds nearby WhatsHap-phased small variants and local methylation information.
-
-These data are kept separate from SV caller support.
+Relevant Straglr or TLDR findings without a compatible Jasmine SV remain in a small separate table because they are biologically distinct discoveries rather than annotations of an existing master SV.
 
 ### Gene-level multimodal summary
 
-Combines the different evidence layers at gene level while avoiding repeated counting of the same integrated discovery SV.
+The compact gene-level summary combines the different evidence layers while avoiding repeated counting of the same integrated discovery SV.
 
 ---
 
@@ -815,7 +816,7 @@ For each candidate, the final analysis can provide:
 | Caller agreement | `SUPP`, `SUPP_VEC`, caller count |
 | Gene effect | genes affected by the SV |
 | Known-disease context | panel membership, OMIM, GenCC |
-| Population evidence | needLR AF/status when available |
+| Population evidence | needLR AF/status, AnnotSV population-overlap evidence, and dedicated exact gnomAD-SV AF/AC/AN when configured |
 | HON context | generic Monarch/HPO anchor context; patient-specific HPO similarity is separate |
 | Candidate priority | discovery-oriented candidate class |
 | Repeat evidence | Straglr findings |
