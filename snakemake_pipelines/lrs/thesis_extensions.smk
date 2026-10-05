@@ -387,7 +387,7 @@ def cohort_recurrence_args():
             sample
             + "="
             + PATH
-            + f"{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv"
+            + f"{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz"
         )
         for sample in POSTPROCESS_SAMPLES
     )
@@ -396,7 +396,7 @@ def cohort_recurrence_args():
 rule cohort_sv_recurrence:
     input:
         tables=expand(
-            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
+            PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
             sample=POSTPROCESS_SAMPLES,
         ),
         script=SCRIPTS + "/build_cohort_sv_recurrence.py"
