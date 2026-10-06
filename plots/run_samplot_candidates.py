@@ -295,7 +295,7 @@ def main():
             command += [
                 "-A", args.gene_annotation,
                 "--annotation_filenames", "Genes",
-                "--annotation_fontsize", "7",
+                "--annotation_fontsize", "5",
             ]
         if not context_only and svtype in {"DEL", "DUP", "INV"}:
             command += ["-t", svtype]
