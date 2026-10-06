@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Patient-to-gene HPO semantic similarity using Resnik best-match average.
+"""Patient-to-gene HPO semantic similarity using directional Resnik coverage.
+
+The primary ranking score asks how well each patient HPO term is explained by
+the gene's reference HPO annotations. It is normalized to the patient query's
+self-similarity, so extra unrelated annotations on pleiotropic genes do not
+penalize the candidate. Symmetric BMA is retained only as a diagnostic field.
 
 This is gene/disease prioritization only. It does not classify an SV and it
 does not replace SV mechanism, population frequency, segregation or validation.
@@ -75,8 +80,9 @@ def main():
     fields = [
         "GENE", "HPO_SEMANTIC_STATUS", "PATIENT_HPO_COUNT",
         "GENE_REFERENCE_HPO_COUNT", "HPO_EXACT_MATCH_COUNT",
+        "HPO_QUERY_RESNIK_MEAN", "HPO_QUERY_RESNIK_NORMALIZED",
         "HPO_BMA_RESNIK", "HPO_BMA_RESNIK_NORMALIZED",
-        "BEST_MATCHED_PATIENT_HPO",
+        "HPO_SEMANTIC_METHOD", "BEST_MATCHED_PATIENT_HPO",
         "INTERPRETATION",
     ]
 
@@ -107,8 +113,13 @@ def main():
                     )
                 ),
                 "HPO_EXACT_MATCH_COUNT": ".",
+                "HPO_QUERY_RESNIK_MEAN": ".",
+                "HPO_QUERY_RESNIK_NORMALIZED": ".",
                 "HPO_BMA_RESNIK": ".",
                 "HPO_BMA_RESNIK_NORMALIZED": ".",
+                "HPO_SEMANTIC_METHOD": (
+                    "ASYMMETRIC_RESNIK_QUERY_COVERAGE_NORMALIZED_TO_QUERY_SELF"
+                ),
                 "BEST_MATCHED_PATIENT_HPO": ".",
                 "INTERPRETATION": "No patient-specific HPO terms supplied; no semantic similarity was inferred.",
             }
@@ -123,7 +134,9 @@ def main():
     all_gene_terms = engine["all_gene_terms"]
     pair_similarity = engine["pair_similarity"]
     bma = engine["bma"]
-    max_ic = engine["max_ic"]
+    normalized_bma = engine["normalized_bma"]
+    directional_best_match = engine["directional_best_match"]
+    normalized_query_coverage = engine["normalized_query_coverage"]
 
     gene_terms = defaultdict(set)
 
@@ -152,14 +165,29 @@ def main():
                 "PATIENT_HPO_COUNT": len(patient_terms),
                 "GENE_REFERENCE_HPO_COUNT": 0,
                 "HPO_EXACT_MATCH_COUNT": 0,
+                "HPO_QUERY_RESNIK_MEAN": 0.0,
+                "HPO_QUERY_RESNIK_NORMALIZED": 0.0,
                 "HPO_BMA_RESNIK": 0.0,
                 "HPO_BMA_RESNIK_NORMALIZED": 0.0,
+                "HPO_SEMANTIC_METHOD": (
+                    "ASYMMETRIC_RESNIK_QUERY_COVERAGE_NORMALIZED_TO_QUERY_SELF"
+                ),
                 "BEST_MATCHED_PATIENT_HPO": ".",
                 "INTERPRETATION": "No reference HPO annotations were available for this gene.",
             })
             continue
 
-        score = bma(patient_terms, ref_terms)
+        query_score = directional_best_match(
+            patient_terms,
+            ref_terms,
+        )
+        query_normalized = normalized_query_coverage(
+            patient_terms,
+            ref_terms,
+        )
+        bma_score = bma(patient_terms, ref_terms)
+        bma_normalized = normalized_bma(patient_terms, ref_terms)
+
         best = []
         for patient in patient_terms:
             best_score = max(pair_similarity(patient, ref) for ref in ref_terms)
@@ -175,20 +203,24 @@ def main():
             "PATIENT_HPO_COUNT": len(patient_terms),
             "GENE_REFERENCE_HPO_COUNT": len(ref_terms),
             "HPO_EXACT_MATCH_COUNT": len(set(patient_terms) & set(ref_terms)),
-            "HPO_BMA_RESNIK": round(score, 6),
-            "HPO_BMA_RESNIK_NORMALIZED": round(
-                min(1.0, score / max_ic) if max_ic else 0.0,
-                6,
+            "HPO_QUERY_RESNIK_MEAN": round(query_score, 6),
+            "HPO_QUERY_RESNIK_NORMALIZED": round(query_normalized, 6),
+            "HPO_BMA_RESNIK": round(bma_score, 6),
+            "HPO_BMA_RESNIK_NORMALIZED": round(bma_normalized, 6),
+            "HPO_SEMANTIC_METHOD": (
+                "ASYMMETRIC_RESNIK_QUERY_COVERAGE_NORMALIZED_TO_QUERY_SELF"
             ),
             "BEST_MATCHED_PATIENT_HPO": ";".join(best),
             "INTERPRETATION": (
-                "Phenotype-to-gene semantic similarity only; it does not establish "
-                "that a specific SV is causal or mechanistically compatible."
+                "Primary ranking uses patient-query-to-gene Resnik coverage "
+                "normalized to the patient query self-match. Symmetric BMA is "
+                "reported only for comparison. Semantic similarity does not "
+                "establish that a specific SV is causal or mechanistically compatible."
             ),
         })
 
     out = pd.DataFrame(rows, columns=fields).sort_values(
-        ["HPO_BMA_RESNIK_NORMALIZED", "GENE"],
+        ["HPO_QUERY_RESNIK_NORMALIZED", "GENE"],
         ascending=[False, True],
     )
     output = Path(args.output)
