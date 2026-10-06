@@ -20,7 +20,7 @@ def parse_args():
     p.add_argument("--root", required=True, help="Pipeline output root from config")
     p.add_argument("--sample", required=True)
     p.add_argument("--platform", choices=["lrs", "srs"], default="lrs")
-    p.add_argument("--candidate-table", default=None, help="Optional mechanism-aware *_ranked_SV_gene_events.tsv")
+    p.add_argument("--candidate-table", default=None, help="Optional mechanism-aware SV-gene table; current LRS workflow passes the final integrated .tsv.gz")
     p.add_argument("--top-genes", type=int, default=25, help="Number of top genes/candidate rows shown in thesis figures")
     p.add_argument("--out-dir", default=None, help="Default: <root>/<sample>/plots")
     p.add_argument("--methylation-region", default=None, help="Optional chr:start-end for methylation plot")
