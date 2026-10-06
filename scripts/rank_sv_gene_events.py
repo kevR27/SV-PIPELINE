@@ -757,6 +757,9 @@ def main():
     out["HON_SEMANTIC_SIMILARITY_NORMALIZED"] = [
         round(x, 6) for x in semantic_values
     ]
+    out["HON_SEMANTIC_METHOD"] = (
+        "ASYMMETRIC_RESNIK_QUERY_COVERAGE_NORMALIZED_TO_QUERY_SELF"
+    )
     out["GENE_DISEASE_EVIDENCE_RAW_SCORE"] = [
         round(float(x["raw_score"]), 3) for x in disease_rows
     ]
