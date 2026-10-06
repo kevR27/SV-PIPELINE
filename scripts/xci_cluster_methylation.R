@@ -95,7 +95,11 @@ mbr <- ModBamResult(
   samples = data.frame(
     sample = sample_id,
     group = 1
-  )
+  ),
+  # Dorado BAMs may contain both 5mC (MM code m) and 5hmC (MM code h).
+  # XCI clustering follows the SkewX method and uses CpG 5mC specifically.
+  # Setting this explicitly avoids ambiguity in multi-modification modBAMs.
+  mod_code = "m"
 )
 
 cluster_one <- function(row_index) {
