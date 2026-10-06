@@ -169,17 +169,19 @@ def main():
 
         # Reuse the shared event sort by substituting only the phenotype-aware
         # final gene tier/score into a temporary row view.
+        def final_sort_row(row):
+            values = row.to_dict()
+            values["GENE_RELEVANCE_TIER"] = row[
+                "FINAL_GENE_RELEVANCE_TIER"
+            ]
+            values["GENE_RELEVANCE_DISPLAY_SCORE"] = row[
+                "FINAL_GENE_RELEVANCE_DISPLAY_SCORE"
+            ]
+            return event_sort_tuple(pd.Series(values))
+
         order = sorted(
             range(len(out)),
-            key=lambda i: event_sort_tuple(
-                out.iloc[i].assign()
-                if False
-                else pd.Series({
-                    **out.iloc[i].to_dict(),
-                    "GENE_RELEVANCE_TIER": out.iloc[i]["FINAL_GENE_RELEVANCE_TIER"],
-                    "GENE_RELEVANCE_DISPLAY_SCORE": out.iloc[i]["FINAL_GENE_RELEVANCE_DISPLAY_SCORE"],
-                })
-            ),
+            key=lambda i: final_sort_row(out.iloc[i]),
         )
         out = out.iloc[order].reset_index(drop=True)
         out["FINAL_EVENT_RANK_WITHIN_PANEL_STATUS"] = (
