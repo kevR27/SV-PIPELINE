@@ -1,104 +1,362 @@
-# Score interpretation with existing pipeline outputs
+# Candidate-ranking interpretation
 
-The four optional allele TSV settings may remain `null`. This does not remove
-SVs, genes, database records, the original gene-discovery score or AnnotSV's
-recorded classification. They are inputs to a later, separate assessment stage.
-They do not automatically populate themselves from other outputs.
+This pipeline uses **research prioritization**, not a single pathogenicity score.
 
-| Output | Meaning | Effect of all four optional TSV inputs being absent |
-| --- | --- | --- |
-| `PHENOTYPE_SCORE` (0–13) | Human gene–HPO associations against configured optic-neuropathy anchors | Retained; this is gene-level relevance, not patient-specific symptom matching. |
-| `INTEGRATED_DISCOVERY_SCORE` (0–19) | Gene-level phenotype, curated gene–disease evidence and a small SV-count component | Retained. It does not use the four optional files. |
-| `ANNOTSV_RANKING_SCORE`, `ACMG_CNV_SCORE`, `ACMG_CNV_CLASS` | Recorded AnnotSV evidence/classification, with explicit DEL/DUP CNV scope | Retained as supplied by the current integration. No new clinical classification is calculated by the allele script. |
-| `ALLELE_RESEARCH_SCORE` (0–12) | Uncalibrated sum of six evidence domains | Limited by missing data. Unknown domains earn no points; low totals do not establish benignity. |
+The ranking is deliberately divided into evidence axes so that a small numerical
+difference in phenotype relevance cannot automatically outrank a much stronger
+or weaker structural mechanism.
 
-There is no single validated "overall pathogenic score" in this workflow.
-Neither a high gene-discovery score nor presence of a pathogenic database record
-establishes pathogenicity of a particular allele. Large SVs can affect several
-genes; an event classification is not a pathogenicity classification of every
-overlapping gene. The gene-ranking table labels its aggregate AnnotSV fields as
-`OVERLAPPING_SV_RECORDS_NOT_GENE_PATHOGENICITY`.
+## Current ranking model
 
-For a study without trios or patient-specific HPO terms, use the original gene
-ranking and the separate allele evidence/status columns for candidate review.
-Do not compare incomplete 0–12 totals with complete cases as if they were
-calibrated probabilities, and do not exclude a candidate for missing data.
-Disease-specific inheritance or mechanism compatibility remains unknown where
-the required relationship is not available. Existing genotype fields can still
-be reported without claiming segregation or de novo status.
+The current LRS ranking model is:
 
-With no optional inputs, population matches from needLR remain provisional;
-they do not earn confirmed allele-rarity points. Automatically predicted
-disruption, technical evidence, and gene-level dosage support can contribute
-when available. The fixed maximum of 12 is not rescaled to the available data.
-Generic optic-neuropathy anchors are never substituted for patient phenotypes.
+```text
+gene relevance tier
+    ↓
+SV-gene + inheritance/mechanism compatibility
+    ↓
+technical evidence
+    ↓
+population-frequency evidence
+    ↓
+constraint / cohort recurrence / continuous relevance tie-breaks
+```
 
-## Corrected reporting behavior
+Panel membership is **not** a score. Panel and non-panel genes/events receive
+separate within-group ranks.
 
-- Allele assessment accepts long VCF INFO/read-name and transcript JSON fields.
-  Its model identifier is now `sv-allele-evidence-v1.2`. This version also checks
-  the correct BND endpoint for a gene and reports functional context separately.
-- Missing OMIM tokens (`NA`, `N/A`, `None`, `NaN`, `null`, `.` and empty cells,
-  case-insensitive) cannot provide positive disease-evidence points.
-- `Animal Model Only` GenCC records remain visible but receive no human
-  gene–disease evidence points. The gene model is now
-  `phenotype13_geneDisease4_sv2_v2.1`.
-- Full-row AnnotSV classification/score fields remain available in gene
-  summaries as overlapping-event information. Gene-specific OMIM/GenCC data
-  still require gene-specific rows.
-- An expected missing `SVLEN` on BND/TRA is informational; it alone no longer
-  zeros otherwise available technical-support points. Other QC flags retain
-  their review behavior.
-- Absent complementary source files produce `NOT_AVAILABLE`, while supplied
-  files with no reported match retain `NO`. Gene summaries count unavailable
-  source records separately.
-- Evidence-matrix ordering uses the integrated gene-discovery score, with the
-  phenotype score as an explicit legacy fallback. Panel status and optional
-  context no longer silently create another numerical ranking. The exported
-  matrix records `PLOT_ORDER_BASIS` and `PLOT_ORDER_SCORE`.
-- The matrix displays Manta support for the SRS workflow as well as LRS callers.
-- The matrix deduplicates by SV ID plus gene, retaining different events that
-  share a start coordinate/type/gene. Optional match statuses that are unknown
-  or unavailable are shown separately from a reported non-match.
-- Context integration and gene-summary generation accept an empty callset.
-  This does not guarantee that every optional plotting script can draw an
-  empty dataset.
+The main final candidate outputs are:
 
-## Applying corrections to existing results
+```text
+<sample>_gene_candidates.ranked.tsv
+<sample>_sv_gene_candidates.ranked.tsv
+```
 
-The [saved-output rebuild command](SAVED_OUTPUT_REANALYSIS.md) runs these steps
-in order and writes to a new folder. It accepts the old raw tool outputs and
-does not require the four clinical TSVs.
+The authoritative integrated evidence table remains:
 
-Updating repository code does not rewrite TSVs already produced on a server.
-Regenerate the gene ranking, integrated table, allele assessment, downstream
-context/summary tables, and selected plots from the original tool outputs in
-that dependency order. Keep the original outputs and a record of the code and
-database versions used. Old integrated tables lacking caller/transcript JSON
-cannot recover all current evidence by running only the allele script.
+```text
+<sample>_integrated_SV_gene_analysis.final.tsv.gz
+```
 
-Some regenerated scores can change because erroneous/duplicated/missing
-evidence is handled correctly. That is separate from setting optional inputs
-to `null`. In particular, deduplicating gene–HPO associations can reduce the
-phenotype component of old rankings.
+## 1. Phenotype and gene relevance
 
-The AnnotSV resource-availability audit is a separate change. It does not
-populate absent inversion evidence. An unmatched SV or missing database cell
-must not be interpreted as an assessed negative result.
+The old anchor-count score (`min(10, anchor_count * 5)`) is no longer the
+primary gene-relevance model.
 
-## Study questions and scope
+Generic hereditary optic-neuropathy relevance is calculated with
+**Resnik best-match-average semantic similarity** between the gene's HPO
+annotations and the core HON HPO reference. Information content is calculated
+against the broader human gene-HPO background, not only the optic-neuropathy
+panel.
 
-Genome-wide SV discovery, panel/nonpanel candidate investigation, gene-level
-human phenotype relevance, and supplementary repeat/MEI/phasing/methylation
-context are supported analyses. Their outputs are candidate evidence.
+Important fields include:
 
-Matched LRS–SRS concordance requires an explicit comparison of matched samples
-and compatible regions/representations. The existing comparison plot consumes
-an externally generated Truvari summary; it does not perform that comparison.
-Gene recurrence and equivalent-SV recurrence across patients likewise require
-cohort-level aggregation; within-sample caller merging does not supply these.
+```text
+HON_SEMANTIC_SIMILARITY_NORMALIZED
+GENE_RELEVANCE_TIER
+GENE_RELEVANCE_DISPLAY_SCORE
+GENE_RELEVANCE_PHENOTYPE_SCOPE
+```
 
-Diagnoses, improved diagnostic yield, new gene–disease relationships, functional
-regulatory effects, and causal methylation changes require study-specific
-validation beyond these scores. Lack of trios does not prevent a discovery
-study; it limits the conclusions available from inheritance evidence.
+The display score is balanced between phenotype and curated disease evidence
+and is retained for interpretation/tie-breaking. The primary ordering uses the
+broad relevance tier:
+
+```text
+HIGH
+MODERATE
+SUPPORTING
+LIMITED
+```
+
+This prevents a 0.5-point difference from dominating mechanism or technical
+evidence.
+
+### Patient-specific HPO
+
+If a patient HPO file is configured, the final thesis-analysis layer uses the
+patient's Resnik BMA result:
+
+```text
+HPO_BMA_RESNIK_NORMALIZED
+FINAL_GENE_RELEVANCE_TIER
+FINAL_GENE_RELEVANCE_DISPLAY_SCORE
+FINAL_PHENOTYPE_RANKING_SCOPE
+```
+
+If patient-specific HPO is unavailable, the pipeline explicitly reports:
+
+```text
+GENERIC_HON_FALLBACK_NO_PATIENT_HPO
+```
+
+It does not substitute unrecorded syndromic features such as hearing loss,
+ataxia, Leigh syndrome or lactic acidosis as though they were present in the
+patient.
+
+## 2. Curated gene-disease evidence
+
+GenCC and OMIM evidence remain separate from phenotype similarity.
+
+GenCC strength is first recorded as curated evidence, then reduced when the gene
+has little HON phenotype similarity. A positive GenCC record plus contradictory
+evidence (for example a Refuted/Disputed record) receives a conflict penalty.
+
+Important fields include:
+
+```text
+GENE_DISEASE_EVIDENCE_RAW_SCORE
+GENE_DISEASE_EVIDENCE_SCORE
+GENE_DISEASE_EVIDENCE_CONFLICT
+GENE_DISEASE_HON_CONTEXT_FACTOR
+GENE_DISEASE_CONTEXT_SCOPE
+```
+
+The current disease-context adjustment is a **gene-level HON semantic proxy**.
+It is not yet a disease-ID-specific GenCC-to-HPO join for every record, because
+the available integrated rows do not consistently provide a stable disease
+identifier that can always be joined to Monarch. The scope field makes this
+limitation explicit.
+
+## 3. Dominant/recessive and SV-mechanism compatibility
+
+Inheritance is evaluated at the **SV-gene event** level.
+
+The pipeline uses, when available:
+
+```text
+GENCC_MOI
+OMIM_INHERITANCE
+CLINGEN_HI
+CLINGEN_TS
+ALLELE_GENOTYPE
+SV_GENE_RELATIONSHIP
+SVTYPE
+```
+
+The normalized fields include:
+
+```text
+GENE_MOI_SET
+GENE_INHERITANCE_CLASS
+SV_EFFECT_CLASS
+INHERITANCE_MECHANISM_CLASS
+INHERITANCE_MECHANISM_DETAIL
+```
+
+Examples of the intended interpretation:
+
+- A DEL or direct disruptive breakpoint in a gene with **ClinGen HI=3** receives
+  strong loss-of-function/dosage support.
+- HI=2 is treated as emerging/supportive, not equivalent to HI=3.
+- An AD disease model can support a direct loss/disruption candidate, but AD
+  inheritance by itself does **not** prove that every possible SV mechanism is
+  pathogenic.
+- A DUP is promoted by established/emerging **triplosensitivity (TS)** evidence,
+  not simply because the gene has a dominant disease.
+- A direct heterozygous SV in an **AR gene** remains
+  `DIRECT_EFFECT_RECESSIVE_SECOND_ALLELE_REQUIRED` unless a biallelic state or
+  suitable second allele is demonstrated.
+- X-linked events remain a sex/ploidy-specific review category.
+- mtDNA genes remain a specialized review class because heteroplasmy and
+  mtDNA-specific interpretation are not equivalent to nuclear AD/AR models.
+
+ClinGen score 30 is treated as an AR association, not as evidence of
+haploinsufficiency. Score 40 is retained as dosage-sensitivity-unlikely context.
+
+## 4. Recessive SNV + SV pairing
+
+The existing phased small-variant branch is used to look for a possible second
+allele in AR genes.
+
+`build_snv_sv_candidates.py` reports:
+
+```text
+AR_TRANS_SNV_SV_CANDIDATE
+AR_CIS_NOT_BIALLELIC_BY_PHASE
+AR_SECOND_ALLELE_CANDIDATE_PHASE_UNRESOLVED
+NOT_AR_PAIRING_MODEL
+```
+
+Only a same-gene small variant phased in the same phase set and on the opposite
+haplotype can be promoted to:
+
+```text
+AR_TRANS_SECOND_ALLELE_SUPPORTED
+```
+
+This supports a biallelic candidate model. It does not establish that either
+allele is pathogenic and does not replace segregation/orthogonal validation.
+
+## 5. Technical evidence
+
+Technical evidence is no longer represented only by caller count.
+
+The shared ranker uses:
+
+```text
+CALLER_COUNT
+CALLER_READ_SUPPORT
+CALLER_EVIDENCE_FLAGS
+CALLER_EVIDENCE_MATCH
+```
+
+and reports:
+
+```text
+EVENT_TECHNICAL_TIER_V2
+EVENT_MAX_CALLER_READ_SUPPORT
+EVENT_TECHNICAL_REVIEW
+```
+
+The tiers are:
+
+```text
+STRONG
+MODERATE
+SUPPORTING
+REVIEW
+```
+
+No caller-specific pathogenic weight is currently assigned by SV type. Such
+weights would require benchmarking rather than being chosen arbitrarily.
+
+## 6. Population frequency
+
+needLR and exact gnomAD-SV remain distinct sources, but ranking uses the
+**maximum explicit AF** across them. Therefore a common exact gnomAD-SV match
+cannot be hidden by a lower/absent needLR value.
+
+Default thresholds:
+
+```text
+ranking_rare_af: 0.001
+ranking_max_af: 0.01
+```
+
+The main fields are:
+
+```text
+EVENT_POPULATION_TIER_V2
+EVENT_MAX_EXPLICIT_AF
+EVENT_MIN_EXPLICIT_AF
+EVENT_POPULATION_AF_SOURCES
+EVENT_POPULATION_AF_CONFLICT
+```
+
+Interpretation:
+
+```text
+VERY_RARE_MAX_AF_LE_0.001
+LOW_FREQUENCY_MAX_AF_0.001_TO_0.01
+UNKNOWN
+TOO_COMMON_MAX_AF_GT_0.01
+```
+
+No match is not treated as AF=0. Missing population evidence is neutral.
+
+AnnotSV benign-region AFmax is retained as overlap context but is not mixed into
+the exact/provisional event AF because an overlapping benign SV is not
+necessarily the same allele.
+
+## 7. Constraint
+
+LOEUF is used only as a modest late tie-break. Constraint is not a substitute
+for disease mechanism.
+
+Fields may include:
+
+```text
+GNOMAD_PLI
+GNOMAD_LOEUF
+GNOMAD_LOEUF_BIN
+```
+
+ClinGen HI/TS has stronger mechanistic meaning for dosage events and is handled
+in the inheritance/mechanism layer.
+
+## 8. Cohort recurrence
+
+Cohort recurrence is an internal study signal, not population frequency.
+
+```text
+COHORT_SV_ID
+COHORT_SAMPLE_COUNT
+COHORT_RECURRENCE
+```
+
+An event found in more study samples is placed slightly lower only as a **late
+cautionary tie-break**, after the major evidence axes. It is never removed,
+because recurrence can represent a technical artifact, a common polymorphism,
+a founder allele or a genuinely recurrent disease mechanism.
+
+## 9. Panel versus non-panel ranking
+
+Panel membership does not add points.
+
+The pipeline creates explicit within-group ranks such as:
+
+```text
+GENE_RANK_WITHIN_PANEL_STATUS
+EVENT_RANK_WITHIN_PANEL_STATUS
+FINAL_GENE_RANK_WITHIN_PANEL_STATUS
+FINAL_EVENT_RANK_WITHIN_PANEL_STATUS
+MITO_RANK_WITHIN_ENCODING_PANEL_STATUS
+```
+
+Thesis ranking plots are written separately for panel and non-panel genes.
+
+## 10. Mitochondrial ranking
+
+Nuclear-encoded mitochondrial genes and mtDNA-encoded genes are not forced into
+one common ranking.
+
+Nuclear genes use the shared inheritance/mechanism, technical and population
+logic. MitoCarta membership covers the broader mitochondrial proteome and is
+not restricted to OXPHOS.
+
+mtDNA genes are reported separately, including:
+
+```text
+MTDNA_PROTEIN_CODING
+MTDNA_RRNA
+MTDNA_TRNA
+```
+
+Their functional classes include OXPHOS complexes and mitochondrial translation
+where applicable. mtDNA candidates still require mtDNA-specific interpretation,
+including heteroplasmy, which is outside a generic nuclear SV rank.
+
+## 11. Old fields retained for compatibility
+
+Some older fields such as `PHENOTYPE_SCORE`,
+`INTEGRATED_DISCOVERY_SCORE` and `ALLELE_RESEARCH_SCORE` remain in the
+tables for provenance/backward compatibility.
+
+They are **not** the primary final ordering model.
+
+The current event ranking identifier is:
+
+```text
+sharedTieredRanking__geneTier_mechanismInheritance_technical_population_constraint__v5
+```
+
+The final patient-aware ranking may further incorporate patient HPO,
+phased recessive pairing and cohort recurrence.
+
+## 12. Interpretation limits
+
+No field in these tables is a validated probability of pathogenicity.
+
+The ranking does not replace:
+
+- ACMG/AMP/ClinGen variant interpretation;
+- segregation;
+- trio analysis;
+- breakpoint validation;
+- functional experiments;
+- mtDNA heteroplasmy analysis;
+- clinical correlation.
+
+The purpose is to order candidates transparently while preserving the reason a
+candidate moved up or down.
