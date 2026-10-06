@@ -143,7 +143,16 @@ def main():
     candidate_source = candidate_events if candidate_events.exists() else integrated
 
     needlr = sample_root / "sv" / "needlr" / f"{s}_needLR_RESULTS.tsv"
-    ranked = sample_root / "gene_discovery" / f"{s}_ranked_candidates.tsv"
+    ranked_legacy = (
+        sample_root / "gene_discovery" / f"{s}_ranked_candidates.tsv"
+    )
+    ranked_final = (
+        sample_root
+        / "gene_discovery"
+        / "final"
+        / f"{s}_gene_candidates.ranked.tsv"
+    )
+    ranked = ranked_final if ranked_final.exists() else ranked_legacy
     mito_ranking = (
         sample_root
         / "gene_discovery"
@@ -234,11 +243,11 @@ def main():
             (
                 [
                     py, str(HERE / "plot_candidate_evidence_matrix.py"),
-                    "--input", str(integrated),
+                    "--input", str(candidate_source),
                     "--out-prefix", str(folders["candidates"] / f"{s}_candidate_evidence"),
                     "--top-n", str(args.top_genes),
                 ],
-                [integrated],
+                [candidate_source],
             ),
             (
                 [
@@ -261,10 +270,10 @@ def main():
             (
                 [
                     py, str(HERE / "plot_panel_nonpanel_discovery.py"),
-                    "--input", str(integrated),
+                    "--input", str(candidate_source),
                     "--out-prefix", str(folders["candidates"] / f"{s}_panel_nonpanel_discovery"),
                 ],
-                [integrated],
+                [candidate_source],
             ),
             (
                 [
