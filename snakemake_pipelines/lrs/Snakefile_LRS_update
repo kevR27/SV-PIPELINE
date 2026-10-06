@@ -304,7 +304,9 @@ rule whatsHap_phasing:
         ref=REF
     output:
         phased=PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
-        haplotag=PATH + "{sample}/phasing/{sample}.phased.bam"
+        phased_index=PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi",
+        haplotag=PATH + "{sample}/phasing/{sample}.phased.bam",
+        haplotag_index=PATH + "{sample}/phasing/{sample}.phased.bam.bai"
     conda:
         CONDAENV + "whatshap.yaml"
     shell:
@@ -1261,6 +1263,7 @@ rule longphase_phasing:
         ref=REF
     output:
         vcf=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        vcf_index=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz.tbi",
         sv=PATH + "{sample}/phasing_longphase/{sample}.longphase_SV.vcf.gz",
         sv_index=PATH + "{sample}/phasing_longphase/{sample}.longphase_SV.vcf.gz.tbi"
     params:
