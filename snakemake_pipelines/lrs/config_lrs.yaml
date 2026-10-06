@@ -112,6 +112,12 @@ needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/needlr/re
 # set this path. If null, the final tables explicitly report
 # RESOURCE_NOT_CONFIGURED rather than borrowing AnnotSV's mixed benign AF.
 gnomad_sv_vcf: null
+
+# Research-prioritization population thresholds. The ranker uses the maximum
+# explicit AF across exact gnomAD-SV and provisional needLR so one common
+# population source cannot be hidden by a lower value in another source.
+ranking_rare_af: 0.001
+ranking_max_af: 0.01
 # gnomad_sv_vcf: "/DATA/casadei7/tools/SV-PIPELINE-main/reference/gnomad/gnomad.v4.1.sv.sites.vcf.gz"
 
 # ============================================================
