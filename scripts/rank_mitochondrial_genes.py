@@ -195,6 +195,21 @@ def priority_tier(mechanism: int, disease: int) -> str:
     return "TIER_5_UNRESOLVED_CONTEXT"
 
 
+def read_gene_set(path: str | None) -> set[str]:
+    if not path:
+        return set()
+    genes = set()
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            gene = line.split("\t", 1)[0].split(",", 1)[0].strip().upper()
+            if gene and gene not in MISSING:
+                genes.add(gene)
+    return genes
+
+
 def read_gene_bed(path: str) -> pd.DataFrame:
     bed = pd.read_csv(
         path,
@@ -265,7 +280,11 @@ def classify_mt_overlap(event: pd.Series, gene_start: int, gene_end: int) -> str
     return "GENE_RELATIONSHIP_UNRESOLVED"
 
 
-def build_mtdna_overlap_rows(df: pd.DataFrame, gene_bed: pd.DataFrame) -> pd.DataFrame:
+def build_mtdna_overlap_rows(
+    df: pd.DataFrame,
+    gene_bed: pd.DataFrame,
+    panel_genes: set[str],
+) -> pd.DataFrame:
     id_col = first_existing(df, ["SV_ID", "ID"])
     chrom_col = first_existing(df, ["CHROM", "chrom"])
     if id_col is None or chrom_col is None:
@@ -343,9 +362,10 @@ def build_mtdna_overlap_rows(df: pd.DataFrame, gene_bed: pd.DataFrame) -> pd.Dat
             row["MITOCARTA_MITOPATHWAYS"] = "."
             row["MITOCARTA_TOP_LEVEL_PATHWAYS"] = "."
             row["MITOCARTA_SUBCOMPARTMENT"] = "."
-            row["MITO_ON_CONTEXT"] = "NO"
+            is_panel = gene_rec["GENE"] in panel_genes
+            row["MITO_ON_CONTEXT"] = "YES" if is_panel else "NO"
             row["MITO_ON_ANCHOR_HPO_COUNT"] = "0"
-            row["PANEL_STATUS"] = "."
+            row["PANEL_STATUS"] = "PANEL_GENE" if is_panel else "NON_PANEL"
             row["EVENT_GENE_RELEVANCE_SCORE"] = "0"
             rows.append(row)
 
@@ -356,6 +376,11 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--input", required=True, help="Final integrated SV-gene table")
     p.add_argument("--gene-bed", required=True, help="BED4+ gene annotation including chrM")
+    p.add_argument(
+        "--panel",
+        default=None,
+        help="Optional optic-neuropathy candidate gene list; used for context, never as a discovery filter.",
+    )
     p.add_argument("--output", required=True)
     args = p.parse_args()
 
@@ -392,7 +417,8 @@ def main():
         mt_existing["_MTDNA_FUNCTION"] = mt_existing["_GENE"].map(mt_gene_function)
 
     bed = read_gene_bed(args.gene_bed)
-    mt_overlap = build_mtdna_overlap_rows(work, bed)
+    panel_genes = read_gene_set(args.panel)
+    mt_overlap = build_mtdna_overlap_rows(work, bed, panel_genes)
     if not mt_overlap.empty:
         mt_overlap["_GENE"] = mt_overlap["GENE"].astype(str).str.upper().str.strip()
         mt_overlap["_ENCODING_GENOME"] = "MTDNA"
@@ -463,15 +489,26 @@ def main():
             if item.strip().upper() not in MISSING
         })
 
+        priority = priority_tier(
+            int(best["_MECHANISM_RANK"]),
+            int(best["_DISEASE_CONTEXT_RANK"]),
+        )
+        tier_order = {
+            "TIER_1_DIRECT_WITH_ON_DISEASE_CONTEXT": 1,
+            "TIER_2_DIRECT_MITOCHONDRIAL_GENE": 2,
+            "TIER_2_PROXIMAL_WITH_ON_DISEASE_CONTEXT": 2,
+            "TIER_3_PROXIMAL_MITOCHONDRIAL_CONTEXT": 3,
+            "TIER_4_INTERVAL_CONTEXT_ONLY": 4,
+            "TIER_5_UNRESOLVED_CONTEXT": 5,
+        }.get(priority, 5)
+
         row = {
             "GENE": gene,
             "ENCODING_GENOME": encoding,
             "GENE_CLASS": str(best.get("_GENE_CLASS", ".")),
             "MTDNA_FUNCTION": str(best.get("_MTDNA_FUNCTION", ".")),
-            "MITO_PRIORITY_TIER": priority_tier(
-                int(best["_MECHANISM_RANK"]),
-                int(best["_DISEASE_CONTEXT_RANK"]),
-            ),
+            "MITO_PRIORITY_TIER": priority,
+            "_PRIORITY_TIER_ORDER": tier_order,
             "UNIQUE_SVS": int(group[id_col].nunique()),
             "DIRECT_SVS": int(group.loc[direct, id_col].nunique()),
             "PROXIMAL_SVS": int(group.loc[proximal, id_col].nunique()),
@@ -506,11 +543,12 @@ def main():
     out = pd.DataFrame(rows)
     out = out.sort_values(
         [
-            "ENCODING_GENOME", "_MECHANISM_RANK", "_DISEASE_CONTEXT_RANK",
-            "MAX_GENE_RELEVANCE", "_TECHNICAL_CLEAN", "_TECHNICAL_RANK",
+            "ENCODING_GENOME", "_PRIORITY_TIER_ORDER",
+            "_DISEASE_CONTEXT_RANK", "MAX_GENE_RELEVANCE",
+            "_MECHANISM_RANK", "_TECHNICAL_CLEAN", "_TECHNICAL_RANK",
             "_POPULATION_RANK", "UNIQUE_SVS", "GENE",
         ],
-        ascending=[True, False, False, False, False, False, False, False, True],
+        ascending=[True, True, False, False, False, False, False, False, False, True],
     )
     out["MITO_RANK_WITHIN_ENCODING"] = out.groupby("ENCODING_GENOME").cumcount() + 1
     out["MITO_RANKING_MODEL"] = (
@@ -526,7 +564,8 @@ def main():
     )
 
     out = out.drop(columns=[
-        "_MECHANISM_RANK", "_DISEASE_CONTEXT_RANK", "_TECHNICAL_CLEAN",
+        "_PRIORITY_TIER_ORDER", "_MECHANISM_RANK",
+        "_DISEASE_CONTEXT_RANK", "_TECHNICAL_CLEAN",
         "_TECHNICAL_RANK", "_POPULATION_RANK",
     ])
     ordered = [
