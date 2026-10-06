@@ -18,9 +18,9 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_caller_concordance.py`: caller-aware UpSet-style plot for Jasmine or SURVIVOR summaries.
 - `plot_sv_landscape.py`: SV type, size, chromosome distribution and caller-support landscape.
 - `plot_needlr_population.py`: overall and ancestry-specific needLR population-frequency plots.
-- `plot_candidate_genes.py`: gene-prioritization plot from `*_ranked_candidates.tsv`.
+- `plot_candidate_genes.py`: final gene-prioritization figures written separately for panel and non-panel genes; inheritance class and best SV mechanism are shown explicitly when available.
 - `plot_gene_hpo_heatmap.py`: human gene-HPO association heatmap from the offline Monarch branch.
-- `plot_candidate_evidence_matrix.py`: integrated SV/gene evidence matrix from the compact final SV-gene table.
+- `plot_candidate_evidence_matrix.py`: integrated SV/gene evidence matrix from the compact final SV-gene table, selected by final panel-specific rank and displaying AD/AR/mechanism evidence.
 - `plot_panel_nonpanel_discovery.py`: explicit panel versus non-panel SV-gene categories, separating HPO and curated disease evidence.
 - `plot_sv_gene_associations.py`: quantitative relationship between technical SV support, phenotype relevance, gene-disease evidence and each explicit SV-gene pair.
 - `plot_sv_gene_network.py`: bipartite map showing which master SV overlaps which gene, including multi-gene SVs and genes affected by multiple prioritized SVs.
