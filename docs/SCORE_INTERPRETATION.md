@@ -44,14 +44,23 @@ The old anchor-count score (`min(10, anchor_count * 5)`) is no longer the
 primary gene-relevance model.
 
 Generic hereditary optic-neuropathy relevance is calculated with
-**Resnik best-match-average semantic similarity** between the gene's HPO
-annotations and the core HON HPO reference. Information content is calculated
-against the broader human gene-HPO background, not only the optic-neuropathy
-panel.
+**Resnik best-match-average semantic similarity** against the broader human
+gene-HPO background. The reference is now split into two roles:
+
+- **core HON ocular terms**, which remain the primary phenotype signal;
+- **mitochondrial/syndromic context terms** such as hearing impairment, ataxia,
+  lactic acidosis, external ophthalmoplegia, ptosis and exercise intolerance.
+
+The syndromic component is deliberately capped: generic context-only similarity
+cannot by itself reach the MODERATE/HIGH phenotype tiers. This prevents broad
+mitochondrial features from outranking true optic-neuropathy similarity while
+still allowing them to support discovery.
 
 Important fields include:
 
 ```text
+HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED
+HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED
 HON_SEMANTIC_SIMILARITY_NORMALIZED
 GENE_RELEVANCE_TIER
 GENE_RELEVANCE_DISPLAY_SCORE
@@ -151,7 +160,14 @@ Examples of the intended interpretation:
 - HI=2 is treated as emerging/supportive, not equivalent to HI=3.
 - An AD disease model can support a direct loss/disruption candidate, but AD
   inheritance by itself does **not** prove that every possible SV mechanism is
-  pathogenic.
+  pathogenic. A heterozygous direct LoF/disruptive SV is treated as the clearest
+  generic AD-compatible configuration. Unknown genotype is retained as an
+  unresolved AD-compatible review state; a homozygous-alt SV in an AD gene is
+  flagged for dedicated review rather than automatically promoted.
+- Genes with both AD and AR disease models are assigned a
+  `MIXED_AD_AR_DISEASE_MODEL_REVIEW` state unless disease-specific evidence
+  resolves which model applies. The pipeline does not simply choose the more
+  favorable inheritance mode.
 - A DUP is promoted by established/emerging **triplosensitivity (TS)** evidence,
   not simply because the gene has a dominant disease.
 - A direct heterozygous SV in an **AR gene** remains
@@ -344,9 +360,37 @@ sharedTieredRanking__geneTier_mechanismInheritance_technical_population_constrai
 The final patient-aware ranking may further incorporate patient HPO,
 phased recessive pairing and cohort recurrence.
 
-## 12. Interpretation limits
+## 13. Interpretation limits
 
 No field in these tables is a validated probability of pathogenicity.
+
+## 12. Ranking benchmark / sensitivity check
+
+The repository includes:
+
+```text
+scripts/benchmark_candidate_ranking.py
+```
+
+It accepts a user-defined positive-control TSV containing `GENE` and,
+optionally, `SV_ID`. It reports global and within-panel rank recovery,
+top-k recall and rank percentile. This is intended for published/known positive
+controls or deliberately planted test events; it does **not** fit weights.
+
+Example:
+
+```bash
+python scripts/benchmark_candidate_ranking.py \
+  --ranking SAMPLE_sv_gene_candidates.ranked.tsv \
+  --truth known_positive_controls.tsv \
+  --detail-output ranking_benchmark.detail.tsv \
+  --summary-output ranking_benchmark.summary.tsv
+```
+
+This supports sensitivity analysis without training a model on the small thesis
+cohort.
+
+## 13. Interpretation limits
 
 The ranking does not replace:
 
