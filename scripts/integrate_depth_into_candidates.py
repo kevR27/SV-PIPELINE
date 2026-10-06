@@ -96,8 +96,11 @@ def main():
             "PATIENT_HPO_COUNT",
             "GENE_REFERENCE_HPO_COUNT",
             "HPO_EXACT_MATCH_COUNT",
+            "HPO_QUERY_RESNIK_MEAN",
+            "HPO_QUERY_RESNIK_NORMALIZED",
             "HPO_BMA_RESNIK",
             "HPO_BMA_RESNIK_NORMALIZED",
+            "HPO_SEMANTIC_METHOD",
             "BEST_MATCHED_PATIENT_HPO",
         ]
         hpo_cols = [col for col in hpo_cols if col in hpo.columns]
@@ -111,7 +114,7 @@ def main():
     if not out.empty:
         patient_similarity = pd.to_numeric(
             out.get(
-                "HPO_BMA_RESNIK_NORMALIZED",
+                "HPO_QUERY_RESNIK_NORMALIZED",
                 pd.Series(index=out.index, dtype=float),
             ),
             errors="coerce",
@@ -146,7 +149,9 @@ def main():
                 )
                 final_tiers.append(rel["tier"])
                 final_scores.append(rel["display_score"])
-                final_scopes.append("PATIENT_SPECIFIC_HPO_RESNIK_BMA")
+                final_scopes.append(
+                    "PATIENT_SPECIFIC_ASYMMETRIC_RESNIK_QUERY_COVERAGE"
+                )
             else:
                 final_tiers.append(
                     str(out.loc[idx].get("GENE_RELEVANCE_TIER", "LIMITED"))
