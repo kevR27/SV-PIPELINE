@@ -216,7 +216,7 @@ def main():
         ).fillna(0)
         gene_patient = pd.to_numeric(
             genes.get(
-                "HPO_BMA_RESNIK_NORMALIZED",
+                "HPO_QUERY_RESNIK_NORMALIZED",
                 pd.Series(index=genes.index, dtype=float),
             ),
             errors="coerce",
@@ -237,7 +237,9 @@ def main():
                 )
                 final_tiers.append(rel["tier"])
                 final_scores.append(rel["display_score"])
-                final_scopes.append("PATIENT_SPECIFIC_HPO_RESNIK_BMA")
+                final_scopes.append(
+                    "PATIENT_SPECIFIC_ASYMMETRIC_RESNIK_QUERY_COVERAGE"
+                )
             else:
                 final_tiers.append(
                     str(genes.loc[idx].get("GENE_RELEVANCE_TIER", "LIMITED"))
