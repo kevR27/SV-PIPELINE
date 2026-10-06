@@ -37,9 +37,13 @@ def classify(row):
         return "UNRESOLVED_GENE"
     if bool(row["_panel"]):
         return "PANEL_GENE"
-    if row["_phenotype"] > 0 and row["_disease"] > 0:
+    # Generic HON semantic similarity is intentionally thresholded rather
+    # than treating any tiny ontology overlap as meaningful phenotype support.
+    # 0.25 corresponds to the current SUPPORTING boundary in ranking_common.py.
+    phenotype_supported = row["_phenotype"] >= 0.25
+    if phenotype_supported and row["_disease"] > 0:
         return "NONPANEL_HPO_AND_DISEASE"
-    if row["_phenotype"] > 0:
+    if phenotype_supported:
         return "NONPANEL_HPO_ONLY"
     if row["_disease"] > 0:
         return "NONPANEL_DISEASE_ONLY"
@@ -56,11 +60,21 @@ def main():
     id_col = first_existing(df, ["SV_ID", "ID"])
     gene_col = first_existing(df, ["GENES", "ANNotsv_Gene", "Gene", "GENE"])
     panel_col = first_existing(df, ["PANEL_STATUS", "panel_gene"])
-    pheno_col = first_existing(df, ["PHENOTYPE_SCORE", "phenotype_score"])
+    pheno_col = first_existing(
+        df,
+        [
+            "HON_SEMANTIC_SIMILARITY_NORMALIZED",
+            "FINAL_PATIENT_HPO_SIMILARITY",
+            "PHENOTYPE_SCORE",
+            "phenotype_score",
+        ],
+    )
     disease_col = first_existing(df, ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"])
     score_col = first_existing(
         df,
         [
+            "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+            "GENE_RELEVANCE_DISPLAY_SCORE",
             "EVENT_GENE_RELEVANCE_SCORE",
             "INTEGRATED_DISCOVERY_SCORE",
             "integrated_discovery_score",
