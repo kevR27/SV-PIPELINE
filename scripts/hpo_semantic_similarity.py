@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import math
 from collections import defaultdict
-from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
+
+from ranking_common import semantic_engine
 
 
 MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
@@ -45,36 +45,6 @@ def load_patient_terms(path):
                 if value.startswith("HP:"):
                     terms.append(value)
     return sorted(set(terms))
-
-
-def load_hpo_background(edges_path):
-    """Read HPO hierarchy and all human gene-HPO annotations in one pass."""
-    parents = defaultdict(set)
-    all_gene_terms = defaultdict(set)
-
-    with open(edges_path, encoding="utf-8") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        for edge in reader:
-            subject = edge.get("subject", "")
-            obj = edge.get("object", "")
-            predicate = edge.get("predicate", "")
-            category = edge.get("category", "")
-
-            if (
-                subject.startswith("HP:")
-                and obj.startswith("HP:")
-                and "subclass" in predicate.lower()
-            ):
-                parents[subject].add(obj)
-
-            if (
-                subject.startswith("HGNC:")
-                and obj.startswith("HP:")
-                and "GeneToPhenotypicFeatureAssociation" in category
-            ):
-                all_gene_terms[subject].add(obj)
-
-    return parents, all_gene_terms
 
 
 def main():
@@ -149,19 +119,11 @@ def main():
         print(f"[OK] genes={len(out)} patient_hpo=0 output={args.output}")
         return
 
-    parents, all_gene_terms = load_hpo_background(args.edges)
-
-    @lru_cache(maxsize=None)
-    def ancestors(term):
-        result = {term}
-        stack = list(parents.get(term, ()))
-        while stack:
-            current = stack.pop()
-            if current in result:
-                continue
-            result.add(current)
-            stack.extend(parents.get(current, ()))
-        return frozenset(result)
+    engine = semantic_engine(args.edges)
+    all_gene_terms = engine["all_gene_terms"]
+    pair_similarity = engine["pair_similarity"]
+    bma = engine["bma"]
+    max_ic = engine["max_ic"]
 
     gene_terms = defaultdict(set)
 
@@ -179,41 +141,6 @@ def main():
         hp = str(row.get("HPO_ID", "")).strip()
         if gene and hp.startswith("HP:"):
             gene_terms[gene].add(hp)
-
-    # Information content uses the full human gene-HPO annotation corpus from
-    # Monarch, not only the HON panel. Restricting IC to the panel would make
-    # common HON terms artificially informative.
-    propagated_count = defaultdict(int)
-    for hgnc, terms_for_gene in all_gene_terms.items():
-        propagated = set()
-        for term in terms_for_gene:
-            propagated.update(ancestors(term))
-        for term in propagated:
-            propagated_count[term] += 1
-
-    n_genes = max(len(all_gene_terms), 1)
-
-    def ic(term):
-        # add-one smoothing avoids infinite values for patient-only terms
-        return -math.log((propagated_count.get(term, 0) + 1) / (n_genes + 1))
-
-    # Theoretical maximum under add-one smoothing. This also covers a valid
-    # patient HPO term not observed in the current gene-annotation background.
-    max_ic = -math.log(1 / (n_genes + 1)) if n_genes > 0 else 1.0
-
-    @lru_cache(maxsize=None)
-    def pair_similarity(a, b):
-        common = ancestors(a) & ancestors(b)
-        if not common:
-            return 0.0
-        return max(ic(term) for term in common)
-
-    def bma(left, right):
-        if not left or not right:
-            return 0.0
-        left_best = [max(pair_similarity(a, b) for b in right) for a in left]
-        right_best = [max(pair_similarity(b, a) for a in left) for b in right]
-        return (sum(left_best) / len(left_best) + sum(right_best) / len(right_best)) / 2
 
     rows = []
     for gene in genes:
