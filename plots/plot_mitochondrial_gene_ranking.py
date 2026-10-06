@@ -22,9 +22,15 @@ def parse_args():
 
 
 def rank_column(df):
-    if "MITO_RANK_WITHIN_ENCODING_PANEL_STATUS" in df.columns:
-        return "MITO_RANK_WITHIN_ENCODING_PANEL_STATUS"
-    return "MITO_RANK_WITHIN_ENCODING"
+    for column in (
+        "MITO_FINAL_RANK_WITHIN_ENCODING_PANEL_STATUS",
+        "MITO_RANK_WITHIN_ENCODING_PANEL_STATUS",
+        "MITO_FINAL_RANK_WITHIN_ENCODING",
+        "MITO_RANK_WITHIN_ENCODING",
+    ):
+        if column in df.columns:
+            return column
+    raise ValueError("No mitochondrial rank column was found.")
 
 
 def plot_group(
