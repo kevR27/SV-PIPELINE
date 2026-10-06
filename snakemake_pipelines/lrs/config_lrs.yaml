@@ -242,6 +242,45 @@ methylation_units: "percent"  # modkit bedMethyl column 11
 
 
 # ============================================================
+# OPTIONAL X-CHROMOSOME INACTIVATION (XCI)
+# ============================================================
+# Run only on appropriate XX samples with native-DNA ONT MM/ML methylation
+# tags. Do not add an XY sample simply because chrX reads are present.
+#
+# Example:
+# xci_samples:
+#   - "sample_A"
+#   - "sample_B"
+xci_samples: []
+
+# GRCh38 CpG-island BED used for read-level methylation clustering.
+# Required only when xci_samples is non-empty.
+# Example: "/DATA/Reference/hg38.cpgIslandExt.chrX.bed"
+xci_cpg_islands_bed: null
+
+# Optional BED containing the XIST promoter CpG island. The XIST promoter has
+# the opposite Xa/Xi methylation relationship from the standard rule and is
+# therefore explicitly reversed when this BED is configured.
+xci_xist_promoter_bed: null
+
+xci_chrom: "chrX"
+xci_min_cluster_reads: 5
+xci_min_chrx_coverage: 15
+xci_min_block_reads: 5
+
+# Folded skew P: 0.50 = balanced; values closer to 0 = stronger skew.
+# P < 0.40 corresponds to a major:minor ratio greater than 60:40. This is a
+# descriptive flag, not a clinical pathogenicity threshold.
+xci_neutral_threshold: 0.40
+
+# Haplotype-specific modkit tracks are summarized in 5-Mb bins for the
+# chromosome-wide methylation figure. Read-level CpG-island clustering remains
+# the primary estimator of XCI skew.
+xci_methylation_bin_bp: 5000000
+xci_threads: 8
+
+
+# ============================================================
 # OPTIONAL FINAL THESIS ANALYSIS
 # ============================================================
 # These settings affect only the additive thesis_extensions.smk layer.
