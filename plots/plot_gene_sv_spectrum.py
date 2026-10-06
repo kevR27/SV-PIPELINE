@@ -52,7 +52,23 @@ def main():
 
     id_col = first_existing(df, ["SV_ID", "ID"])
     gene_col = first_existing(df, ["GENES", "ANNotsv_Gene", "Gene", "GENE"])
-    score_col = first_existing(df, ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE"])
+    score_col = first_existing(
+        df,
+        [
+            "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+            "GENE_RELEVANCE_DISPLAY_SCORE",
+            "EVENT_GENE_RELEVANCE_SCORE",
+            "INTEGRATED_DISCOVERY_SCORE",
+        ],
+    )
+    panel_col = first_existing(df, ["PANEL_STATUS"])
+    rank_col = first_existing(
+        df,
+        [
+            "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
+            "EVENT_RANK_WITHIN_PANEL_STATUS",
+        ],
+    )
     if id_col is None or gene_col is None:
         raise ValueError("Event table needs SV_ID and gene columns.")
     if "SV_EVENT_SIZE_CLASS" not in df:
@@ -71,20 +87,50 @@ def main():
         .eq("YES")
     )
 
+    work["_panel_group"] = (
+        work[panel_col]
+        .fillna("NONPANEL_GENE")
+        .astype(str)
+        .str.upper()
+        .replace({"NON_PANEL": "NONPANEL_GENE"})
+        if panel_col
+        else "NONPANEL_GENE"
+    )
+    work["_rank"] = (
+        numeric(work[rank_col])
+        if rank_col
+        else pd.Series(np.nan, index=work.index)
+    )
+
     unique = (
-        work.sort_values("_score", ascending=False)
+        work.sort_values(
+            ["_panel_group", "_rank", "_score", id_col, "_gene"],
+            ascending=[True, True, False, True, True],
+            na_position="last",
+        )
         .drop_duplicates([id_col, gene_col], keep="first")
         .copy()
     )
 
-    gene_priority = (
-        unique.groupby("_gene")["_score"]
-        .max()
-        .sort_values(ascending=False)
-        .head(args.top_n)
-        .index
-        .tolist()
-    )
+    gene_priority = []
+    for group in ["PANEL_GENE", "NONPANEL_GENE"]:
+        sub = unique[unique["_panel_group"].eq(group)].copy()
+        gene_rank = (
+            sub.groupby("_gene")
+            .agg(
+                best_rank=("_rank", "min"),
+                best_score=("_score", "max"),
+            )
+            .reset_index()
+            .sort_values(
+                ["best_rank", "best_score", "_gene"],
+                ascending=[True, False, True],
+                na_position="last",
+            )
+        )
+        gene_priority.extend(
+            gene_rank["_gene"].head(args.top_n).tolist()
+        )
     unique = unique[unique["_gene"].isin(gene_priority)].copy()
 
     rows = []
@@ -92,6 +138,7 @@ def main():
         sub = unique[unique["_gene"].eq(gene)]
         row = {
             "gene": gene,
+            "panel_status": str(sub["_panel_group"].iloc[0]),
             "gene_relevance_score": float(sub["_score"].max()),
             "unique_SVs": int(sub[id_col].nunique()),
             "breakpoint_defined_INV_BND": int(sub.loc[sub["_breakpoint"], id_col].nunique()),
