@@ -318,6 +318,11 @@ def main():
         default=10_000,
     )
     parser.add_argument(
+        "--gnomad-delta",
+        default=None,
+        help="Optional compact gnomAD-SV annotation delta produced from the same input row order.",
+    )
+    parser.add_argument(
         "--rare-af",
         type=float,
         default=0.001,
@@ -382,6 +387,28 @@ def main():
             dtype=str,
             low_memory=False,
         )
+
+    if args.gnomad_delta:
+        delta = pd.read_csv(
+            args.gnomad_delta,
+            sep="\t",
+            dtype=str,
+            low_memory=False,
+        )
+        if len(delta) != len(df):
+            raise ValueError(
+                "gnomAD delta row count does not match ranking input: "
+                f"{len(delta)} != {len(df)}"
+            )
+        if "_INTEGRATED_ROW_INDEX" in delta.columns:
+            delta = delta.sort_values(
+                "_INTEGRATED_ROW_INDEX",
+                key=lambda s: pd.to_numeric(s, errors="coerce"),
+            ).reset_index(drop=True)
+        for column in delta.columns:
+            if column == "_INTEGRATED_ROW_INDEX":
+                continue
+            df[column] = delta[column].values
 
     id_col = first_existing(df, ["SV_ID", "ID"])
     gene_col = first_existing(
