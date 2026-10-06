@@ -17,6 +17,11 @@ from plot_utils import first_existing, numeric, read_tsv, save_figure, set_thesi
 def parse_args():
     p = argparse.ArgumentParser(description="Plot gene-centric multimodal evidence.")
     p.add_argument("--input", required=True, help="*_gene_multimodal_evidence_summary.tsv")
+    p.add_argument(
+        "--ranking-table",
+        default=None,
+        help="Optional final *_gene_candidates.ranked.tsv used for panel-specific ordering.",
+    )
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--top-n", type=int, default=20)
     p.add_argument("--title", default="Integrated multimodal evidence by candidate gene")
@@ -39,15 +44,81 @@ def main():
     if score_col:
         work["_score"] = numeric(work[score_col]).fillna(0)
     else:
-        work["_score"] = numeric(work.get("master_SV_count", pd.Series(0, index=work.index))).fillna(0)
+        work["_score"] = numeric(
+            work.get("master_SV_count", pd.Series(0, index=work.index))
+        ).fillna(0)
 
-    anchor_col = first_existing(work, ["retrieved_anchor_HPO_count", "optic_neuropathy_anchor_HPO_count"])
+    work["_panel_status"] = "NONPANEL_GENE"
+    work["_final_rank"] = np.nan
+    work["_final_relevance"] = np.nan
+
+    if args.ranking_table and Path(args.ranking_table).exists():
+        ranked = read_tsv(args.ranking_table)
+        ranked_gene = first_existing(ranked, ["GENE", "gene", "Gene"])
+        ranked_panel = first_existing(ranked, ["PANEL_STATUS", "panel_gene"])
+        ranked_rank = first_existing(
+            ranked,
+            [
+                "FINAL_GENE_RANK_WITHIN_PANEL_STATUS",
+                "GENE_RANK_WITHIN_PANEL_STATUS",
+            ],
+        )
+        ranked_score = first_existing(
+            ranked,
+            [
+                "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+                "GENE_RELEVANCE_DISPLAY_SCORE",
+                "GENE_RELEVANCE_SCORE",
+            ],
+        )
+        if ranked_gene:
+            cols = [ranked_gene]
+            for col in (ranked_panel, ranked_rank, ranked_score):
+                if col and col not in cols:
+                    cols.append(col)
+            rank_view = ranked[cols].drop_duplicates(ranked_gene).copy()
+            rank_view = rank_view.rename(columns={ranked_gene: "_merge_gene"})
+            work["_merge_gene"] = work[gene_col].astype(str)
+            work = work.merge(rank_view, on="_merge_gene", how="left")
+
+            if ranked_panel and ranked_panel in work.columns:
+                ptxt = work[ranked_panel].fillna("").astype(str).str.upper()
+                work["_panel_status"] = np.where(
+                    ptxt.isin(["PANEL_GENE", "YES", "TRUE", "1"]),
+                    "PANEL_GENE",
+                    "NONPANEL_GENE",
+                )
+            if ranked_rank and ranked_rank in work.columns:
+                work["_final_rank"] = numeric(work[ranked_rank])
+            if ranked_score and ranked_score in work.columns:
+                work["_final_relevance"] = numeric(work[ranked_score])
+
+    anchor_col = first_existing(
+        work,
+        ["retrieved_anchor_HPO_count", "optic_neuropathy_anchor_HPO_count"],
+    )
     if anchor_col:
         work["_anchor"] = numeric(work[anchor_col]).fillna(0)
     else:
         work["_anchor"] = 0
 
-    work = work.sort_values(["_score", "_anchor"], ascending=False).head(args.top_n).copy()
+    selected = []
+    for panel_value in ("PANEL_GENE", "NONPANEL_GENE"):
+        subset = work[work["_panel_status"].eq(panel_value)].copy()
+        if subset["_final_rank"].notna().any():
+            subset = subset.sort_values(
+                ["_final_rank", "_final_relevance", "_score", "_anchor", gene_col],
+                ascending=[True, False, False, False, True],
+                na_position="last",
+            )
+        else:
+            subset = subset.sort_values(
+                ["_score", "_anchor", gene_col],
+                ascending=[False, False, True],
+            )
+        selected.append(subset.head(args.top_n))
+
+    work = pd.concat(selected, ignore_index=True)
     work = work.iloc[::-1].reset_index(drop=True)
 
     evidence_specs = [
@@ -89,6 +160,8 @@ def main():
 
     source = pd.DataFrame(matrix, columns=labels)
     source.insert(0, "gene", work[gene_col].values)
+    source.insert(1, "panel_status", work["_panel_status"].values)
+    source.insert(2, "final_rank_within_panel", work["_final_rank"].values)
     source.to_csv(prefix.with_name(prefix.name + "_matrix.tsv"), sep="\t", index=False)
 
     fig, axes = plt.subplots(
@@ -101,7 +174,13 @@ def main():
 
     ax1.barh(y, work["_score"], color="#0072B2")
     ax1.set_yticks(y)
-    ax1.set_yticklabels(work[gene_col], fontsize=9.5)
+    ax1.set_yticklabels(
+        [
+            ("P | " if panel == "PANEL_GENE" else "NP | ") + str(gene)
+            for panel, gene in zip(work["_panel_status"], work[gene_col])
+        ],
+        fontsize=9.5,
+    )
     ax1.set_xlabel(score_col.replace("_", " ") if score_col else "Priority")
     ax1.set_ylabel("Gene")
     style_axis(ax1, "x")
