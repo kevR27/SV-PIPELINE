@@ -354,15 +354,11 @@ They are **not** the primary final ordering model.
 The current event ranking identifier is:
 
 ```text
-sharedTieredRanking__geneTier_mechanismInheritance_technical_population_constraint__v5
+sharedTieredRanking__geneTier_mechanismInheritance_technical_population_constraint__v6
 ```
 
 The final patient-aware ranking may further incorporate patient HPO,
 phased recessive pairing and cohort recurrence.
-
-## 13. Interpretation limits
-
-No field in these tables is a validated probability of pathogenicity.
 
 ## 12. Ranking benchmark / sensitivity check
 
@@ -389,6 +385,10 @@ python scripts/benchmark_candidate_ranking.py \
 
 This supports sensitivity analysis without training a model on the small thesis
 cohort.
+
+## 13. Interpretation limits
+
+No field in these tables is a validated probability of pathogenicity.
 
 ## 13. Interpretation limits
 
