@@ -157,7 +157,15 @@ def main():
         ).astype(int)
         optional_flags.append("Mito + ON context")
 
-    score_col = first_existing(work, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score"])
+    score_col = first_existing(
+        work,
+        [
+            "EVENT_GENE_RELEVANCE_SCORE",
+            "INTEGRATED_DISCOVERY_SCORE",
+            "integrated_discovery_score",
+            "PHENOTYPE_SCORE",
+        ],
+    )
     # Match the documented gene-discovery ranking. Database presence, panel
     # membership and optional analyses must not silently create another score.
     work["PLOT_ORDER_BASIS"] = score_col or (pheno_col or "UNRANKED")
