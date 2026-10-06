@@ -9,7 +9,7 @@ samples:
   "12066": "/DATA/casadei7/nanopore/WGS/CONTROL/12066/12066.merge.sort.bam"
   "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
 
-path: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/outs_test_CNTRL"
+path: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/outs_test_CNTRL"
 ref: "/DATA/Reference/hg38.fa"
 threads: 32
 
@@ -20,14 +20,14 @@ threads: 32
 # retained as the optic-neuropathy panel reference for panel annotation and
 # compatibility with other workflows; the active LRS Clair3 rule does not use it.
 
-bed: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/PANEL_OA/optic_neuropathy_panel.bed"
+bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/PANEL_OA/optic_neuropathy_panel.bed"
 
 # Retained for backward compatibility/reference only; cuteSV is now called
 # genome-wide and does not use this BED in Snakefile_LRS_update.
-bedcutesv: "/DATA/casadei7/tools/SV-PIPELINE-main__v3__v3/PANEL_OA/optic_neuropathy_panel_cutesv.bed"
+bedcutesv: "/DATA/casadei7/tools/SV-PIPELINE-main_v3__v3/PANEL_OA/optic_neuropathy_panel_cutesv.bed"
 
-gene_bed: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/gencode.genes.hg38.sorted.bed"
-candidate_genes_list: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/PANEL_OA/optic_neuropathy_genes.txt"
+gene_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/gencode.genes.hg38.sorted.bed"
+candidate_genes_list: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/PANEL_OA/optic_neuropathy_genes.txt"
 
 delly_genome: "ont"
 
@@ -66,7 +66,7 @@ clair3env: "/DATA/casadei7/BrainAging/Clair3_Models/r1041_e82_400bps_sup_v520/"
 # SNIFFLES2 / JASMINE
 # ============================================================
 
-vntr_bed: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
+vntr_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/human_GRCh38_no_alt_analysis_set.trf.bed"
 
 # false = standard germline calling.  Enable only when intentionally running
 # Sniffles mosaic mode.
@@ -94,8 +94,8 @@ jasmine_caller_order: "Sniffles2,cuteSV,Delly"
 # VEP
 # ============================================================
 
-reference_dir: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference"
-vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/vep"
+reference_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference"
+vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/vep"
 vep_assembly: "GRCh38"
 
 # ============================================================
@@ -105,7 +105,7 @@ vep_assembly: "GRCh38"
 # source VCF for AnnotSV/VEP and therefore cannot remove BND or >=10 Mb calls
 # from the master diagnostic/discovery callset.
 
-needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/needlr/release/backend_files/"
+needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/needlr/release/backend_files/"
 
 # Optional exact-coordinate/type gnomAD-SV v4.1 annotation.
 # Download the official GRCh38 gnomAD v4.1 genome-SV sites VCF and .tbi, then
@@ -118,13 +118,13 @@ gnomad_sv_vcf: null
 # population source cannot be hidden by a lower value in another source.
 ranking_rare_af: 0.001
 ranking_max_af: 0.01
-# gnomad_sv_vcf: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/gnomad/gnomad.v4.1.sv.sites.vcf.gz"
+# gnomad_sv_vcf: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/gnomad/gnomad.v4.1.sv.sites.vcf.gz"
 
 # ============================================================
 # TLDR
 # ============================================================
 
-tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/teref.ont.human.fa"
+tldr_elements: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/teref.ont.human.fa"
 
 # Coordinate tolerances used only when attaching complementary evidence to the
 # Jasmine-defined master SV table. They do not modify SV calling or merging.
@@ -143,8 +143,8 @@ thesis_methylation_region: null
 
 # Official Human MitoCarta3.0 workbook. Download from the Broad Institute
 # MitoCarta3.0 resource into this local path before running the annotation.
-mitocarta_file: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/mitocarta/Human.MitoCarta3.0.xls"
-mitocarta_pathways_file: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/mitocarta/Human.MitoPathways3.0.gmx"
+mitocarta_file: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/mitocarta/Human.MitoCarta3.0.xls"
+mitocarta_pathways_file: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/mitocarta/Human.MitoPathways3.0.gmx"
 
 # ============================================================
 # SAMPLOT READ-LEVEL BREAKPOINT EVIDENCE
@@ -166,8 +166,8 @@ sv_gene_breakpoint_tolerance: 10000
 # MONARCH / HPO DISCOVERY
 # ============================================================
 
-monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/monarch/monarch-kg_nodes.tsv"
-monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/monarch/monarch-kg_edges.tsv"
+monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/monarch/monarch-kg_nodes.tsv"
+monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/monarch/monarch-kg_edges.tsv"
 # Baseline HON anchors default to reference/hon_hpo_seed_terms.tsv in the active checkout.
 
 # Core HON phenotypes are used only as ontology seeds. The semantic-similarity
@@ -190,7 +190,7 @@ hpo_terms: null
 # ============================================================
 
 annotsv_benign_af: 0.01
-annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main__v3/reference/AnnotSV_annotations"
+annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations"
 
 # ============================================================
 # PRE-JASMINE SV EVIDENCE FILTERING
