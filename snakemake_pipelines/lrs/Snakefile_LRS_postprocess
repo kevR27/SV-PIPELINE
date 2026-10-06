@@ -415,7 +415,8 @@ rule rank_mitochondrial_genes:
         integrated=rules.merge_integrated_annotations.output.tsv,
         gene_bed=GENE_BED,
         panel=GENE_LIST,
-        script=SCRIPTS + "/rank_mitochondrial_genes.py"
+        script=SCRIPTS + "/rank_mitochondrial_genes.py",
+        ranking_common=SCRIPTS + "/ranking_common.py"
     output:
         tsv=PATH + "{sample}/gene_discovery/{sample}_mitochondrial_gene_ranking.tsv"
     conda:
@@ -492,7 +493,8 @@ def existing_plot_inputs(wc):
 rule thesis_plots_sample:
     input:
         integrated=rules.merge_integrated_annotations.output.tsv,
-        candidate_events=rules.merge_integrated_annotations.output.tsv,
+        candidate_events=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
+        ranked_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
         mitochondrial_ranking=rules.rank_mitochondrial_genes.output.tsv,
         available=existing_plot_inputs,
