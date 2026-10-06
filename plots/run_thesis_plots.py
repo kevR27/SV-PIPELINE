@@ -153,10 +153,21 @@ def main():
         / f"{s}_gene_candidates.ranked.tsv"
     )
     ranked = ranked_final if ranked_final.exists() else ranked_legacy
-    mito_ranking = (
+    mito_ranking_final = (
+        sample_root
+        / "gene_discovery"
+        / "final"
+        / f"{s}_mitochondrial_gene_ranking.ranked.tsv"
+    )
+    mito_ranking_generic = (
         sample_root
         / "gene_discovery"
         / f"{s}_mitochondrial_gene_ranking.tsv"
+    )
+    mito_ranking = (
+        mito_ranking_final
+        if mito_ranking_final.exists()
+        else mito_ranking_generic
     )
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
     gene_summary = sample_root / "gene_discovery" / f"{s}_gene_multimodal_evidence_summary.tsv"
