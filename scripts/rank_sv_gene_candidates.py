@@ -23,11 +23,13 @@ from collections import defaultdict
 from pathlib import Path
 
 from ranking_common import (
+    GENE_TIER_PRIORITY,
     MISSING,
     combine_hon_semantic,
     gene_relevance,
     inheritance_class,
     known,
+    load_hpo_seed_groups,
     parse_moi,
     semantic_engine,
     summarize_gencc,
@@ -47,22 +49,6 @@ def read_list(path: str) -> set[str]:
             value = line.strip()
             if value and not value.startswith("#"):
                 out.add(value.upper())
-    return out
-
-
-def read_hpo_seeds(path: str) -> dict[str, set[str]]:
-    out = {"core": set(), "context": set()}
-    with open(path, encoding="utf-8") as fh:
-        reader = csv.DictReader(fh, delimiter="	")
-        for row in reader:
-            hp = str(row.get("hpo_id", "")).strip()
-            if not hp.startswith("HP:"):
-                continue
-            role = str(row.get("hon_seed_role", "") or "").upper()
-            if "MITO_SYNDROMIC_CONTEXT" in role:
-                out["context"].add(hp)
-            else:
-                out["core"].add(hp)
     return out
 
 
@@ -101,7 +87,7 @@ def main() -> int:
 
     genes = read_list(args.genes) - INVALID_GENE_LABELS
     panel = read_list(args.panel)
-    hon_seed_groups = read_hpo_seeds(args.hpo_seeds)
+    hon_seed_groups = load_hpo_seed_groups(args.hpo_seeds)
     semantic = semantic_engine(args.edges)
 
     pheno = defaultdict(
@@ -449,10 +435,9 @@ def main() -> int:
             ),
         })
 
-    tier_order = {"HIGH": 3, "MODERATE": 2, "SUPPORTING": 1, "LIMITED": 0}
     rows.sort(
         key=lambda row: (
-            -tier_order.get(row["GENE_RELEVANCE_TIER"], 0),
+            -GENE_TIER_PRIORITY.get(row["GENE_RELEVANCE_TIER"], 0),
             -float(row["GENE_RELEVANCE_DISPLAY_SCORE"]),
             -float(row["HON_SEMANTIC_SIMILARITY_NORMALIZED"]),
             -float(row["gene_disease_evidence_score"]),
