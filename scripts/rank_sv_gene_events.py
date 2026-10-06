@@ -16,51 +16,22 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-
-MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
-
-DIRECT_RELATIONSHIPS = {
-    "WHOLE_GENE_DOSAGE_CONTEXT",
-    "PARTIAL_GENE_OVERLAP",
-    "INSERTION_WITHIN_TRANSCRIPT",
-    "BREAKPOINT_WITHIN_TRANSCRIPT",
-}
-
-PROXIMAL_RELATIONSHIPS = {
-    "INSERTION_PROXIMAL_TO_GENE",
-    "BREAKPOINT_PROXIMAL_TO_GENE",
-}
-
-POPULATION_PRIORITY = {
-    "PROVISIONAL_LOW_AF_LE_0.01": 2,
-    "NOT_EVALUABLE_GE10MB": 1,
-    "NOT_EVALUABLE_BND": 1,
-    "NO_MATCH": 1,
-    "UNKNOWN_OR_MISSING": 1,
-    "PROVISIONAL_HIGH_AF_GT_0.01": 0,
-}
-
-
-def first_existing(df: pd.DataFrame, names: list[str]) -> str | None:
-    lower = {str(c).lower(): c for c in df.columns}
-    for name in names:
-        if name in df.columns:
-            return name
-        hit = lower.get(name.lower())
-        if hit is not None:
-            return hit
-    return None
+from ranking_common import (
+    DIRECT_RELATIONSHIPS,
+    MISSING,
+    PROXIMAL_RELATIONSHIPS,
+    event_sort_tuple,
+    first_existing,
+    gene_relevance,
+    mechanism_inheritance_summary,
+    number,
+    population_summary,
+    technical_summary,
+)
 
 
 def numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="coerce")
-
-
-def number(value):
-    try:
-        return float(value)
-    except Exception:
-        return None
 
 
 def normalize_chrom(value) -> str | None:
@@ -285,28 +256,6 @@ def focality_class(gene_count: int) -> str:
     return "VERY_MULTIGENE_GT100"
 
 
-def population_tier(af, status) -> str:
-    status = str(status or "").upper()
-
-    if pd.notna(af):
-        return (
-            "PROVISIONAL_LOW_AF_LE_0.01"
-            if af <= 0.01
-            else "PROVISIONAL_HIGH_AF_GT_0.01"
-        )
-
-    if "NOT_EVALUABLE_GE_10MB" in status:
-        return "NOT_EVALUABLE_GE10MB"
-
-    if "NOT_EVALUABLE_BND" in status:
-        return "NOT_EVALUABLE_BND"
-
-    if "NO_MATCH" in status:
-        return "NO_MATCH"
-
-    return "UNKNOWN_OR_MISSING"
-
-
 def event_bucket(svtype: str, size, relationship: str) -> str:
     large = pd.notna(size) and size >= 1_000_000
     very_large = pd.notna(size) and size >= 10_000_000
@@ -367,6 +316,18 @@ def main():
         "--breakpoint-gene-tolerance",
         type=int,
         default=10_000,
+    )
+    parser.add_argument(
+        "--rare-af",
+        type=float,
+        default=0.001,
+        help="Very-rare ranking threshold for explicit needLR/gnomAD-SV AF.",
+    )
+    parser.add_argument(
+        "--max-af",
+        type=float,
+        default=0.01,
+        help="Maximum AF above which a rare-disease SV receives population review.",
     )
     parser.add_argument(
         "--compact-output",
@@ -577,169 +538,156 @@ def main():
             f"retained_columns={len(out.columns)}"
         )
 
-    af = (
-        numeric(out["NEEDLR_AF"])
-        if "NEEDLR_AF" in out
-        else pd.Series(np.nan, index=out.index)
-    )
-    status = (
-        out["NEEDLR_STATUS"]
-        if "NEEDLR_STATUS" in out
-        else pd.Series(".", index=out.index)
-    )
-
-    out["EVENT_POPULATION_TIER"] = [
-        population_tier(a, s)
-        for a, s in zip(af, status)
-    ]
-
-    callers = (
-        numeric(out["CALLER_COUNT"]).fillna(0)
-        if "CALLER_COUNT" in out
-        else pd.Series(0, index=out.index)
-    )
-    out["EVENT_TECHNICAL_TIER"] = np.where(
-        callers >= 2,
-        "MULTI_CALLER",
-        "SINGLE_CALLER",
-    )
-    out["EVENT_TECHNICAL_REVIEW"] = out.apply(
-        technical_review_status,
-        axis=1,
-    )
-
-    phenotype = (
-        numeric(out["PHENOTYPE_SCORE"]).fillna(0)
-        if "PHENOTYPE_SCORE" in out
-        else pd.Series(0, index=out.index)
-    )
-    disease = (
-        numeric(
-            out["GENE_DISEASE_EVIDENCE_SCORE"]
-        ).fillna(0)
-        if "GENE_DISEASE_EVIDENCE_SCORE" in out
-        else pd.Series(0, index=out.index)
-    )
-
-    # Event-level ranking intentionally excludes the gene-level SV-count
-    # component. Each specific event is ranked by phenotype + curated
-    # gene-disease relevance, then mechanism/population/technical context.
-    out["EVENT_GENE_RELEVANCE_SCORE"] = (
-        phenotype + disease
-    ).round(3)
-
-    mechanism_rank = out["SV_GENE_RELATIONSHIP"].map(
-        lambda value: (
-            3
-            if value in DIRECT_RELATIONSHIPS
+    # ------------------------------------------------------------------
+    # Shared ranking evidence
+    # ------------------------------------------------------------------
+    # Gene relevance uses broad tiers so a tiny numerical difference cannot
+    # outrank a much stronger SV-gene mechanism or technical signal.
+    if "GENE_RELEVANCE_TIER" not in out.columns:
+        semantic = (
+            numeric(out["HON_SEMANTIC_SIMILARITY_NORMALIZED"]).fillna(0)
+            if "HON_SEMANTIC_SIMILARITY_NORMALIZED" in out.columns
             else (
-                2
-                if value in PROXIMAL_RELATIONSHIPS
-                else (
-                    1
-                    if value in {"INTERVAL_CONTEXT_ONLY", "INVERSION_SPANS_INTACT_GENE"}
-                    else 0
-                )
+                numeric(out["PHENOTYPE_SCORE"]).fillna(0).div(10.0)
+                if "PHENOTYPE_SCORE" in out.columns
+                else pd.Series(0.0, index=out.index)
             )
         )
-    )
+        disease = (
+            numeric(out["GENE_DISEASE_EVIDENCE_SCORE"]).fillna(0)
+            if "GENE_DISEASE_EVIDENCE_SCORE" in out.columns
+            else pd.Series(0.0, index=out.index)
+        )
+        relevance_rows = [
+            gene_relevance(hon, dis)
+            for hon, dis in zip(semantic, disease)
+        ]
+        out["GENE_RELEVANCE_TIER"] = [x["tier"] for x in relevance_rows]
+        out["GENE_RELEVANCE_DISPLAY_SCORE"] = [
+            x["display_score"] for x in relevance_rows
+        ]
 
-    population_rank = (
-        out["EVENT_POPULATION_TIER"]
-        .map(POPULATION_PRIORITY)
-        .fillna(0)
-    )
+    if "GENE_RELEVANCE_DISPLAY_SCORE" not in out.columns:
+        out["GENE_RELEVANCE_DISPLAY_SCORE"] = (
+            numeric(out.get("INTEGRATED_DISCOVERY_SCORE", 0)).fillna(0)
+        )
 
-    panel_rank = (
-        out["PANEL_STATUS"]
-        .fillna("")
-        .eq("PANEL_GENE")
-        .astype(int)
-        if "PANEL_STATUS" in out
-        else pd.Series(0, index=out.index)
-    )
+    out["EVENT_GENE_RELEVANCE_SCORE"] = numeric(
+        out["GENE_RELEVANCE_DISPLAY_SCORE"]
+    ).fillna(0).round(3)
 
-    out["_MECHANISM_RANK"] = mechanism_rank
-    out["_TECHNICAL_CLEAN_RANK"] = (
-        out["EVENT_TECHNICAL_REVIEW"]
-        .eq("NO_REVIEW_FLAG_FROM_CALLER_EVIDENCE")
-        .astype(int)
-    )
-    out["_POPULATION_RANK"] = population_rank
-    out["_CALLER_RANK"] = callers
-    out["_PANEL_RANK"] = panel_rank
+    mechanism_rows = [
+        mechanism_inheritance_summary(row)
+        for _, row in out.iterrows()
+    ]
+    out["SV_EFFECT_CLASS"] = [x["effect_class"] for x in mechanism_rows]
+    out["GENE_MOI_SET"] = [
+        x["moi_set"] if x["moi_set"] != "." else row.get("GENE_MOI_SET", ".")
+        for x, (_, row) in zip(mechanism_rows, out.iterrows())
+    ]
+    out["GENE_INHERITANCE_CLASS"] = [
+        x["inheritance_class"]
+        if x["inheritance_class"] != "UNKNOWN"
+        else row.get("GENE_INHERITANCE_CLASS", "UNKNOWN")
+        for x, (_, row) in zip(mechanism_rows, out.iterrows())
+    ]
+    out["INHERITANCE_MECHANISM_CLASS"] = [
+        x["category"] for x in mechanism_rows
+    ]
+    out["INHERITANCE_MECHANISM_DETAIL"] = [
+        x["detail"] for x in mechanism_rows
+    ]
+    out["INHERITANCE_MECHANISM_PRIORITY"] = [
+        x["priority"] for x in mechanism_rows
+    ]
+    out["CLINGEN_HI_SCORE_PARSED"] = [
+        x["clingen_hi_score"] for x in mechanism_rows
+    ]
+    out["CLINGEN_TS_SCORE_PARSED"] = [
+        x["clingen_ts_score"] for x in mechanism_rows
+    ]
 
-    out = out.sort_values(
-        [
-            "EVENT_REVIEW_BUCKET",
-            "EVENT_GENE_RELEVANCE_SCORE",
-            "_MECHANISM_RANK",
-            "_TECHNICAL_CLEAN_RANK",
-            "_POPULATION_RANK",
-            "_CALLER_RANK",
-            "_PANEL_RANK",
-            id_col,
-            gene_col,
-        ],
-        ascending=[
-            True,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-            True,
-            True,
-        ],
-    )
+    technical_rows = [
+        technical_summary(row)
+        for _, row in out.iterrows()
+    ]
+    out["EVENT_TECHNICAL_TIER_V2"] = [x["tier"] for x in technical_rows]
+    out["EVENT_TECHNICAL_TIER"] = out["EVENT_TECHNICAL_TIER_V2"]
+    out["EVENT_MAX_CALLER_READ_SUPPORT"] = [
+        x["max_read_support"] for x in technical_rows
+    ]
+    out["EVENT_TECHNICAL_REVIEW"] = [
+        "REVIEW_REQUIRED_CALLER_EVIDENCE"
+        if x["review"] == "YES"
+        else "NO_REVIEW_FLAG_FROM_CALLER_EVIDENCE"
+        for x in technical_rows
+    ]
 
-    out["EVENT_RANK_WITHIN_BUCKET"] = (
-        out.groupby("EVENT_REVIEW_BUCKET")
-        .cumcount()
-        + 1
+    population_rows = [
+        population_summary(
+            row,
+            rare_af=args.rare_af,
+            max_af=args.max_af,
+        )
+        for _, row in out.iterrows()
+    ]
+    out["EVENT_POPULATION_TIER_V2"] = [x["tier"] for x in population_rows]
+    out["EVENT_POPULATION_TIER"] = out["EVENT_POPULATION_TIER_V2"]
+    out["EVENT_MAX_EXPLICIT_AF"] = [x["max_af"] for x in population_rows]
+    out["EVENT_MIN_EXPLICIT_AF"] = [x["min_af"] for x in population_rows]
+    out["EVENT_POPULATION_AF_SOURCES"] = [
+        x["sources"] for x in population_rows
+    ]
+    out["EVENT_POPULATION_AF_CONFLICT"] = [
+        x["conflict"] for x in population_rows
+    ]
+
+    # The shared sort key is reused by downstream candidate and mitochondrial
+    # rankers. Panel membership is never a score: separate ranks are produced
+    # for panel and non-panel candidates instead.
+    order = sorted(
+        range(len(out)),
+        key=lambda i: event_sort_tuple(out.iloc[i]),
     )
+    out = out.iloc[order].reset_index(drop=True)
+    out["EVENT_RANK_GLOBAL"] = np.arange(1, len(out) + 1)
 
     panel_group = (
-        out["PANEL_STATUS"]
-        if "PANEL_STATUS" in out
+        out["PANEL_STATUS"].fillna("UNSPECIFIED").astype(str)
+        if "PANEL_STATUS" in out.columns
         else pd.Series("UNSPECIFIED", index=out.index)
     )
-    out["_PANEL_GROUP_FOR_RANK"] = panel_group.fillna("UNSPECIFIED").astype(str)
+    out["_PANEL_GROUP_FOR_RANK"] = panel_group
+    out["EVENT_RANK_WITHIN_PANEL_STATUS"] = (
+        out.groupby("_PANEL_GROUP_FOR_RANK").cumcount() + 1
+    )
+
+    # Keep bucket-specific ranks because they are useful for diverse Samplot
+    # selection, but use the same evidence ordering within every bucket.
+    out["EVENT_RANK_WITHIN_BUCKET"] = (
+        out.groupby("EVENT_REVIEW_BUCKET").cumcount() + 1
+    )
     out["EVENT_RANK_WITHIN_BUCKET_PANEL_STATUS"] = (
         out.groupby(
             ["EVENT_REVIEW_BUCKET", "_PANEL_GROUP_FOR_RANK"]
-        )
-        .cumcount()
+        ).cumcount()
         + 1
     )
     out = out.drop(columns=["_PANEL_GROUP_FOR_RANK"])
 
     out["EVENT_RANKING_MODEL"] = (
-        "geneRelevance_honContextPlusDisease__"
-        "mechanism_callerQC_provisionalPopulation_callers__v4"
+        "sharedTieredRanking__geneTier_mechanismInheritance_"
+        "technical_population_constraint__v5"
     )
-
     out["EVENT_RANKING_INTERPRETATION"] = (
-        "Research prioritization only. Event size is retained as context, "
-        "not used as a pathogenicity score. INV/BND interval-only gene "
-        "overlap is not treated as direct gene disruption. Missing, "
-        "no-match and non-evaluable population evidence are neutral rather "
-        "than treated as evidence of rarity. Caller QC flags are retained and "
-        "used only as a within-context review tie-breaker; flagged calls are "
-        "not removed from discovery. needLR frequency attached to the "
-        "Jasmine master event is a coordinate-compatible provisional match, "
-        "not an exact-allele identity assertion."
-    )
-
-    out = out.drop(
-        columns=[
-            "_MECHANISM_RANK",
-            "_TECHNICAL_CLEAN_RANK",
-            "_POPULATION_RANK",
-            "_CALLER_RANK",
-            "_PANEL_RANK",
-        ]
+        "Research prioritization only. Primary order uses broad gene-relevance "
+        "tier, inheritance/mechanism compatibility, technical evidence and the "
+        "maximum explicit AF across exact gnomAD-SV and provisional needLR. "
+        "Panel membership is not a score. A heterozygous/direct SV in an AR "
+        "gene remains a second-allele-required candidate unless biallelic or "
+        "trans evidence is available. ClinGen HI/TS are mechanism-specific; "
+        "dominant inheritance alone does not establish triplosensitivity. "
+        "Missing population evidence is neutral, and no-match is not AF zero."
     )
 
     output = Path(args.output)
