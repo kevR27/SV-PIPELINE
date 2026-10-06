@@ -27,6 +27,24 @@ def read(path):
 
 
 class ScoreReportingTests(unittest.TestCase):
+    def ranking_resources(self, d):
+        seeds = d / "hon_seeds.tsv"
+        edges = d / "edges.tsv"
+        table(
+            seeds,
+            [{
+                "hpo_id": "HP:0000648",
+                "hpo_label": "Optic atrophy",
+                "hon_seed_role": "CORE_OCULAR_HON",
+            }],
+        )
+        table(
+            edges,
+            [],
+            ["subject", "object", "predicate", "category"],
+        )
+        return seeds, edges
+
     def command(self, script, *args):
         p = subprocess.run([sys.executable, str(ROOT / script), *map(str, args)],
                            text=True, capture_output=True, env={**os.environ, 'MPLBACKEND':'Agg'})
@@ -54,8 +72,14 @@ class ScoreReportingTests(unittest.TestCase):
         (d/'genes').write_text('A\n');(d/'panel').write_text('A\n')
         table(d/'hpo.tsv',[],['gene_symbol','hpo_id','optic_neuropathy_anchor'])
         table(d/'ann.tsv',annotations)
-        self.command('scripts/rank_sv_gene_candidates.py','--annotsv',d/'ann.tsv','--genes',d/'genes',
-                     '--panel',d/'panel','--phenotypes',d/'hpo.tsv','--output',d/'rank.tsv')
+        seeds, edges = self.ranking_resources(d)
+        self.command(
+            'scripts/rank_sv_gene_candidates.py',
+            '--annotsv',d/'ann.tsv','--genes',d/'genes',
+            '--panel',d/'panel','--phenotypes',d/'hpo.tsv',
+            '--hpo-seeds',seeds,'--edges',edges,
+            '--output',d/'rank.tsv'
+        )
         return read(d/'rank.tsv')[0]
 
     def test_missing_omim_is_not_disease_evidence(self):
@@ -75,10 +99,12 @@ class ScoreReportingTests(unittest.TestCase):
                 'SV_ID':'v','Gene_name':'A','Annotation_mode':'split',
                 'ClinVar':'pathogenic_variant_overlap'
             }])
+            seeds, edges = self.ranking_resources(d)
             self.command(
                 'scripts/rank_sv_gene_candidates.py',
                 '--annotsv',d/'ann.tsv','--genes',d/'genes',
                 '--panel',d/'panel','--phenotypes',d/'hpo.tsv',
+                '--hpo-seeds',seeds,'--edges',edges,
                 '--output',d/'rank.tsv'
             )
             r = read(d/'rank.tsv')[0]
