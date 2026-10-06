@@ -316,9 +316,11 @@ def main():
                 [
                     py, str(HERE / "plot_gene_multimodal_summary.py"),
                     "--input", str(gene_summary),
+                    "--ranking-table", str(ranked),
                     "--out-prefix", str(folders["integration"] / f"{s}_gene_multimodal_evidence"),
+                    "--top-n", str(args.top_genes),
                 ],
-                [gene_summary],
+                [gene_summary, ranked],
             ),
             (
                 [
