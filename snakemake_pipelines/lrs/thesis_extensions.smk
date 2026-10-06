@@ -305,11 +305,13 @@ rule finalize_candidate_ranking:
         snv_sv=rules.build_snv_sv_candidates.output.tsv,
         recurrence=PATH + "cohort_analysis/sv_recurrence.tsv",
         recurrence_members=PATH + "cohort_analysis/sv_recurrence_members.tsv",
+        mitochondrial=rules.rank_mitochondrial_genes.output.tsv,
         script=SCRIPTS + "/finalize_candidate_ranking.py",
         ranking_common=SCRIPTS + "/ranking_common.py"
     output:
         genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
-        sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
+        sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
+        mitochondrial=PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv"
     conda:
         CONDAENV + "plots.yaml"
     shell:
@@ -322,10 +324,13 @@ rule finalize_candidate_ranking:
             --sample {wildcards.sample} \
             --recurrence-summary {input.recurrence} \
             --recurrence-members {input.recurrence_members} \
+            --mitochondrial-ranking {input.mitochondrial} \
             --gene-output {output.genes} \
-            --sv-output {output.sv}
+            --sv-output {output.sv} \
+            --mito-output {output.mitochondrial}
         test -s {output.genes}
         test -s {output.sv}
+        test -e {output.mitochondrial}
         """
 
 
@@ -478,6 +483,10 @@ FINAL_THESIS_OUTPUTS = [
     ),
     *expand(
         PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv",
         sample=POSTPROCESS_SAMPLES,
     ),
     *expand(
