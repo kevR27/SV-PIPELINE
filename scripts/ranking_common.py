@@ -86,9 +86,12 @@ MECHANISM_PRIORITY = {
     "STRONG_DOSAGE_OR_BIALLELIC_COMPATIBILITY": 5,
     "AR_TRANS_SECOND_ALLELE_SUPPORTED": 5,
     "SUPPORTED_DISEASE_MECHANISM": 4,
+    "AD_LOF_GENOTYPE_UNRESOLVED": 3,
     "DIRECT_EFFECT_RECESSIVE_SECOND_ALLELE_REQUIRED": 3,
+    "MIXED_AD_AR_DISEASE_MODEL_REVIEW": 3,
     "DIRECT_EFFECT_MOI_UNKNOWN": 3,
     "SEX_LINKED_REVIEW": 3,
+    "AD_HOMOZYGOUS_ALT_REVIEW": 2,
     "PROXIMAL_CONTEXT": 2,
     "DIRECT_COPY_GAIN_WITHOUT_TS_SUPPORT": 2,
     "INTERVAL_CONTEXT_ONLY": 1,
@@ -404,12 +407,40 @@ def mechanism_inheritance_summary(row) -> dict:
         elif hi == 2:
             category = "SUPPORTED_DISEASE_MECHANISM"
             detail = "ClinGen HI=2 provides emerging haploinsufficiency support"
+        elif {"AD", "AR"}.issubset(mois):
+            category = "MIXED_AD_AR_DISEASE_MODEL_REVIEW"
+            detail = (
+                "gene has both dominant and recessive disease models; without a "
+                "disease-specific mechanism match this SV is not promoted as a "
+                "simple dominant or recessive event"
+            )
         elif "AD" in mois:
-            category = "SUPPORTED_DISEASE_MECHANISM"
-            detail = "direct loss/disruption is compatible with a reported dominant disease model; exact molecular mechanism still requires review"
+            if gt == "HET":
+                category = "SUPPORTED_DISEASE_MECHANISM"
+                detail = (
+                    "heterozygous direct loss/disruption is compatible with a "
+                    "reported dominant disease model; disease-specific molecular "
+                    "mechanism and segregation still require review"
+                )
+            elif gt == "HOM_ALT":
+                category = "AD_HOMOZYGOUS_ALT_REVIEW"
+                detail = (
+                    "gene has a dominant disease model but the SV genotype is "
+                    "homozygous alternate; review disease mechanism, dosage, "
+                    "viability and caller genotype before prioritizing"
+                )
+            else:
+                category = "AD_LOF_GENOTYPE_UNRESOLVED"
+                detail = (
+                    "direct loss/disruption is compatible with a reported dominant "
+                    "disease model, but the patient SV genotype is unresolved"
+                )
         elif "AR" in mois:
             category = "DIRECT_EFFECT_RECESSIVE_SECOND_ALLELE_REQUIRED"
-            detail = "direct SV effect in an AR gene; a second pathogenic allele or biallelic SV state is required"
+            detail = (
+                "direct SV effect in an AR gene; a second pathogenic allele or "
+                "biallelic SV state is required"
+            )
         elif mois & {"XLD", "XLR"}:
             category = "SEX_LINKED_REVIEW"
             detail = "X-linked disease model requires sex/ploidy and locus-specific review"
