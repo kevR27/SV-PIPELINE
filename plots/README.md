@@ -20,13 +20,14 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_needlr_population.py`: overall and ancestry-specific needLR population-frequency plots.
 - `plot_candidate_genes.py`: gene-prioritization plot from `*_ranked_candidates.tsv`.
 - `plot_gene_hpo_heatmap.py`: human gene-HPO association heatmap from the offline Monarch branch.
-- `plot_candidate_evidence_matrix.py`: integrated SV/gene evidence matrix from the master TSV.
+- `plot_candidate_evidence_matrix.py`: integrated SV/gene evidence matrix from the compact final SV-gene table.
 - `plot_panel_nonpanel_discovery.py`: explicit panel versus non-panel SV-gene categories, separating HPO and curated disease evidence.
 - `plot_sv_gene_associations.py`: quantitative relationship between technical SV support, phenotype relevance, gene-disease evidence and each explicit SV-gene pair.
 - `plot_sv_gene_network.py`: bipartite map showing which master SV overlaps which gene, including multi-gene SVs and genes affected by multiple prioritized SVs.
 - `plot_candidate_locus.py`: one detailed locus figure per prioritized SV-gene pair, including nearby genes, principal evidence fields and optional indexed modkit methylation.
 - `run_samplot_candidates.py`: read-level ONT breakpoint/alignment evidence for the highest-priority master SVs; large events are breakpoint-zoomed and BNDs are shown as breakpoint-context views.
-- `plot_mitocarta_sv_genes.py`: MitoCarta3.0 view of nuclear-encoded mitochondrial genes intersected by master SVs, including mitochondrial pathways and existing optic-neuropathy phenotype context.
+- `plot_mitocarta_sv_genes.py`: MitoCarta3.0 view of nuclear-encoded mitochondrial genes intersected by SVs, including pathway context separated by direct/proximal/interval SV-gene relationship.
+- `plot_mitochondrial_gene_ranking.py`: separate ranked figures for nuclear-encoded mitochondrial genes and mtDNA-encoded genes.
 - `plot_cohort_sv_comparison.py`: deduplicated comparison of completed samples by SV type and evidence-defined subsets.
 - `plot_straglr.py`: tandem-repeat locus size/copy-number/support overview.
 - `plot_mei.py`: TLDR mobile-element insertion summary.
