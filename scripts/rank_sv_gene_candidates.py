@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """Prioritize genes intersected by the genome-wide SV callset.
 
-This is a research-prioritization layer, not a pathogenicity classifier.
+The primary ranking is tier-based rather than a fine-grained additive score.
+Generic hereditary-optic-neuropathy (HON) phenotype relevance is calculated
+with IC-weighted Resnik best-match-average similarity to the HON seed terms.
+Curated gene-disease evidence is kept separate and down-weighted when the gene
+has little HON phenotype similarity.
 
-The ranking keeps gene relevance separate from event evidence:
-1. Generic HON context: does the gene have explicit hereditary-optic-neuropathy
-   HPO anchor annotations?
-2. Gene-disease evidence: how strong is the known human gene-disease evidence?
+Panel membership is reported but is not used as a discovery score. Panel and
+non-panel ranks are therefore directly comparable within their own groups.
 
-SV count, SV size, caller support, population frequency and event mechanism are
-retained separately and do not add gene-relevance points.
-
-GenCC classifications are converted into a small transparent numerical score
-only to help order candidates. The score is not a probability of pathogenicity
-and does not replace clinical variant interpretation.
+This is research prioritization, not variant pathogenicity classification.
 """
 
 from __future__ import annotations
@@ -24,6 +21,16 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+from ranking_common import (
+    MISSING,
+    gene_relevance,
+    inheritance_class,
+    known,
+    parse_moi,
+    semantic_engine,
+    summarize_gencc,
+)
 from sv_evidence_common import INVALID_GENE_LABELS, gene_symbols
 
 try:
@@ -32,50 +39,24 @@ except OverflowError:
     csv.field_size_limit(2**31 - 1)
 
 
-# Internal prioritization weights for GenCC terms.
-# These values are deliberately simple and monotonic. They are NOT an
-# official GenCC pathogenicity scale and must not be interpreted as a
-# probability that a gene or variant is pathogenic.
-GENCC_SCORES = {
-    "DEFINITIVE": 4.0,
-    "STRONG": 3.5,
-    "MODERATE": 2.5,
-    "SUPPORTIVE": 1.5,
-    "LIMITED": 0.5,
-    "ANIMAL MODEL ONLY": 0.0,
-    "DISPUTED": 0.0,
-    "REFUTED": 0.0,
-    "NO KNOWN DISEASE RELATIONSHIP": 0.0,
-}
-
-POSITIVE_GENCC = {
-    "DEFINITIVE",
-    "STRONG",
-    "MODERATE",
-    "SUPPORTIVE",
-    "LIMITED",
-}
-
-CONTRADICTORY_GENCC = {
-    "DISPUTED",
-    "REFUTED",
-    "NO KNOWN DISEASE RELATIONSHIP",
-}
-
-MISSING_VALUES = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
-
-
-def known(value) -> bool:
-    return value is not None and str(value).strip().upper() not in MISSING_VALUES
-
-
 def read_list(path: str) -> set[str]:
-    out: set[str] = set()
+    out = set()
     with open(path, encoding="utf-8") as fh:
         for line in fh:
             value = line.strip()
             if value and not value.startswith("#"):
                 out.add(value.upper())
+    return out
+
+
+def read_hpo_seeds(path: str) -> set[str]:
+    out = set()
+    with open(path, encoding="utf-8") as fh:
+        reader = csv.DictReader(fh, delimiter="	")
+        for row in reader:
+            hp = str(row.get("hpo_id", "")).strip()
+            if hp.startswith("HP:"):
+                out.add(hp)
     return out
 
 
@@ -92,149 +73,64 @@ def first(row: dict, names: list[str]) -> str:
     return ""
 
 
-def split_values(value: str) -> list[str]:
-    if not known(value):
-        return []
-    return [
-        x.strip()
-        for x in re.split(r"[;|]", str(value))
-        if known(x)
-    ]
-
-
 def is_positive_flag(value: str) -> bool:
-    return str(value or "").strip().upper() in {
-        "YES",
-        "TRUE",
-        "1",
-        "Y",
-    }
+    return str(value or "").strip().upper() in {"YES", "TRUE", "1", "Y"}
 
 
-def normalize_gencc_term(value: str) -> str | None:
-    """Map raw GenCC text to one harmonized term when possible."""
-    text = str(value or "").strip().upper()
-    if not text:
-        return None
-
-    if "NO KNOWN" in text:
-        return "NO KNOWN DISEASE RELATIONSHIP"
-    if "ANIMAL" in text:
-        return "ANIMAL MODEL ONLY"
-    if "DEFINITIVE" in text:
-        return "DEFINITIVE"
-    if "STRONG" in text:
-        return "STRONG"
-    if "MODERATE" in text:
-        return "MODERATE"
-    if "SUPPORTIVE" in text:
-        return "SUPPORTIVE"
-    if "LIMITED" in text:
-        return "LIMITED"
-    if "DISPUTED" in text:
-        return "DISPUTED"
-    if "REFUTED" in text:
-        return "REFUTED"
-    return None
-
-
-def summarize_gencc(values: list[str], has_omim: bool) -> dict[str, str | float]:
-    terms: set[str] = set()
-    for raw in values:
-        pieces = split_values(raw) or [raw]
-        for piece in pieces:
-            term = normalize_gencc_term(piece)
-            if term:
-                terms.add(term)
-
-    positive = sorted(
-        (term for term in terms if term in POSITIVE_GENCC),
-        key=lambda term: GENCC_SCORES[term],
-        reverse=True,
-    )
-    contradictory = terms & CONTRADICTORY_GENCC
-    conflict = bool(positive and contradictory)
-
-    if positive:
-        best = positive[0]
-        score = GENCC_SCORES[best]
-        source = "GenCC"
-    elif "ANIMAL MODEL ONLY" in terms:
-        best = "ANIMAL MODEL ONLY"
-        score = GENCC_SCORES[best]
-        source = "GenCC"
-    elif terms:
-        # Disputed/refuted/no-known should not contribute positive evidence.
-        best = sorted(terms)[0]
-        score = 0.0
-        source = "GenCC"
-    elif has_omim:
-        # OMIM disease evidence is useful for prioritization, but it is not
-        # equivalent to a GenCC Definitive/Strong/Moderate curation.
-        best = "OMIM_DISEASE_EVIDENCE"
-        score = 1.0
-        source = "OMIM"
-    else:
-        best = "NO_CURATED_EVIDENCE"
-        score = 0.0
-        source = "NONE"
-
-    return {
-        "best": best,
-        "score": score,
-        "source": source,
-        "conflict": "YES" if conflict else "NO",
-        "all_terms": ";".join(sorted(terms)) if terms else ".",
-    }
+def first_numeric_text(values: list[str]) -> str:
+    cleaned = sorted({str(v).strip() for v in values if known(v)})
+    return ";".join(cleaned) if cleaned else "."
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--annotsv", required=True)
-    parser.add_argument("--genes", required=True, help="All genes intersected by master SVs")
+    parser.add_argument("--genes", required=True)
     parser.add_argument("--phenotypes", required=True)
     parser.add_argument("--panel", required=True)
+    parser.add_argument("--hpo-seeds", required=True)
+    parser.add_argument("--edges", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
     genes = read_list(args.genes) - INVALID_GENE_LABELS
     panel = read_list(args.panel)
+    hon_seeds = read_hpo_seeds(args.hpo_seeds)
+    semantic = semantic_engine(args.edges)
 
     pheno = defaultdict(
         lambda: {
-            "hpo_count": 0,
-            "anchor_count": 0,
             "hpos": set(),
             "anchors": set(),
             "sources": set(),
         }
     )
-
     with open(args.phenotypes, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh, delimiter="\t"):
-            gene = row.get("gene_symbol", "").upper()
+        for row in csv.DictReader(fh, delimiter="	"):
+            gene = str(row.get("gene_symbol", "")).upper().strip()
             if gene not in genes:
                 continue
-            hpo_id = row.get("hpo_id", "")
+            hpo_id = str(row.get("hpo_id", "")).strip()
             if hpo_id.startswith("HP:"):
                 pheno[gene]["hpos"].add(hpo_id)
-                pheno[gene]["hpo_count"] = len(pheno[gene]["hpos"])
-            if hpo_id.startswith("HP:") and row.get("optic_neuropathy_anchor", "0") == "1":
+            if (
+                hpo_id.startswith("HP:")
+                and str(row.get("optic_neuropathy_anchor", "0")) == "1"
+            ):
                 pheno[gene]["anchors"].add(hpo_id)
-                pheno[gene]["anchor_count"] = len(pheno[gene]["anchors"])
-            source = row.get("source", "")
+            source = str(row.get("source", "")).strip()
             if source:
                 pheno[gene]["sources"].add(source)
 
     annotsv = defaultdict(
         lambda: {
             "sv_ids": set(),
-            "rank": [],
             "ranking_score": [],
             "ranking_criteria": [],
             "acmg_class": [],
             "omim": [],
             "omim_morbid": [],
+            "omim_inheritance": [],
             "gencc_classification": [],
             "gencc_disease": [],
             "gencc_moi": [],
@@ -242,12 +138,15 @@ def main() -> int:
             "constraint": [],
             "hi": [],
             "ts": [],
+            "pli": [],
+            "loeuf": [],
+            "loeuf_bin": [],
             "sv_records": {},
         }
     )
 
     with open(args.annotsv, newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
+        reader = csv.DictReader(fh, delimiter="	")
         for row in reader:
             gene_field = first(
                 row,
@@ -257,7 +156,6 @@ def main() -> int:
                 continue
 
             row_genes = set(gene_symbols(gene_field))
-            # A BND may have two AnnotSV endpoint IDs for one master record.
             sv_id = first(row, ["SV_ID", "ID", "AnnotSV_ID"])
 
             for gene in row_genes:
@@ -267,7 +165,6 @@ def main() -> int:
                 data = annotsv[gene]
                 if sv_id:
                     data["sv_ids"].add(sv_id)
-
                     info_text = first(row, ["INFO"])
                     info_svtype = ""
                     if info_text:
@@ -278,29 +175,18 @@ def main() -> int:
                         )
                         if match:
                             info_svtype = match.group(1).upper()
-
                     svtype = (
                         info_svtype
-                        or first(
-                            row,
-                            ["SVTYPE", "SV_type", "svtype"],
-                        ).upper()
+                        or first(row, ["SVTYPE", "SV_type", "svtype"]).upper()
                     )
-
-                    raw_svlen = first(
-                        row,
-                        ["SV_length", "SVLEN", "svlen"],
-                    )
+                    raw_svlen = first(row, ["SV_length", "SVLEN", "svlen"])
                     try:
                         abs_svlen = abs(float(raw_svlen))
                     except (TypeError, ValueError):
                         abs_svlen = None
 
                     previous = data["sv_records"].get(sv_id)
-                    current = {
-                        "svtype": svtype or ".",
-                        "abs_svlen": abs_svlen,
-                    }
+                    current = {"svtype": svtype or ".", "abs_svlen": abs_svlen}
                     if (
                         previous is None
                         or (
@@ -310,43 +196,58 @@ def main() -> int:
                     ):
                         data["sv_records"][sv_id] = current
 
-                # These describe overlapping SV records, including the full
-                # event row. They do not assert pathogenicity of each gene.
                 for key, aliases in {
-                    "ranking_score": ["AnnotSV_ranking_score", "AnnotSV ranking score"],
-                    "ranking_criteria": ["AnnotSV_ranking_criteria", "AnnotSV ranking criteria"],
+                    "ranking_score": [
+                        "AnnotSV_ranking_score", "AnnotSV ranking score"
+                    ],
+                    "ranking_criteria": [
+                        "AnnotSV_ranking_criteria", "AnnotSV ranking criteria"
+                    ],
                     "acmg_class": ["ACMG_class", "ACMG class"],
                 }.items():
                     value = first(row, aliases)
                     if value:
                         data[key].append(value)
 
-                if str(row.get("Annotation_mode", "")).lower() == "full" or len(row_genes) != 1:
+                # Gene-specific evidence must come from the gene-specific rows.
+                if (
+                    str(row.get("Annotation_mode", "")).lower() == "full"
+                    or len(row_genes) != 1
+                ):
                     continue
 
-                for key, aliases in {
-                    "rank": ["AnnotSV ranking", "AnnotSV_rank", "ACMG_class"],
+                aliases = {
                     "omim": [
-                        "OMIM_phenotype",
-                        "OMIM",
-                        "AnnotSV_OMIM",
-                        "AnnotSV_OMIM_evidence",
+                        "OMIM_phenotype", "OMIM",
+                        "AnnotSV_OMIM", "AnnotSV_OMIM_evidence",
                     ],
-                    "omim_morbid": ["OMIM_morbid", "OMIM_morbid_candidate"],
+                    "omim_morbid": [
+                        "OMIM_morbid", "OMIM_morbid_candidate"
+                    ],
+                    "omim_inheritance": [
+                        "OMIM_inheritance", "OMIM inheritance"
+                    ],
                     "gencc_classification": [
-                        "GenCC_classification",
-                        "GENCC_classification",
-                        "GENCC",
-                        "GenCC",
+                        "GenCC_classification", "GENCC_classification",
+                        "GENCC", "GenCC",
                     ],
-                    "gencc_disease": ["GenCC_disease", "GENCC_disease"],
+                    "gencc_disease": [
+                        "GenCC_disease", "GENCC_disease"
+                    ],
                     "gencc_moi": ["GenCC_moi", "GENCC_moi"],
                     "clinvar": ["ClinVar", "ClinVar_SV"],
-                    "constraint": ["HI", "TS", "pLI", "LOEUF", "LOEUF_bin", "GnomAD_pLI"],
+                    "constraint": [
+                        "HI", "TS", "pLI", "LOEUF", "LOEUF_bin",
+                        "GnomAD_pLI",
+                    ],
                     "hi": ["HI"],
                     "ts": ["TS"],
-                }.items():
-                    value = first(row, aliases)
+                    "pli": ["pLI", "GnomAD_pLI"],
+                    "loeuf": ["LOEUF", "LOEUF_score"],
+                    "loeuf_bin": ["LOEUF_bin"],
+                }
+                for key, names in aliases.items():
+                    value = first(row, names)
                     if value:
                         data[key].append(value)
 
@@ -354,185 +255,218 @@ def main() -> int:
     for gene in sorted(genes):
         p = pheno[gene]
         a = annotsv[gene]
-        sv_count = len(a["sv_ids"])
 
-        # Baseline HON relevance uses only explicit HON anchor terms.
-        # Total HPO annotation count is retained descriptively but does not add
-        # ranking points because annotation density is strongly affected by how
-        # intensively a gene/disease has been studied. Patient-specific semantic
-        # similarity, when available, is reported separately downstream.
-        phenotype_component = min(10.0, p["anchor_count"] * 5.0)
-
-        # SV count is descriptive only. Repeated calls in one gene can reflect
-        # large rearrangements, repetitive regions or caller behavior and must
-        # not increase gene relevance.
-        sv_component = 0.0
+        hon_similarity = semantic["normalized_bma"](
+            p["hpos"],
+            hon_seeds,
+        )
+        phenotype_score_0_10 = 10.0 * hon_similarity
 
         has_omim = bool(a["omim"]) or any(
-            is_positive_flag(value)
-            for value in a["omim_morbid"]
+            is_positive_flag(value) for value in a["omim_morbid"]
         )
-        gencc_summary = summarize_gencc(a["gencc_classification"], has_omim)
-        gene_disease_component = float(gencc_summary["score"])
+        gencc = summarize_gencc(
+            a["gencc_classification"],
+            has_omim=has_omim,
+            hon_semantic_normalized=hon_similarity,
+        )
+        relevance = gene_relevance(
+            hon_similarity,
+            float(gencc["adjusted_score"]),
+        )
+
+        moi_set = parse_moi(
+            ";".join(a["gencc_moi"]),
+            ";".join(a["omim_inheritance"]),
+        )
+        inheritance = inheritance_class(moi_set)
 
         sv_records = list(a["sv_records"].values())
+        sized = [
+            record
+            for record in sv_records
+            if record.get("abs_svlen") is not None
+        ]
         sv_types = sorted({
             record["svtype"]
             for record in sv_records
             if record.get("svtype") not in ("", ".")
         })
 
-        sized_records = [
-            record
-            for record in sv_records
-            if record.get("abs_svlen") is not None
-        ]
-        sv_count_lt100kb = sum(
-            record["abs_svlen"] < 100_000
-            for record in sized_records
-        )
+        sv_count_lt100kb = sum(r["abs_svlen"] < 100_000 for r in sized)
         sv_count_100kb_1mb = sum(
-            100_000 <= record["abs_svlen"] < 1_000_000
-            for record in sized_records
+            100_000 <= r["abs_svlen"] < 1_000_000 for r in sized
         )
         sv_count_1mb_10mb = sum(
-            1_000_000 <= record["abs_svlen"] < 10_000_000
-            for record in sized_records
+            1_000_000 <= r["abs_svlen"] < 10_000_000 for r in sized
         )
-        sv_count_ge10mb = sum(
-            record["abs_svlen"] >= 10_000_000
-            for record in sized_records
-        )
+        sv_count_ge10mb = sum(r["abs_svlen"] >= 10_000_000 for r in sized)
         breakpoint_defined_count = sum(
-            record.get("svtype") in {"INV", "BND", "TRA"}
-            for record in sv_records
+            r.get("svtype") in {"INV", "BND", "TRA"} for r in sv_records
         )
         max_sv_size_bp = max(
-            (
-                record["abs_svlen"]
-                for record in sized_records
-            ),
+            (r["abs_svlen"] for r in sized),
             default=None,
         )
 
-        # Research-priority score only:
-        # HON-anchor phenotype (0-10) + curated gene-disease evidence (0-4).
-        # SV burden is retained in separate descriptive columns.
-        integrated_discovery_score = (
-            phenotype_component
-            + gene_disease_component
-        )
-
-        # Candidate gene-disease status must come from curated gene-disease
-        # evidence (GenCC, with OMIM as a weaker fallback). A ClinVar
-        # variant/region annotation is retained separately and must not by
-        # itself turn a gene into a curated human disease gene.
-        has_disease_evidence = gene_disease_component > 0
+        has_disease_evidence = float(gencc["adjusted_score"]) > 0
+        has_hon_context = hon_similarity > 0
 
         if gene in panel:
             candidate_group = "PANEL_GENE"
-        elif p["anchor_count"] > 0 and has_disease_evidence:
+        elif has_hon_context and has_disease_evidence:
             candidate_group = "NONPANEL_HPO_AND_DISEASE_EVIDENCE"
-        elif p["anchor_count"] > 0:
+        elif has_hon_context:
             candidate_group = "NONPANEL_HPO_OVERLAP"
         elif has_disease_evidence:
             candidate_group = "NONPANEL_HUMAN_DISEASE_GENE"
         else:
             candidate_group = "OTHER_NONPANEL_CANDIDATE"
 
-        rows.append(
-            {
-                "gene": gene,
-                "panel_gene": "YES" if gene in panel else "NO",
-                "SV_count": sv_count,
-                "SV_types": ";".join(sv_types) if sv_types else ".",
-                "SV_count_lt100kb": sv_count_lt100kb,
-                "SV_count_100kb_to_1Mb": sv_count_100kb_1mb,
-                "SV_count_1Mb_to_10Mb": sv_count_1mb_10mb,
-                "SV_count_ge10Mb": sv_count_ge10mb,
-                "breakpoint_defined_INV_BND_count": breakpoint_defined_count,
-                "max_SV_size_bp": (
-                    int(max_sv_size_bp)
-                    if max_sv_size_bp is not None
-                    else "."
-                ),
-                "human_HPO_count": p["hpo_count"],
-                "optic_neuropathy_anchor_HPO_count": p["anchor_count"],
-                "hon_context_score": round(phenotype_component, 3),
-                "phenotype_score": round(phenotype_component, 3),
-                "phenotype_score_scope": "GENERIC_HON_ANCHOR_CONTEXT_NOT_PATIENT_SPECIFIC",
-                "gene_disease_evidence_score": round(gene_disease_component, 3),
-                "gene_disease_evidence_level": gencc_summary["best"],
-                "gene_disease_evidence_source": gencc_summary["source"],
-                "gene_disease_evidence_conflict": gencc_summary["conflict"],
-                "GenCC_classifications": gencc_summary["all_terms"],
-                "GenCC_disease": ";".join(sorted(set(a["gencc_disease"]))),
-                "GenCC_moi": ";".join(sorted(set(a["gencc_moi"]))),
-                "ClinGen_HI": ";".join(sorted(set(a["hi"]))),
-                "ClinGen_TS": ";".join(sorted(set(a["ts"]))),
-                "SV_evidence_score": round(sv_component, 3),
-                "integrated_discovery_score": round(integrated_discovery_score, 3),
-                "integrated_discovery_score_scope": "GENERIC_HON_CONTEXT_PLUS_CURATED_GENE_DISEASE_NOT_PATHOGENICITY",
-                "AnnotSV_ranking_scores": ";".join(sorted(set(a["ranking_score"]))),
-                "AnnotSV_ranking_criteria": ";".join(sorted(set(a["ranking_criteria"]))),
-                "AnnotSV_ACMG_classes": ";".join(sorted(set(a["acmg_class"]))),
-                "AnnotSV_classification_scope": "OVERLAPPING_SV_RECORDS_NOT_GENE_PATHOGENICITY",
-                "AnnotSV_OMIM_evidence": ";".join(sorted(set(a["omim"]))),
-                "AnnotSV_GENCC_evidence": ";".join(sorted(set(a["gencc_classification"]))),
-                "AnnotSV_ClinVar_evidence": ";".join(sorted(set(a["clinvar"]))),
-                "AnnotSV_constraint_evidence": ";".join(sorted(set(a["constraint"]))),
+        rows.append({
+            "gene": gene,
+            "panel_gene": "YES" if gene in panel else "NO",
+            "PANEL_STATUS": "PANEL_GENE" if gene in panel else "NONPANEL_GENE",
+            "SV_count": len(a["sv_ids"]),
+            "SV_types": ";".join(sv_types) if sv_types else ".",
+            "SV_count_lt100kb": sv_count_lt100kb,
+            "SV_count_100kb_to_1Mb": sv_count_100kb_1mb,
+            "SV_count_1Mb_to_10Mb": sv_count_1mb_10mb,
+            "SV_count_ge10Mb": sv_count_ge10mb,
+            "breakpoint_defined_INV_BND_count": breakpoint_defined_count,
+            "max_SV_size_bp": (
+                int(max_sv_size_bp) if max_sv_size_bp is not None else "."
+            ),
+            "human_HPO_count": len(p["hpos"]),
+            "optic_neuropathy_anchor_HPO_count": len(p["anchors"]),
+            "HON_SEMANTIC_SIMILARITY_NORMALIZED": round(hon_similarity, 6),
+            "HON_SEMANTIC_SCORE_0_10": round(phenotype_score_0_10, 3),
+            "phenotype_score": round(phenotype_score_0_10, 3),
+            "phenotype_score_scope": (
+                "GENERIC_HON_RESNIK_BMA_NOT_PATIENT_SPECIFIC"
+            ),
+            "gene_disease_evidence_raw_score": round(
+                float(gencc["raw_score"]), 3
+            ),
+            "gene_disease_evidence_score": round(
+                float(gencc["adjusted_score"]), 3
+            ),
+            "gene_disease_evidence_level": gencc["best"],
+            "gene_disease_evidence_source": gencc["source"],
+            "gene_disease_evidence_conflict": gencc["conflict"],
+            "GENE_DISEASE_HON_CONTEXT_FACTOR": gencc["hon_context_factor"],
+            "GENE_DISEASE_CONTEXT_SCOPE": gencc["scope"],
+            "GENE_RELEVANCE_TIER": relevance["tier"],
+            "GENE_RELEVANCE_TIER_RANK": relevance["tier_rank"],
+            "GENE_RELEVANCE_DISPLAY_SCORE": relevance["display_score"],
+            # Backward-compatible numeric column. It is a display/tie-break
+            # score only; tier is the primary ranking axis.
+            "integrated_discovery_score": relevance["display_score"],
+            "integrated_discovery_score_scope": (
+                "BALANCED_HON_SEMANTIC_AND_CURATED_DISEASE_DISPLAY_SCORE_"
+                "PRIMARY_ORDER_USES_GENE_RELEVANCE_TIER"
+            ),
+            "GenCC_classifications": gencc["all_terms"],
+            "GenCC_disease": ";".join(sorted(set(a["gencc_disease"]))) or ".",
+            "GenCC_moi": ";".join(sorted(set(a["gencc_moi"]))) or ".",
+            "OMIM_inheritance": (
+                ";".join(sorted(set(a["omim_inheritance"]))) or "."
+            ),
+            "GENE_MOI_SET": ";".join(sorted(moi_set)) if moi_set else ".",
+            "GENE_INHERITANCE_CLASS": inheritance,
+            "ClinGen_HI": first_numeric_text(a["hi"]),
+            "ClinGen_TS": first_numeric_text(a["ts"]),
+            "gnomAD_pLI": first_numeric_text(a["pli"]),
+            "gnomAD_LOEUF": first_numeric_text(a["loeuf"]),
+            "gnomAD_LOEUF_bin": first_numeric_text(a["loeuf_bin"]),
+            "SV_evidence_score": 0.0,
+            "AnnotSV_ranking_scores": (
+                ";".join(sorted(set(a["ranking_score"]))) or "."
+            ),
+            "AnnotSV_ranking_criteria": (
+                ";".join(sorted(set(a["ranking_criteria"]))) or "."
+            ),
+            "AnnotSV_ACMG_classes": (
+                ";".join(sorted(set(a["acmg_class"]))) or "."
+            ),
+            "AnnotSV_classification_scope": (
+                "OVERLAPPING_SV_RECORDS_NOT_GENE_PATHOGENICITY"
+            ),
+            "AnnotSV_OMIM_evidence": (
+                ";".join(sorted(set(a["omim"]))) or "."
+            ),
+            "AnnotSV_GENCC_evidence": (
+                ";".join(sorted(set(a["gencc_classification"]))) or "."
+            ),
+            "AnnotSV_ClinVar_evidence": (
+                ";".join(sorted(set(a["clinvar"]))) or "."
+            ),
+            "AnnotSV_constraint_evidence": (
+                ";".join(sorted(set(a["constraint"]))) or "."
+            ),
+            "CANDIDATE_CLASS": candidate_group,
+            "OMIM": ";".join(sorted(set(a["omim"]))) or ".",
+            "GENCC": gencc["all_terms"],
+            "ANNOTSV_GENERAL_CLASSIFICATION": (
+                ";".join(sorted(set(a["acmg_class"]))) or "."
+            ),
+            "candidate_group": candidate_group,
+            "classification": candidate_group,
+            "ranking_model": (
+                "HON_resnikBMA__balancedDiseaseEvidence__tiered_v5"
+            ),
+            "interpretation": (
+                "Research prioritization only. Primary gene ordering uses a "
+                "discrete relevance tier derived from continuous HON semantic "
+                "similarity and curated gene-disease evidence. Panel membership, "
+                "SV count and event size do not add gene-relevance points. "
+                "Inheritance, dosage mechanism, genotype, population frequency "
+                "and technical support are evaluated at the SV-gene event level."
+            ),
+        })
 
-                # Explicit interpretation columns retained in the gene-ranking
-                # output so the most useful biological context is visible
-                # without reopening the full AnnotSV table.
-                "PANEL_STATUS": "PANEL_GENE" if gene in panel else "NONPANEL_GENE",
-                "CANDIDATE_CLASS": candidate_group,
-                "OMIM": ";".join(sorted(set(a["omim"]))) or ".",
-                "GENCC": gencc_summary["all_terms"],
-                "ANNOTSV_GENERAL_CLASSIFICATION": (
-                    ";".join(sorted(set(a["acmg_class"]))) or "."
-                ),
-                "candidate_group": candidate_group,
-                "classification": candidate_group,
-                "ranking_model": "HONanchor10_geneDisease4_v4_noHPOcount",
-                "interpretation": (
-                    "Research-priority score only. The gene-disease component "
-                    "summarizes curated evidence and is not a gene pathogenicity "
-                    "probability. Review the specific SV, inheritance, dosage "
-                    "mechanism, population frequency, phenotype fit and clinical "
-                    "evidence before pathogenicity assessment. Size-class and "
-                    "INV/BND counts are descriptive and do not add pathogenicity "
-                    "points; use the SV-gene event ranking for mechanism-aware "
-                    "large/complex-event review."
-                ),
-            }
-        )
-
+    tier_order = {"HIGH": 3, "MODERATE": 2, "SUPPORTING": 1, "LIMITED": 0}
     rows.sort(
         key=lambda row: (
-            -float(row["integrated_discovery_score"]),
+            -tier_order.get(row["GENE_RELEVANCE_TIER"], 0),
+            -float(row["GENE_RELEVANCE_DISPLAY_SCORE"]),
+            -float(row["HON_SEMANTIC_SIMILARITY_NORMALIZED"]),
             -float(row["gene_disease_evidence_score"]),
-            -int(row["optic_neuropathy_anchor_HPO_count"]),
             row["gene"],
         )
     )
 
+    counters = defaultdict(int)
+    for index, row in enumerate(rows, start=1):
+        row["GENE_RANK_GLOBAL"] = index
+        group = row["PANEL_STATUS"]
+        counters[group] += 1
+        row["GENE_RANK_WITHIN_PANEL_STATUS"] = counters[group]
+
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     fields = list(rows[0].keys()) if rows else [
-        "gene",
-        "panel_gene",
-        "gene_disease_evidence_score",
-        "gene_disease_evidence_level",
-        "candidate_group",
-        "interpretation",
+        "gene", "panel_gene", "PANEL_STATUS", "GENE_RELEVANCE_TIER",
+        "GENE_RELEVANCE_DISPLAY_SCORE", "GENE_INHERITANCE_CLASS",
+        "candidate_group", "interpretation",
     ]
     with output.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fields, delimiter="\t")
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=fields,
+            delimiter="	",
+            lineterminator="
+",
+        )
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"[OK] ranked_genes={len(rows)} output={output}")
+    print(
+        f"[OK] ranked_genes={len(rows)} "
+        f"panel={sum(r['PANEL_STATUS'] == 'PANEL_GENE' for r in rows)} "
+        f"nonpanel={sum(r['PANEL_STATUS'] == 'NONPANEL_GENE' for r in rows)} "
+        f"output={output}"
+    )
     return 0
 
 
