@@ -101,6 +101,48 @@ def evidence_value(row, candidates):
     return "."
 
 
+def compact_gene_label(value, max_chars=18):
+    text = str(value)
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3] + "..."
+
+
+def assign_gene_lanes(frame, locus_start, locus_end, max_lanes=6):
+    """Pack nearby genes into a small number of non-overlapping visual lanes."""
+    if frame.empty:
+        return frame.copy()
+
+    work = frame.sort_values(["start", "end", "gene"]).copy()
+    lane_ends = []
+    lane_values = []
+    gap = max(250.0, (float(locus_end) - float(locus_start)) * 0.004)
+
+    for _, row in work.iterrows():
+        start = float(row["start"])
+        end = float(row["end"])
+        lane = None
+
+        for idx, lane_end in enumerate(lane_ends):
+            if start >= lane_end + gap:
+                lane = idx
+                lane_ends[idx] = end
+                break
+
+        if lane is None:
+            if len(lane_ends) < max_lanes:
+                lane = len(lane_ends)
+                lane_ends.append(end)
+            else:
+                lane = int(np.argmin(lane_ends))
+                lane_ends[lane] = max(lane_ends[lane], end)
+
+        lane_values.append(lane)
+
+    work["_lane"] = lane_values
+    return work
+
+
 def compact_text(value, max_chars=72, max_tokens=4):
     text = str(value)
     if text in {"", ".", "NA", "N/A", "nan", "None"}:
@@ -384,7 +426,7 @@ def main():
             )
             keep_target = nearby["gene"].astype(str).eq(gene)
             nearby = pd.concat(
-                [nearby[keep_target], nearby[~keep_target].nsmallest(23, "_distance")]
+                [nearby[keep_target], nearby[~keep_target].nsmallest(15, "_distance")]
             ).drop_duplicates().sort_values("start")
 
         methyl = methylation_records(args.methylation_bed, chrom, locus_start, locus_end)
@@ -443,21 +485,39 @@ def main():
         ax_sv.grid(axis="x", color="#E6E6E6", linewidth=0.7)
 
         if not nearby.empty:
-            y_positions = np.arange(len(nearby))
-            for y, (_, g) in zip(y_positions, nearby.iterrows()):
+            nearby = assign_gene_lanes(
+                nearby,
+                locus_start,
+                locus_end,
+                max_lanes=6,
+            )
+            for _, g in nearby.iterrows():
+                y = float(g["_lane"])
                 target = str(g["gene"]) == gene
                 face = "#0072B2" if target else "#C7CDD3"
+                gstart = float(g["start"])
+                gend = float(g["end"])
                 ax_gene.add_patch(
                     Rectangle(
-                        (float(g["start"]), y - 0.28),
-                        max(float(g["end"] - g["start"]), 1.0),
-                        0.56,
+                        (gstart, y - 0.22),
+                        max(gend - gstart, 1.0),
+                        0.44,
                         facecolor=face,
                         edgecolor="none",
                     )
                 )
-                ax_gene.text(float(g["start"]), y + 0.34, str(g["gene"]), fontsize=8.5, va="bottom")
-            ax_gene.set_ylim(-0.7, len(nearby) - 0.2)
+                ax_gene.text(
+                    (gstart + gend) / 2,
+                    y + 0.27,
+                    compact_gene_label(g["gene"]),
+                    fontsize=8.0 if target else 7.2,
+                    fontweight="bold" if target else "normal",
+                    ha="center",
+                    va="bottom",
+                    clip_on=True,
+                )
+            max_lane = int(nearby["_lane"].max())
+            ax_gene.set_ylim(-0.55, max_lane + 0.65)
         else:
             ax_gene.text(0.5, 0.5, "No gene BED entries in displayed interval", transform=ax_gene.transAxes, ha="center")
             ax_gene.set_ylim(0, 1)
