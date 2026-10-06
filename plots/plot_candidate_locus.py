@@ -127,7 +127,27 @@ def main():
     chr2_col = first_existing(df, ["CHR2"])
     pos2_col = first_existing(df, ["POS2"])
     type_col = first_existing(df, ["SVTYPE", "SV_type"])
-    score_col = first_existing(df, ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
+    score_col = first_existing(
+        df,
+        [
+            "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+            "GENE_RELEVANCE_DISPLAY_SCORE",
+            "EVENT_GENE_RELEVANCE_SCORE",
+            "INTEGRATED_DISCOVERY_SCORE",
+            "integrated_discovery_score",
+            "PHENOTYPE_SCORE",
+            "ALLELE_RESEARCH_SCORE",
+        ],
+    )
+    rank_col = first_existing(
+        df,
+        [
+            "FINAL_EVENT_RANK_GLOBAL",
+            "EVENT_RANK_GLOBAL",
+            "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
+            "EVENT_RANK_WITHIN_PANEL_STATUS",
+        ],
+    )
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
     af_col = first_existing(df, ["NEEDLR_AF"])
 
@@ -140,6 +160,12 @@ def main():
     work["_end"] = numeric(work[end_col]) if end_col else work["_start"]
     work["_end"] = work["_end"].fillna(work["_start"])
     work["_priority"] = numeric(work[score_col]).fillna(0) if score_col else 0
+    work["_final_rank"] = (
+        numeric(work[rank_col])
+        if rank_col
+        else pd.Series(np.nan, index=work.index)
+    )
+    work["_rank_missing"] = work["_final_rank"].isna().astype(int)
     work["_caller_count"] = numeric(work[caller_col]).fillna(0) if caller_col else 0
     work["_svtype"] = normalize_svtype(work[type_col]) if type_col else "OTHER"
     work["_af"] = numeric(work[af_col]) if af_col else np.nan
@@ -152,8 +178,17 @@ def main():
     work = work[~work["_gene"].isin(["", ".", "NA", "N/A", "nan", "None"])].copy()
     work = (
         work.sort_values(
-            ["_priority", "_population_rank", "_caller_count", id_col, "_gene"],
-            ascending=[False, False, False, True, True],
+            [
+                "_rank_missing",
+                "_final_rank",
+                "_priority",
+                "_population_rank",
+                "_caller_count",
+                id_col,
+                "_gene",
+            ],
+            ascending=[True, True, False, False, False, True, True],
+            na_position="last",
         )
         .drop_duplicates([id_col, gene_col], keep="first")
         .copy()
@@ -181,8 +216,16 @@ def main():
 
         for bucket in bucket_order:
             sub = work[work[bucket_col].eq(bucket)].sort_values(
-                ["_bucket_rank", "_priority", "_population_rank", "_caller_count"],
-                ascending=[True, False, False, False],
+                [
+                    "_rank_missing",
+                    "_final_rank",
+                    "_bucket_rank",
+                    "_priority",
+                    "_population_rank",
+                    "_caller_count",
+                ],
+                ascending=[True, True, True, False, False, False],
+                na_position="last",
             )
 
             if "PANEL_STATUS" in sub.columns and per_bucket >= 2:
@@ -220,8 +263,15 @@ def main():
 
         if len(selected_indices) < args.top_n:
             remainder = work.loc[~work.index.isin(selected_indices)].sort_values(
-                ["_priority", "_population_rank", "_caller_count"],
-                ascending=[False, False, False],
+                [
+                    "_rank_missing",
+                    "_final_rank",
+                    "_priority",
+                    "_population_rank",
+                    "_caller_count",
+                ],
+                ascending=[True, True, False, False, False],
+                na_position="last",
             )
             selected_indices.extend(
                 remainder.head(args.top_n - len(selected_indices)).index.tolist()
@@ -434,6 +484,11 @@ def main():
 
         evidence = [
             ("Overlapping gene", gene),
+            ("Final event rank", (
+                f"{int(row['_final_rank'])}"
+                if pd.notna(row["_final_rank"])
+                else "."
+            )),
             ("Gene/event relevance", f"{row['_priority']:.3g}" if pd.notna(row["_priority"]) else "."),
             ("Event bucket", compact_text(evidence_value(row, ["EVENT_REVIEW_BUCKET"]), 52, 2)),
             ("Gene relationship", compact_text(evidence_value(row, ["SV_GENE_RELATIONSHIP"]), 52, 2)),
@@ -506,6 +561,12 @@ def main():
                 "end": end,
                 "svtype": svtype,
                 "priority_score": row["_priority"],
+                "selection_rank": (
+                    int(row["_final_rank"])
+                    if pd.notna(row["_final_rank"])
+                    else "."
+                ),
+                "selection_rank_field": rank_col or ".",
                 "selection_score_field": score_col or ".",
                 "needLR_AF": row["_af"] if pd.notna(row["_af"]) else ".",
                 "large_gene_centered_view": "YES" if large_gene_centered else "NO",
