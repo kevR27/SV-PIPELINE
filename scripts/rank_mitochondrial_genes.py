@@ -258,10 +258,13 @@ def build_mtdna_overlap_rows(
             row["MITOCARTA_TOP_LEVEL_PATHWAYS"] = "."
             row["MITOCARTA_SUBCOMPARTMENT"] = "."
             is_panel = gene_rec["GENE"] in panel_genes
-            row["MITO_ON_CONTEXT"] = "YES" if is_panel else "NO"
+            row["MITO_ON_CONTEXT"] = "NO"
             row["MITO_ON_ANCHOR_HPO_COUNT"] = "0"
             row["PANEL_STATUS"] = "PANEL_GENE" if is_panel else "NONPANEL_GENE"
-            row["GENE_RELEVANCE_TIER"] = "SUPPORTING" if is_panel else "LIMITED"
+            # mtDNA panel membership is not converted into gene-relevance
+            # points. mtDNA rows are ranked by their own SV relationship,
+            # technical and population context.
+            row["GENE_RELEVANCE_TIER"] = "LIMITED"
             row["GENE_RELEVANCE_DISPLAY_SCORE"] = "0"
             row["EVENT_GENE_RELEVANCE_SCORE"] = "0"
             rows.append(row)
