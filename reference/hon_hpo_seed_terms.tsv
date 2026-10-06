@@ -5,3 +5,9 @@ HP:0000543	Optic disc pallor	CORE_OCULAR_HON	Clinical sign compatible with optic
 HP:0000529	Progressive visual loss	CORE_OCULAR_HON	Course descriptor relevant to hereditary optic neuropathy
 HP:0000603	Central scotoma	CORE_OCULAR_HON	Central visual-field defect relevant to mitochondrial optic neuropathy
 HP:0000576	Centrocecal scotoma	CORE_OCULAR_HON	Visual-field defect relevant to optic-nerve disease
+HP:0000365	Hearing impairment	MITO_SYNDROMIC_CONTEXT	Supporting syndromic feature seen in mitochondrial optic-neuropathy disorders; not assumed present in a patient
+HP:0001251	Ataxia	MITO_SYNDROMIC_CONTEXT	Supporting neurologic feature in syndromic mitochondrial disease; lower-weight generic context only
+HP:0003128	Lactic acidosis	MITO_SYNDROMIC_CONTEXT	Supporting metabolic feature of mitochondrial disease; lower-weight generic context only
+HP:0000544	External ophthalmoplegia	MITO_SYNDROMIC_CONTEXT	Supporting ocular-motor feature in mitochondrial disease/CPEO spectrum; not equivalent to optic neuropathy
+HP:0000508	Ptosis	MITO_SYNDROMIC_CONTEXT	Supporting ocular-motor feature in mitochondrial disease; lower-weight generic context only
+HP:0003546	Exercise intolerance	MITO_SYNDROMIC_CONTEXT	Supporting systemic mitochondrial phenotype; lower-weight generic context only
