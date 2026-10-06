@@ -89,6 +89,65 @@ def size_group(size: float | None, svtype: str) -> str:
     return "GE_10MB"
 
 
+def relationship_to_effect(relationship: str, svtype: str) -> str:
+    """Convert compact event relationship to the legacy readable effect label.
+
+    The compact postprocess table intentionally no longer retains
+    ANNOTSV_GENE_ROWS_JSON. rank_sv_gene_events.py has already converted that
+    geometry into SV_GENE_RELATIONSHIP, which is the authoritative downstream
+    field. These labels preserve compatibility with the existing thesis tables
+    and R plots without reconstructing gene geometry from deleted JSON.
+    """
+    relationship = str(relationship or "").upper()
+    svtype = str(svtype or "").upper()
+
+    if relationship == "WHOLE_GENE_DOSAGE_CONTEXT":
+        if svtype == "DEL":
+            return "WHOLE_GENE_DELETION"
+        if svtype == "DUP":
+            return "WHOLE_GENE_DUPLICATION"
+        return "WHOLE_GENE_DOSAGE_CONTEXT"
+
+    if relationship == "PARTIAL_GENE_OVERLAP":
+        if svtype == "DEL":
+            return "PARTIAL_GENE_DELETION"
+        if svtype == "DUP":
+            return "PARTIAL_GENE_DUPLICATION"
+        return "PARTIAL_GENE_OVERLAP"
+
+    if relationship == "INSERTION_WITHIN_TRANSCRIPT":
+        return "INSERTION_IN_TRANSCRIPT"
+    if relationship == "INSERTION_PROXIMAL_TO_GENE":
+        return "INSERTION_NEAR_GENE"
+
+    if relationship == "BREAKPOINT_WITHIN_TRANSCRIPT":
+        prefix = "INVERSION" if svtype == "INV" else "BREAKEND"
+        return f"{prefix}_BREAKPOINT_IN_TRANSCRIPT"
+
+    if relationship == "BREAKPOINT_PROXIMAL_TO_GENE":
+        prefix = "INVERSION" if svtype == "INV" else "BREAKEND"
+        return f"{prefix}_BREAKPOINT_NEAR_GENE"
+
+    if relationship == "INVERSION_SPANS_INTACT_GENE":
+        return "GENE_FULLY_SPANNED_BY_INVERSION"
+
+    if relationship == "INTERVAL_CONTEXT_ONLY":
+        return (
+            "INVERSION_INTERVAL_CONTEXT_ONLY"
+            if svtype == "INV"
+            else "BREAKEND_INTERVAL_CONTEXT_ONLY"
+        )
+
+    if relationship == "GENE_PROXIMAL_INTERVAL":
+        if svtype == "DEL":
+            return "DELETION_NEAR_GENE"
+        if svtype == "DUP":
+            return "DUPLICATION_NEAR_GENE"
+        return f"{svtype or 'SV'}_NEAR_GENE"
+
+    return relationship if relationship not in MISSING else "GENE_EFFECT_UNRESOLVED"
+
+
 def compact_gene_category(row: pd.Series) -> str:
     existing = text_value(
         row,
@@ -138,8 +197,25 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             continue
 
         row_dict = source.to_dict()
-        effect, distance = get_sv_gene_effect(row_dict, gene, near_breakpoint_bp)
         svtype = text_value(source, ["SVTYPE"]).upper()
+
+        # Compact postprocess outputs already contain the mechanism-aware
+        # relationship calculated before ANNOTSV_GENE_ROWS_JSON is removed.
+        relationship = text_value(source, ["SV_GENE_RELATIONSHIP"])
+        if relationship != ".":
+            effect = relationship_to_effect(relationship, svtype)
+            distance = numeric_value(
+                source,
+                ["BREAKPOINT_DISTANCE_TO_GENE_BP"],
+            )
+        else:
+            # Legacy completed runs may still carry AnnotSV transcript JSON.
+            effect, distance = get_sv_gene_effect(
+                row_dict,
+                gene,
+                near_breakpoint_bp,
+            )
+            relationship = "."
         original_svlen = numeric_value(source, ["SVLEN"])
         sv_size = numeric_value(source, ["SV_EVENT_SPAN_BP"])
         if sv_size is None:
@@ -169,6 +245,15 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "SVLEN": original_svlen if original_svlen is not None else ".",
             "SV_SPAN_BP": sv_size if sv_size is not None else ".",
             "SV_SIZE_GROUP": size_group(sv_size, svtype),
+            "SV_GENE_RELATIONSHIP": relationship,
+            "EVENT_INTERPRETATION_SCOPE": text_value(
+                source,
+                ["EVENT_INTERPRETATION_SCOPE"],
+            ),
+            "EVENT_REVIEW_BUCKET": text_value(
+                source,
+                ["EVENT_REVIEW_BUCKET"],
+            ),
             "SV_GENE_EFFECT": effect,
             "SV_FUNCTIONAL_CONTEXT": get_functional_context(svtype, effect),
             "BREAKPOINT_DISTANCE_BP": distance if distance is not None else ".",
