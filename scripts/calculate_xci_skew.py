@@ -74,6 +74,7 @@ def main():
     p.add_argument("--min-chrx-coverage", type=float, default=15.0)
     p.add_argument("--min-block-reads", type=int, default=5)
     p.add_argument("--neutral-threshold", type=float, default=0.40)
+    p.add_argument("--high-skew-threshold", type=float, default=0.20)
     p.add_argument("--blocks-output", required=True)
     p.add_argument("--summary-output", required=True)
     args = p.parse_args()
@@ -187,11 +188,12 @@ def main():
     if estimate_ok:
         major = 100.0 * (1.0 - mle)
         minor = 100.0 * mle
-        status = (
-            "SKEWED_P_LT_0.40"
-            if mle < args.neutral_threshold
-            else "BALANCED_OR_LOW_SKEW_P_GE_0.40"
-        )
+        if mle <= args.high_skew_threshold:
+            status = "HIGH_SKEW_P_LE_0.20"
+        elif mle < args.neutral_threshold:
+            status = "MODERATE_SKEW_0.20_TO_0.40"
+        else:
+            status = "BALANCED_OR_LOW_SKEW_P_GE_0.40"
         ratio = f"{major:.1f}:{minor:.1f}"
     else:
         major = np.nan
@@ -245,6 +247,7 @@ def main():
                 ),
                 "XCI_MAJOR_MINOR_RATIO": ratio,
                 "XCI_SKEW_STATUS": status,
+                "HIGH_SKEW_THRESHOLD_P": args.high_skew_threshold,
                 "NEUTRAL_THRESHOLD_P": args.neutral_threshold,
                 "METHOD": (
                     "CpG-island Xa/Xi clustering + WhatsHap HP/PS + "
