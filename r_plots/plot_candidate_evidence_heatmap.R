@@ -32,19 +32,44 @@ flag <- function(x, positive, unknown = character()) {
   )
 }
 
-functional_context <- if ("SV_FUNCTIONAL_CONTEXT" %in% names(dt)) {
-  dt$SV_FUNCTIONAL_CONTEXT
+relationship <- if ("SV_GENE_RELATIONSHIP" %in% names(dt)) {
+  as.character(dt$SV_GENE_RELATIONSHIP)
 } else {
   rep("", nrow(dt))
 }
-effect_direct <- grepl(
-  "DIRECT_TRANSCRIPT_DISRUPTION|COPY_LOSS_GEOMETRIC_CONTEXT|COPY_GAIN_GEOMETRIC_CONTEXT|INSERTION_SITE_CONTEXT",
-  functional_context
-)
-effect_regulatory <- grepl(
-  "REGULATORY_OR_POSITION_EFFECT|FULLY_SPANNED_COPY_NEUTRAL_REGULATORY_3D",
-  functional_context
-)
+functional_context <- if ("SV_FUNCTIONAL_CONTEXT" %in% names(dt)) {
+  as.character(dt$SV_FUNCTIONAL_CONTEXT)
+} else {
+  rep("", nrow(dt))
+}
+
+# Prefer the compact mechanism-aware relationship calculated before the large
+# AnnotSV transcript JSON is discarded. Fall back to the legacy functional
+# context only for older completed runs.
+if ("SV_GENE_RELATIONSHIP" %in% names(dt)) {
+  effect_direct <- relationship %in% c(
+    "WHOLE_GENE_DOSAGE_CONTEXT",
+    "PARTIAL_GENE_OVERLAP",
+    "INSERTION_WITHIN_TRANSCRIPT",
+    "BREAKPOINT_WITHIN_TRANSCRIPT"
+  )
+  effect_regulatory <- relationship %in% c(
+    "INSERTION_PROXIMAL_TO_GENE",
+    "BREAKPOINT_PROXIMAL_TO_GENE",
+    "GENE_PROXIMAL_INTERVAL",
+    "INVERSION_SPANS_INTACT_GENE",
+    "INTERVAL_CONTEXT_ONLY"
+  )
+} else {
+  effect_direct <- grepl(
+    "DIRECT_TRANSCRIPT_DISRUPTION|COPY_LOSS_GEOMETRIC_CONTEXT|COPY_GAIN_GEOMETRIC_CONTEXT|INSERTION_SITE_CONTEXT",
+    functional_context
+  )
+  effect_regulatory <- grepl(
+    "REGULATORY_OR_POSITION_EFFECT|FULLY_SPANNED_COPY_NEUTRAL_REGULATORY_3D",
+    functional_context
+  )
+}
 depth_support <- if ("DEPTH_SUPPORT_CLASS" %in% names(dt)) {
   flag(
     dt$DEPTH_SUPPORT_CLASS,
