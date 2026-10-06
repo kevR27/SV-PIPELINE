@@ -77,6 +77,38 @@ def transcript_intervals(row, gene: str, json_col: str | None):
     return intervals
 
 
+def annotsv_gene_value(
+    row,
+    gene: str,
+    json_col: str | None,
+    names: list[str],
+) -> str:
+    """Recover gene-specific evidence from AnnotSV JSON before compaction."""
+    if not json_col:
+        return "."
+    raw = row.get(json_col, ".")
+    try:
+        records = (
+            json.loads(raw)
+            if str(raw).strip().upper() not in MISSING
+            else []
+        )
+    except Exception:
+        return "."
+
+    for record in records:
+        if str(record.get("Gene_name", "")).strip().upper() != gene.upper():
+            continue
+        lower = {str(k).lower(): v for k, v in record.items()}
+        for name in names:
+            value = record.get(name)
+            if value is None:
+                value = lower.get(name.lower())
+            if value is not None and str(value).strip().upper() not in MISSING:
+                return str(value).strip()
+    return "."
+
+
 def breakpoint_distance(bp, tx):
     chrom, pos = bp
     tx_chrom, start, end = tx
@@ -562,6 +594,46 @@ def main():
         .map({True: "YES", False: "NO"})
     )
 
+    # Recover gene-specific mechanism/constraint fields from the detailed
+    # AnnotSV JSON before compact mode removes that large payload. Existing
+    # explicit integrated columns are always preferred.
+    recover_fields = {
+        "CLINGEN_HI": ["HI"],
+        "CLINGEN_TS": ["TS"],
+        "GNOMAD_PLI": ["pLI", "GnomAD_pLI", "gnomAD_pLI"],
+        "GNOMAD_LOEUF": ["LOEUF", "LOEUF_score", "gnomAD_LOEUF"],
+        "GNOMAD_LOEUF_BIN": ["LOEUF_bin", "gnomAD_LOEUF_bin"],
+        "GENCC_MOI": ["GenCC_moi", "GENCC_moi"],
+        "OMIM_INHERITANCE": ["OMIM_inheritance", "OMIM inheritance"],
+        "GENCC": [
+            "GenCC_classification",
+            "GENCC_classification",
+            "GenCC",
+            "GENCC",
+        ],
+        "OMIM": ["OMIM_phenotype", "OMIM"],
+    }
+
+    for column, aliases in recover_fields.items():
+        if column not in out.columns:
+            out[column] = "."
+        recovered = []
+        for _, row in out.iterrows():
+            current = row.get(column, ".")
+            if str(current).strip().upper() not in MISSING:
+                recovered.append(current)
+                continue
+            gene = str(row.get(gene_col, ".")).strip()
+            recovered.append(
+                annotsv_gene_value(
+                    row,
+                    gene,
+                    json_col,
+                    aliases,
+                )
+            )
+        out[column] = recovered
+
     if args.compact_output:
         # The gene-relationship calculation above is the last downstream step
         # that needs the verbose AnnotSV transcript JSON. Allele assessment has
@@ -631,6 +703,18 @@ def main():
             has_omim=known(row.get("OMIM")),
             hon_semantic_normalized=hon,
         )
+
+        # Preserve a previously detected GenCC conflict even when the compact
+        # integrated row contains only the best individual classification.
+        old_conflict = str(
+            row.get("GENE_DISEASE_EVIDENCE_CONFLICT", "NO")
+        ).strip().upper()
+        if old_conflict in {"YES", "TRUE", "1"} and gencc["conflict"] != "YES":
+            gencc = dict(gencc)
+            gencc["conflict"] = "YES"
+            gencc["conflict_factor"] = 0.5
+            gencc["adjusted_score"] = float(gencc["adjusted_score"]) * 0.5
+
         relevance = gene_relevance(
             hon,
             float(gencc["adjusted_score"]),
