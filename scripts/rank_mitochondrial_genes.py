@@ -89,6 +89,24 @@ def mt_gene_class(gene: str) -> str:
     return "MTDNA_OTHER_GENE"
 
 
+def mt_gene_function(gene: str) -> str:
+    """Broad biological role for genes physically encoded by mtDNA."""
+    gene = gene.upper()
+    if gene in {"MT-ND1", "MT-ND2", "MT-ND3", "MT-ND4", "MT-ND4L", "MT-ND5", "MT-ND6"}:
+        return "OXPHOS_COMPLEX_I"
+    if gene == "MT-CYB":
+        return "OXPHOS_COMPLEX_III"
+    if gene in {"MT-CO1", "MT-CO2", "MT-CO3"}:
+        return "OXPHOS_COMPLEX_IV"
+    if gene in {"MT-ATP6", "MT-ATP8"}:
+        return "OXPHOS_COMPLEX_V"
+    if gene in MTDNA_RRNA_GENES:
+        return "MITOCHONDRIAL_TRANSLATION_RRNA"
+    if gene.startswith("MT-T"):
+        return "MITOCHONDRIAL_TRANSLATION_TRNA"
+    return "MTDNA_OTHER_FUNCTION"
+
+
 def relationship_rank(value: str) -> int:
     value = str(value or "").upper()
     if value in DIRECT_RELATIONSHIPS:
@@ -260,15 +278,15 @@ def build_mtdna_overlap_rows(df: pd.DataFrame, gene_bed: pd.DataFrame) -> pd.Dat
     if mt_genes.empty:
         return pd.DataFrame()
 
-    event_cols = [
-        col for col in [
-            id_col, "CHROM", "START", "END", "POS2", "CHR2", "SVTYPE", "SVLEN",
-            "CALLER_COUNT", "SUPP", "EVENT_TECHNICAL_TIER",
-            "EVENT_TECHNICAL_REVIEW", "EVENT_POPULATION_TIER",
-            "GNOMAD_SV_AF", "GNOMAD_SV_EXACT_MATCH", "NEEDLR_AF",
-        ]
-        if col in df.columns
-    ]
+    event_cols = []
+    for col in [
+        id_col, chrom_col, "START", "END", "POS2", "CHR2", "SVTYPE", "SVLEN",
+        "CALLER_COUNT", "SUPP", "EVENT_TECHNICAL_TIER",
+        "EVENT_TECHNICAL_REVIEW", "EVENT_POPULATION_TIER",
+        "GNOMAD_SV_AF", "GNOMAD_SV_EXACT_MATCH", "NEEDLR_AF",
+    ]:
+        if col in df.columns and col not in event_cols:
+            event_cols.append(col)
     events = df[event_cols].drop_duplicates(id_col).copy()
     events["_CHROM_NORM"] = events[chrom_col].map(normalize_chrom)
     events = events[events["_CHROM_NORM"].eq("chrM")]
@@ -359,6 +377,7 @@ def main():
     ].copy()
     nuclear["_ENCODING_GENOME"] = "NUCLEAR"
     nuclear["_GENE_CLASS"] = "NUCLEAR_ENCODED_MITOCHONDRIAL"
+    nuclear["_MTDNA_FUNCTION"] = "."
 
     mt_existing = work[
         work.get("MITOCARTA_ENCODING", pd.Series("", index=work.index))
@@ -370,6 +389,7 @@ def main():
     if not mt_existing.empty:
         mt_existing["_ENCODING_GENOME"] = "MTDNA"
         mt_existing["_GENE_CLASS"] = mt_existing["_GENE"].map(mt_gene_class)
+        mt_existing["_MTDNA_FUNCTION"] = mt_existing["_GENE"].map(mt_gene_function)
 
     bed = read_gene_bed(args.gene_bed)
     mt_overlap = build_mtdna_overlap_rows(work, bed)
@@ -377,6 +397,7 @@ def main():
         mt_overlap["_GENE"] = mt_overlap["GENE"].astype(str).str.upper().str.strip()
         mt_overlap["_ENCODING_GENOME"] = "MTDNA"
         mt_overlap["_GENE_CLASS"] = mt_overlap["_GENE"].map(mt_gene_class)
+        mt_overlap["_MTDNA_FUNCTION"] = mt_overlap["_GENE"].map(mt_gene_function)
 
     mt = pd.concat([mt_existing, mt_overlap], ignore_index=True, sort=False)
     if not mt.empty:
@@ -387,8 +408,9 @@ def main():
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(columns=[
-            "GENE", "ENCODING_GENOME", "GENE_CLASS", "MITO_RANK_WITHIN_ENCODING",
-            "MITO_PRIORITY_TIER", "UNIQUE_SVS", "DIRECT_SVS", "PROXIMAL_SVS",
+            "GENE", "ENCODING_GENOME", "GENE_CLASS", "MTDNA_FUNCTION",
+            "MITO_RANK_WITHIN_ENCODING", "MITO_PRIORITY_TIER",
+            "UNIQUE_SVS", "DIRECT_SVS", "PROXIMAL_SVS",
             "CONTEXT_SVS", "BEST_SV_ID", "BEST_SVTYPE", "BEST_SV_GENE_RELATIONSHIP",
         ]).to_csv(output, sep="\t", index=False)
         print(f"[OK] mitochondrial_ranked_genes=0 output={output}")
@@ -445,6 +467,7 @@ def main():
             "GENE": gene,
             "ENCODING_GENOME": encoding,
             "GENE_CLASS": str(best.get("_GENE_CLASS", ".")),
+            "MTDNA_FUNCTION": str(best.get("_MTDNA_FUNCTION", ".")),
             "MITO_PRIORITY_TIER": priority_tier(
                 int(best["_MECHANISM_RANK"]),
                 int(best["_DISEASE_CONTEXT_RANK"]),
@@ -508,7 +531,7 @@ def main():
     ])
     ordered = [
         "MITO_RANK_WITHIN_ENCODING", "GENE", "ENCODING_GENOME", "GENE_CLASS",
-        "MITO_PRIORITY_TIER", "UNIQUE_SVS", "DIRECT_SVS", "PROXIMAL_SVS",
+        "MTDNA_FUNCTION", "MITO_PRIORITY_TIER", "UNIQUE_SVS", "DIRECT_SVS", "PROXIMAL_SVS",
         "CONTEXT_SVS", "BEST_SV_ID", "BEST_SVTYPE", "BEST_SV_GENE_RELATIONSHIP",
         "BEST_RELATIONSHIP_SCOPE", "ON_PANEL_GENE", "MITO_ON_CONTEXT",
         "MAX_ON_ANCHOR_HPO_COUNT", "MAX_GENE_RELEVANCE", "BEST_TECHNICAL_TIER",
