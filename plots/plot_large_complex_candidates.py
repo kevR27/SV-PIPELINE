@@ -138,6 +138,27 @@ def choose(df, buckets, n):
     )
 
 
+def compact_gene(value, max_chars=18):
+    text = str(value)
+    return text if len(text) <= max_chars else text[: max_chars - 3] + "..."
+
+
+def compact_relationship(value):
+    mapping = {
+        "WHOLE_GENE_DOSAGE_CONTEXT": "whole-gene dosage",
+        "PARTIAL_GENE_OVERLAP": "partial overlap",
+        "BREAKPOINT_WITHIN_TRANSCRIPT": "breakpoint in gene",
+        "BREAKPOINT_PROXIMAL_TO_GENE": "breakpoint near gene",
+        "INSERTION_WITHIN_TRANSCRIPT": "insertion in gene",
+        "INSERTION_PROXIMAL_TO_GENE": "insertion near gene",
+        "INVERSION_SPANS_INTACT_GENE": "INV spans intact gene",
+        "INTERVAL_CONTEXT_ONLY": "interval context",
+        "GENE_PROXIMAL_INTERVAL": "proximal interval",
+    }
+    text = str(value)
+    return mapping.get(text, text.replace("_", " ").lower()[:30])
+
+
 def plot_panel(ax, data, title):
     if data.empty:
         ax.axis("off")
@@ -171,8 +192,8 @@ def plot_panel(ax, data, title):
 
     labels = []
     for _, row in data.iterrows():
-        gene = str(row.get("GENES", "."))
-        relation = str(row.get("SV_GENE_RELATIONSHIP", "."))
+        gene = compact_gene(row.get("GENES", "."))
+        relation = compact_relationship(row.get("SV_GENE_RELATIONSHIP", "."))
         labels.append(f"{gene} | {size_label(row)}\n{relation}")
 
     ax.set_yticks(y)
@@ -195,7 +216,7 @@ def plot_panel(ax, data, title):
         ax.text(
             bar.get_width() + 0.012 * xmax,
             bar.get_y() + bar.get_height() / 2,
-            f"rank={final_rank}; {callers} caller(s); {pop}; genes={genes}; {panel}",
+            f"r{final_rank}; {callers} caller(s); {pop}; n={genes}; {panel}",
             va="center",
             fontsize=7.8,
         )
