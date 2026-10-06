@@ -1012,11 +1012,14 @@ rule human_gene_phenotypes:
 rule rank_genomewide_candidates:
     input:
         script=SCRIPTS + "/rank_sv_gene_candidates.py",
+        ranking_common=SCRIPTS + "/ranking_common.py",
         common=SCRIPTS + "/sv_evidence_common.py",
         annotsv=rules.annotsv_annotation.output.tsv,
         genes=rules.extract_sv_genes.output.genes,
         phenotypes=rules.human_gene_phenotypes.output.tsv,
-        panel=GENE_LIST
+        panel=GENE_LIST,
+        hpo_seeds=DISCOVERY_HPO_FILE,
+        edges=MONARCH_EDGES
     output:
         tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv"
     conda:
@@ -1028,6 +1031,8 @@ rule rank_genomewide_candidates:
             --genes {input.genes} \
             --phenotypes {input.phenotypes} \
             --panel {input.panel} \
+            --hpo-seeds {input.hpo_seeds} \
+            --edges {input.edges} \
             --output {output.tsv}
         """
 
