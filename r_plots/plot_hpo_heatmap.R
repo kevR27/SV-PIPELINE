@@ -16,9 +16,36 @@ dir.create(dirname(pdf_file), recursive = TRUE, showWarnings = FALSE)
 
 pheno <- fread(phenotype_file, na.strings = c("", ".", "NA"))
 genes <- fread(genes_file, na.strings = c("", ".", "NA"))
-genes[, SCORE := suppressWarnings(as.numeric(GENE_RELEVANCE_SCORE))]
+score_col <- if ("FINAL_GENE_RELEVANCE_DISPLAY_SCORE" %in% names(genes)) {
+  "FINAL_GENE_RELEVANCE_DISPLAY_SCORE"
+} else if ("GENE_RELEVANCE_DISPLAY_SCORE" %in% names(genes)) {
+  "GENE_RELEVANCE_DISPLAY_SCORE"
+} else {
+  "GENE_RELEVANCE_SCORE"
+}
+rank_col <- if ("FINAL_GENE_RANK_WITHIN_PANEL_STATUS" %in% names(genes)) {
+  "FINAL_GENE_RANK_WITHIN_PANEL_STATUS"
+} else if ("GENE_RANK_WITHIN_PANEL_STATUS" %in% names(genes)) {
+  "GENE_RANK_WITHIN_PANEL_STATUS"
+} else {
+  NA_character_
+}
+
+genes[, SCORE := suppressWarnings(as.numeric(get(score_col)))]
 genes[is.na(SCORE), SCORE := 0]
-selected_genes <- head(genes[order(-SCORE)]$GENE, top_genes)
+genes[, PANEL_GROUP := fifelse(PANEL_STATUS == "PANEL_GENE", "Panel", "Non-panel")]
+genes[, GROUP_RANK := if (!is.na(rank_col)) {
+  suppressWarnings(as.numeric(get(rank_col)))
+} else {
+  NA_real_
+}]
+genes[, RANK_MISSING := as.integer(is.na(GROUP_RANK))]
+setorder(genes, PANEL_GROUP, RANK_MISSING, GROUP_RANK, -SCORE, GENE)
+selected_table <- genes[, head(.SD, top_genes), by = PANEL_GROUP]
+selected_genes <- c(
+  selected_table[PANEL_GROUP == "Panel", GENE],
+  selected_table[PANEL_GROUP == "Non-panel", GENE]
+)
 
 pheno <- pheno[gene_symbol %in% selected_genes & grepl("^HP:", hpo_id)]
 if (nrow(pheno) == 0) {
@@ -67,6 +94,10 @@ names(term_names) <- selected_terms$hpo_id
 colnames(mat) <- paste0(colnames(mat), "\n", term_names[colnames(mat)])
 
 gene_info <- genes[match(rownames(mat), GENE)]
+panel_split <- factor(
+  gene_info$PANEL_GROUP,
+  levels = c("Panel", "Non-panel")
+)
 row_ha <- rowAnnotation(
   Panel = ifelse(gene_info$PANEL_STATUS == "PANEL_GENE", "Panel", "Non-panel"),
   Score = anno_barplot(
@@ -81,6 +112,8 @@ ht <- Heatmap(
   name = "HPO",
   col = c("0" = "#f5f5f5", "1" = "#303030"),
   cluster_rows = FALSE,
+  row_split = panel_split,
+  row_gap = unit(4, "mm"),
   cluster_columns = TRUE,
   show_column_dend = FALSE,
   row_names_gp = gpar(fontsize = 9),
