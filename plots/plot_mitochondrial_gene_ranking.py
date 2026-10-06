@@ -52,15 +52,23 @@ def plot_group(df, encoding, title, out_prefix, top_n):
         y = np.arange(len(view))
         bars = ax.barh(y, view["UNIQUE_SVS"].astype(float))
         ax.set_yticks(y)
-        ax.set_yticklabels(
-            [
+        if encoding == "MTDNA" and "MTDNA_FUNCTION" in view.columns:
+            labels = [
+                f"{gene}  [{function.replace('_', ' ').lower()}]  [rank {int(rank)}]"
+                for gene, function, rank in zip(
+                    view["GENE"],
+                    view["MTDNA_FUNCTION"].fillna(".").astype(str),
+                    view["MITO_RANK_WITHIN_ENCODING"],
+                )
+            ]
+        else:
+            labels = [
                 f"{gene}  [rank {int(rank)}]"
                 for gene, rank in zip(
                     view["GENE"], view["MITO_RANK_WITHIN_ENCODING"]
                 )
-            ],
-            fontsize=9,
-        )
+            ]
+        ax.set_yticklabels(labels, fontsize=9)
         ax.set_xlabel("Unique structural variants linked to gene")
         ax.set_title(title)
         style_axis(ax, "x")
