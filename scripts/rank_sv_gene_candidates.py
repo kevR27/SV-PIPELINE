@@ -464,8 +464,7 @@ def main() -> int:
             fh,
             fieldnames=fields,
             delimiter="	",
-            lineterminator="
-",
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)
