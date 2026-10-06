@@ -70,6 +70,24 @@ if ("SV_GENE_RELATIONSHIP" %in% names(dt)) {
     functional_context
   )
 }
+inheritance_class <- if ("GENE_INHERITANCE_CLASS" %in% names(dt)) {
+  as.character(dt$GENE_INHERITANCE_CLASS)
+} else {
+  rep("UNKNOWN", nrow(dt))
+}
+mechanism_class <- if ("FINAL_INHERITANCE_MECHANISM_CLASS" %in% names(dt)) {
+  as.character(dt$FINAL_INHERITANCE_MECHANISM_CLASS)
+} else if ("INHERITANCE_MECHANISM_CLASS" %in% names(dt)) {
+  as.character(dt$INHERITANCE_MECHANISM_CLASS)
+} else {
+  rep("UNRESOLVED", nrow(dt))
+}
+recessive_pair <- if ("RECESSIVE_PAIR_STATUS" %in% names(dt)) {
+  as.character(dt$RECESSIVE_PAIR_STATUS)
+} else {
+  rep(".", nrow(dt))
+}
+
 depth_support <- if ("DEPTH_SUPPORT_CLASS" %in% names(dt)) {
   flag(
     dt$DEPTH_SUPPORT_CLASS,
@@ -89,6 +107,23 @@ evidence <- cbind(
   ),
   flag(dt$PANEL_STATUS, "PANEL_GENE", c("UNKNOWN")),
   flag(dt$MITOCARTA, c("NUCLEAR_MITOCHONDRIAL_GENE", "MTDNA_ENCODED_GENE"), c("UNKNOWN")),
+  ifelse(inheritance_class == "AUTOSOMAL_DOMINANT", 1, 0),
+  ifelse(inheritance_class == "AUTOSOMAL_RECESSIVE", 1, 0),
+  ifelse(
+    mechanism_class %in% c(
+      "STRONG_DOSAGE_OR_BIALLELIC_COMPATIBILITY",
+      "SUPPORTED_DISEASE_MECHANISM",
+      "AR_TRANS_SECOND_ALLELE_SUPPORTED"
+    ),
+    1,
+    0
+  ),
+  ifelse(
+    mechanism_class == "DIRECT_EFFECT_RECESSIVE_SECOND_ALLELE_REQUIRED",
+    1,
+    0
+  ),
+  ifelse(recessive_pair == "AR_TRANS_SNV_SV_CANDIDATE", 1, 0),
   ifelse(effect_direct, 1, 0),
   ifelse(effect_regulatory, 1, 0),
   depth_support,
@@ -98,6 +133,8 @@ evidence <- cbind(
 )
 colnames(evidence) <- c(
   "Multi-caller", "Low-frequency needLR match", "ON panel", "MitoCarta",
+  "AD gene model", "AR gene model", "Mechanism compatible",
+  "AR second allele required", "AR SNV+SV phased trans",
   "Direct/geometry SV-gene relation", "Regulatory/inversion context",
   "Depth supports copy change", "LongPhase phased",
   "Straglr same-locus insertion", "TLDR insertion match"
@@ -126,6 +163,14 @@ group_text <- ifelse(
   gsub("_", " ", group_text)
 )
 group <- factor(group_text, levels = unique(group_text))
+panel_group <- factor(
+  ifelse(dt$PANEL_STATUS == "PANEL_GENE", "Panel", "Non-panel"),
+  levels = c("Panel", "Non-panel")
+)
+row_split <- data.frame(
+  Panel_status = panel_group,
+  SV_context = group
+)
 
 row_ha <- rowAnnotation(
   `Gene score` = anno_barplot(
@@ -143,7 +188,7 @@ ht <- Heatmap(
   na_col = "#d9d9d9",
   cluster_rows = FALSE,
   cluster_columns = FALSE,
-  row_split = group,
+  row_split = row_split,
   row_names_gp = gpar(fontsize = 8),
   column_names_gp = gpar(fontsize = 8.5),
   column_names_rot = 40,
