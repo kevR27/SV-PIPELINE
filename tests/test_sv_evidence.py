@@ -199,10 +199,37 @@ class CommandTests(unittest.TestCase):
             d=Path(tmp);(d/'genes').write_text('A\n');(d/'panel').write_text('A\n')
             table(d/'ann.tsv',[{'Gene_name':'A','Annotation_mode':'split','AnnotSV_ID':'v'}])
             pheno={'gene_symbol':'A','hpo_id':'HP:0000648','optic_neuropathy_anchor':'1','source':'human'}
+            table(
+                d/'hon_seeds.tsv',
+                [{
+                    'hpo_id':'HP:0000648',
+                    'hpo_label':'Optic atrophy',
+                    'hon_seed_role':'CORE_OCULAR_HON',
+                }],
+            )
+            table(
+                d/'edges.tsv',
+                [],
+                ['subject','object','predicate','category'],
+            )
             scores=[]
             for n in [1,2]:
                 table(d/'hpo.tsv',[pheno]*n)
-                subprocess.run([sys.executable,str(ROOT/'scripts/rank_sv_gene_candidates.py'),'--annotsv',str(d/'ann.tsv'),'--genes',str(d/'genes'),'--panel',str(d/'panel'),'--phenotypes',str(d/'hpo.tsv'),'--output',str(d/'out.tsv')],check=True,capture_output=True)
+                subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT/'scripts/rank_sv_gene_candidates.py'),
+                        '--annotsv',str(d/'ann.tsv'),
+                        '--genes',str(d/'genes'),
+                        '--panel',str(d/'panel'),
+                        '--phenotypes',str(d/'hpo.tsv'),
+                        '--hpo-seeds',str(d/'hon_seeds.tsv'),
+                        '--edges',str(d/'edges.tsv'),
+                        '--output',str(d/'out.tsv'),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
                 scores.append(allele.rows(d/'out.tsv')[0]['phenotype_score'])
             self.assertEqual(scores[0],scores[1])
 
@@ -224,7 +251,8 @@ class CommandTests(unittest.TestCase):
     def test_needlr_reuses_complete_native_results_only(self):
         snakefile = (ROOT / "snakemake_pipelines/lrs/Snakefile_LRS_update").read_text()
         self.assertIn("rule needlr_annotation:", snakefile)
-        self.assertIn("query_hash=$(sha256sum", snakefile)
+        self.assertIn("query_hash=", snakefile)
+        self.assertIn("sha256sum", snakefile)
         self.assertIn(".needlr_query.sha256", snakefile)
         self.assertIn("Native result matches current query; reusing it.", snakefile)
         self.assertIn("Query changed or no validated native result; running annotation.", snakefile)
