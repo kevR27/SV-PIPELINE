@@ -24,6 +24,7 @@ XCI_MIN_CLUSTER_READS = int(config.get("xci_min_cluster_reads", 5))
 XCI_MIN_CHRX_COVERAGE = float(config.get("xci_min_chrx_coverage", 15))
 XCI_MIN_BLOCK_READS = int(config.get("xci_min_block_reads", 5))
 XCI_NEUTRAL_THRESHOLD = float(config.get("xci_neutral_threshold", 0.40))
+XCI_HIGH_SKEW_THRESHOLD = float(config.get("xci_high_skew_threshold", 0.20))
 XCI_METHYLATION_BIN_BP = int(config.get("xci_methylation_bin_bp", 5000000))
 XCI_THREADS = int(config.get("xci_threads", min(int(config.get("threads", 8)), 8)))
 XCI_MODKIT = config.get("modkitenv", "modkit")
@@ -235,6 +236,7 @@ rule xci_calculate_skew:
             --min-chrx-coverage {XCI_MIN_CHRX_COVERAGE} \
             --min-block-reads {XCI_MIN_BLOCK_READS} \
             --neutral-threshold {XCI_NEUTRAL_THRESHOLD} \
+            --high-skew-threshold {XCI_HIGH_SKEW_THRESHOLD} \
             --blocks-output {output.blocks} \
             --summary-output {output.summary}
 
