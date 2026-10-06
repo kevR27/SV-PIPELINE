@@ -144,6 +144,11 @@ def main():
 
     needlr = sample_root / "sv" / "needlr" / f"{s}_needLR_RESULTS.tsv"
     ranked = sample_root / "gene_discovery" / f"{s}_ranked_candidates.tsv"
+    mito_ranking = (
+        sample_root
+        / "gene_discovery"
+        / f"{s}_mitochondrial_gene_ranking.tsv"
+    )
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
     gene_summary = sample_root / "gene_discovery" / f"{s}_gene_multimodal_evidence_summary.tsv"
     straglr = sample_root / "sv" / "straglr" / f"{s}_straglr.annotated.tsv"
@@ -299,10 +304,20 @@ def main():
                 [
                     py, str(HERE / "plot_mitocarta_sv_genes.py"),
                     "--input", str(integrated),
+                    "--ranking-table", str(mito_ranking),
                     "--out-prefix", str(folders["mitochondrial"] / f"{s}_mitocarta_sv_genes"),
                     "--top-n", str(args.top_genes),
                 ],
-                [integrated],
+                [integrated, mito_ranking],
+            ),
+            (
+                [
+                    py, str(HERE / "plot_mitochondrial_gene_ranking.py"),
+                    "--input", str(mito_ranking),
+                    "--out-prefix", str(folders["mitochondrial"] / f"{s}_mitochondrial_gene_ranking"),
+                    "--top-n", str(args.top_genes),
+                ],
+                [mito_ranking],
             ),
         ]
     )
