@@ -79,7 +79,14 @@ def main():
     pheno_col = first_existing(work, ["PHENOTYPE_SCORE"])
     omim_col = first_existing(work, ["OMIM", "NEEDLR_OMIM"])
     gencc_col = first_existing(work, ["GENCC", "NEEDLR_GENCC"])
-    ann_col = first_existing(work, ["ANNotsv_Classification", "AnnotSV_Classification"])
+    ann_col = first_existing(
+        work,
+        [
+            "ANNOTSV_GENERAL_CLASSIFICATION",
+            "ANNotsv_Classification",
+            "AnnotSV_Classification",
+        ],
+    )
 
     if callers_col:
         caller_text = work[callers_col]
