@@ -7,7 +7,8 @@ small variant is phased in trans; unresolved/cis configurations remain review
 states.
 
 Panel and non-panel candidates receive separate ranks. Panel membership is never
-used as a score.
+used as a score. Cohort recurrence is retained only as a late cautionary
+tie-break and never removes a candidate.
 """
 
 from __future__ import annotations
@@ -75,6 +76,9 @@ def main():
     p.add_argument("--genes", required=True)
     p.add_argument("--sv", required=True)
     p.add_argument("--snv-sv", required=True)
+    p.add_argument("--sample", required=True)
+    p.add_argument("--recurrence-summary", default=None)
+    p.add_argument("--recurrence-members", default=None)
     p.add_argument("--gene-output", required=True)
     p.add_argument("--sv-output", required=True)
     args = p.parse_args()
@@ -82,6 +86,58 @@ def main():
     genes = pd.read_csv(args.genes, sep="	", dtype=str, low_memory=False)
     sv = pd.read_csv(args.sv, sep="	", dtype=str, low_memory=False)
     pairs = pd.read_csv(args.snv_sv, sep="	", dtype=str, low_memory=False)
+
+    if args.recurrence_summary and args.recurrence_members:
+        recurrence_summary = pd.read_csv(
+            args.recurrence_summary,
+            sep="\t",
+            dtype=str,
+            low_memory=False,
+        )
+        recurrence_members = pd.read_csv(
+            args.recurrence_members,
+            sep="\t",
+            dtype=str,
+            low_memory=False,
+        )
+        sample_members = recurrence_members[
+            recurrence_members["SAMPLE"].astype(str).eq(str(args.sample))
+        ].copy()
+
+        if not sample_members.empty:
+            sample_members = sample_members[
+                ["COHORT_SV_ID", "SV_ID", "COHORT_RECURRENCE"]
+            ].drop_duplicates("SV_ID")
+
+            if not recurrence_summary.empty:
+                counts = recurrence_summary[
+                    ["COHORT_SV_ID", "SAMPLE_COUNT"]
+                ].drop_duplicates("COHORT_SV_ID")
+                sample_members = sample_members.merge(
+                    counts,
+                    on="COHORT_SV_ID",
+                    how="left",
+                )
+                sample_members = sample_members.rename(
+                    columns={"SAMPLE_COUNT": "COHORT_SAMPLE_COUNT"}
+                )
+
+            sv = sv.merge(sample_members, on="SV_ID", how="left")
+            sv["COHORT_RECURRENCE"] = sv[
+                "COHORT_RECURRENCE"
+            ].fillna("NOT_MAPPED")
+            if "COHORT_SAMPLE_COUNT" not in sv.columns:
+                sv["COHORT_SAMPLE_COUNT"] = "."
+            else:
+                sv["COHORT_SAMPLE_COUNT"] = sv[
+                    "COHORT_SAMPLE_COUNT"
+                ].fillna(".")
+        else:
+            sv["COHORT_RECURRENCE"] = "NOT_MAPPED"
+            sv["COHORT_SAMPLE_COUNT"] = "."
+    else:
+        sv["COHORT_RECURRENCE"] = "NOT_EVALUATED"
+        sv["COHORT_SAMPLE_COUNT"] = "."
 
     if sv.empty:
         Path(args.sv_output).parent.mkdir(parents=True, exist_ok=True)
