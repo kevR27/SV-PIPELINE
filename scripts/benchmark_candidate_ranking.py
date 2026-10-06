@@ -154,6 +154,11 @@ def main():
     found = detail["FOUND"].eq("YES")
     ranks = pd.to_numeric(detail["GLOBAL_RANK"], errors="coerce")
 
+    panel_ranks = pd.to_numeric(
+        detail["WITHIN_PANEL_RANK"],
+        errors="coerce",
+    )
+
     summary_rows = [
         {
             "METRIC": "truth_candidates",
@@ -168,6 +173,14 @@ def main():
             "VALUE": (
                 float(ranks[found].median())
                 if found.any()
+                else "."
+            ),
+        },
+        {
+            "METRIC": "median_within_panel_rank_found",
+            "VALUE": (
+                float(panel_ranks[found].median())
+                if panel_ranks[found].notna().any()
                 else "."
             ),
         },
@@ -188,18 +201,27 @@ def main():
 
     denominator = max(len(detail), 1)
     for k in cutoffs:
-        recalled = int((ranks <= k).fillna(False).sum())
-        summary_rows.append(
-            {
-                "METRIC": f"top_{k}_recall",
-                "VALUE": round(recalled / denominator, 6),
-            }
-        )
-        summary_rows.append(
-            {
-                "METRIC": f"top_{k}_recalled_truth_candidates",
-                "VALUE": recalled,
-            }
+        recalled_global = int((ranks <= k).fillna(False).sum())
+        recalled_panel = int((panel_ranks <= k).fillna(False).sum())
+        summary_rows.extend(
+            [
+                {
+                    "METRIC": f"global_top_{k}_recall",
+                    "VALUE": round(recalled_global / denominator, 6),
+                },
+                {
+                    "METRIC": f"within_panel_top_{k}_recall",
+                    "VALUE": round(recalled_panel / denominator, 6),
+                },
+                {
+                    "METRIC": f"global_top_{k}_recalled_truth_candidates",
+                    "VALUE": recalled_global,
+                },
+                {
+                    "METRIC": f"within_panel_top_{k}_recalled_truth_candidates",
+                    "VALUE": recalled_panel,
+                },
+            ]
         )
 
     detail_path = Path(args.detail_output)
