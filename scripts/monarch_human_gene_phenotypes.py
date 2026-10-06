@@ -15,8 +15,8 @@ Design mirrors the API version:
 - keep only biolink:GeneToPhenotypicFeatureAssociation edges whose
   subject is HGNC:... and whose object is HP:...;
 - do NOT traverse orthologs/model organisms;
-- record whether an association matches one of the optic-neuropathy
-  anchor HPO terms supplied in the input file.
+- record whether an association matches a core optic-neuropathy HPO seed or a
+  lower-weight mitochondrial/syndromic context seed supplied in the input file.
 """
 
 import argparse
@@ -48,7 +48,18 @@ def load_anchors(path):
     anchors = {}
     with open(path, encoding="utf-8") as fh:
         for row in csv.DictReader(fh, delimiter="\t"):
-            anchors[row["hpo_id"]] = row.get("hpo_label", "")
+            hpo_id = str(row.get("hpo_id", "")).strip()
+            if not hpo_id.startswith("HP:"):
+                continue
+            role = str(row.get("hon_seed_role", "") or "").upper()
+            anchors[hpo_id] = {
+                "label": row.get("hpo_label", ""),
+                "role": (
+                    "MITO_SYNDROMIC_CONTEXT"
+                    if "MITO_SYNDROMIC_CONTEXT" in role
+                    else "CORE_OCULAR_HON"
+                ),
+            }
     return anchors
 
 
@@ -134,7 +145,19 @@ with open(args.edges, encoding="utf-8") as fh:
             "association_predicate": edge.get("predicate", ""),
             "source": edge.get("primary_knowledge_source", ""),
             "human_association": "YES",
-            "optic_neuropathy_anchor": "1" if obj in anchors else "0",
+            "hon_seed_role": anchors[obj]["role"] if obj in anchors else ".",
+            "optic_neuropathy_anchor": (
+                "1"
+                if obj in anchors
+                and anchors[obj]["role"] == "CORE_OCULAR_HON"
+                else "0"
+            ),
+            "mitochondrial_syndromic_context": (
+                "1"
+                if obj in anchors
+                and anchors[obj]["role"] == "MITO_SYNDROMIC_CONTEXT"
+                else "0"
+            ),
         })
 
 # Genes with no HGNC mapping at all.
@@ -148,7 +171,9 @@ for symbol in sorted(unmapped):
         "association_predicate": "",
         "source": "",
         "human_association": "NO_HGNC_MAPPING",
+        "hon_seed_role": ".",
         "optic_neuropathy_anchor": "0",
+        "mitochondrial_syndromic_context": "0",
     })
 
 # Genes that mapped to HGNC but had zero HPO edges.
@@ -163,13 +188,16 @@ for hgnc, symbol in hgnc_to_symbol.items():
             "association_predicate": "",
             "source": "",
             "human_association": "NO_HPO_ASSOCIATION",
+            "hon_seed_role": ".",
             "optic_neuropathy_anchor": "0",
+            "mitochondrial_syndromic_context": "0",
         })
 
 fields = [
     "gene_symbol", "hgnc_id", "hpo_id", "hpo_label",
     "association_category", "association_predicate", "source",
-    "human_association", "optic_neuropathy_anchor"
+    "human_association", "hon_seed_role", "optic_neuropathy_anchor",
+    "mitochondrial_syndromic_context"
 ]
 
 with open(args.output, "w", newline="", encoding="utf-8") as out:
