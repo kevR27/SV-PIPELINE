@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Plot genome-wide candidate gene prioritization from ranked_candidates.tsv."""
+"""Plot panel and non-panel gene rankings as separate thesis figures.
+
+The input may be the early genome-wide gene ranking or the final patient-aware
+ranking. Final patient-specific fields are preferred when present.
+
+Panel membership is a display/grouping variable only. It does not contribute
+ranking points.
+"""
 
 from __future__ import annotations
 
@@ -10,16 +17,251 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from plot_utils import add_panel_label, first_existing, numeric, read_tsv, save_figure, set_thesis_style, style_axis
+from plot_utils import (
+    first_existing,
+    numeric,
+    read_tsv,
+    save_figure,
+    set_thesis_style,
+    style_axis,
+)
+
+
+TIER_ORDER = {
+    "HIGH": 3,
+    "MODERATE": 2,
+    "SUPPORTING": 1,
+    "LIMITED": 0,
+}
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Plot prioritized SV-associated genes.")
-    p.add_argument("--input", required=True, help="*_ranked_candidates.tsv")
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--input", required=True)
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--top-n", type=int, default=25)
-    p.add_argument("--title", default="Genome-wide SV-associated gene prioritization")
+    p.add_argument(
+        "--title",
+        default="SV-associated gene prioritization",
+    )
     return p.parse_args()
+
+
+def panel_status(series: pd.Series) -> pd.Series:
+    text = series.fillna("").astype(str).str.upper().str.strip()
+    return np.where(
+        text.isin(["PANEL_GENE", "YES", "TRUE", "1"]),
+        "PANEL_GENE",
+        "NONPANEL_GENE",
+    )
+
+
+def prepare(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
+    gene_col = first_existing(df, ["GENE", "gene", "Gene", "SYMBOL"])
+    if gene_col is None:
+        raise ValueError("Could not infer gene column.")
+
+    panel_col = first_existing(df, ["PANEL_STATUS", "panel_gene"])
+    if panel_col is None:
+        raise ValueError("Candidate table requires PANEL_STATUS/panel_gene.")
+
+    tier_col = first_existing(
+        df,
+        ["FINAL_GENE_RELEVANCE_TIER", "GENE_RELEVANCE_TIER"],
+    )
+    score_col = first_existing(
+        df,
+        [
+            "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+            "GENE_RELEVANCE_DISPLAY_SCORE",
+            "integrated_discovery_score",
+            "GENE_RELEVANCE_SCORE",
+            "phenotype_score",
+        ],
+    )
+    rank_col = first_existing(
+        df,
+        [
+            "FINAL_GENE_RANK_WITHIN_PANEL_STATUS",
+            "GENE_RANK_WITHIN_PANEL_STATUS",
+        ],
+    )
+    inheritance_col = first_existing(
+        df,
+        ["GENE_INHERITANCE_CLASS", "BEST_EVENT_INHERITANCE_MECHANISM_CLASS"],
+    )
+    mechanism_col = first_existing(
+        df,
+        [
+            "BEST_EVENT_INHERITANCE_MECHANISM_CLASS",
+            "INHERITANCE_MECHANISM_CLASS",
+        ],
+    )
+    sv_count_col = first_existing(df, ["SV_COUNT", "SV_count", "master_SV_count"])
+
+    work = df.copy()
+    work["_gene"] = work[gene_col].fillna(".").astype(str)
+    work["_panel_status"] = panel_status(work[panel_col])
+    work["_tier"] = (
+        work[tier_col].fillna("LIMITED").astype(str).str.upper()
+        if tier_col
+        else "LIMITED"
+    )
+    work["_tier_rank"] = (
+        pd.Series(work["_tier"], index=work.index)
+        .map(TIER_ORDER)
+        .fillna(0)
+    )
+    work["_score"] = (
+        numeric(work[score_col]).fillna(0)
+        if score_col
+        else pd.Series(0.0, index=work.index)
+    )
+    work["_sv_count"] = (
+        numeric(work[sv_count_col]).fillna(0)
+        if sv_count_col
+        else pd.Series(0.0, index=work.index)
+    )
+    work["_rank"] = (
+        numeric(work[rank_col])
+        if rank_col
+        else pd.Series(np.nan, index=work.index)
+    )
+    work["_inheritance"] = (
+        work[inheritance_col].fillna("UNKNOWN").astype(str)
+        if inheritance_col
+        else "UNKNOWN"
+    )
+    work["_mechanism"] = (
+        work[mechanism_col].fillna(".").astype(str)
+        if mechanism_col
+        else "."
+    )
+
+    work = work[
+        ~work["_gene"].isin(["", ".", "NA", "N/A", "nan", "None"])
+    ].copy()
+
+    # Prefer the explicit within-panel rank. Older outputs fall back to the
+    # same tier/score ordering used by the current gene ranker.
+    work["_rank_missing"] = work["_rank"].isna().astype(int)
+    work = work.sort_values(
+        [
+            "_panel_status",
+            "_rank_missing",
+            "_rank",
+            "_tier_rank",
+            "_score",
+            "_gene",
+        ],
+        ascending=[True, True, True, False, False, True],
+        na_position="last",
+    )
+
+    if rank_col is None:
+        work["_rank"] = (
+            work.groupby("_panel_status").cumcount() + 1
+        )
+
+    return work, score_col or "ranking score"
+
+
+def plot_group(
+    work: pd.DataFrame,
+    group: str,
+    label: str,
+    score_label: str,
+    prefix: Path,
+    top_n: int,
+):
+    view = (
+        work[work["_panel_status"].eq(group)]
+        .head(top_n)
+        .copy()
+    )
+    view = view.iloc[::-1].reset_index(drop=True)
+
+    height = max(5.6, 0.42 * max(len(view), 1) + 2.4)
+    fig, ax = plt.subplots(figsize=(13.5, height))
+
+    if view.empty:
+        ax.axis("off")
+        ax.text(
+            0.5,
+            0.56,
+            f"No {label.lower()} were available",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=13,
+            fontweight="bold",
+        )
+    else:
+        y = np.arange(len(view))
+        ax.hlines(
+            y,
+            0,
+            view["_score"],
+            linewidth=1.0,
+            alpha=0.45,
+        )
+        sizes = 55 + np.sqrt(view["_sv_count"].clip(lower=0)) * 35
+        ax.scatter(
+            view["_score"],
+            y,
+            s=sizes,
+            edgecolor="white",
+            linewidth=0.5,
+            zorder=3,
+        )
+        ax.set_yticks(y)
+        ax.set_yticklabels(
+            [
+                f"{gene}  [#{int(rank)} | {tier}]"
+                for gene, rank, tier in zip(
+                    view["_gene"],
+                    view["_rank"],
+                    view["_tier"],
+                )
+            ],
+            fontsize=9,
+        )
+        ax.set_xlabel(score_label.replace("_", " "))
+        ax.set_ylabel("Gene")
+        style_axis(ax, "x")
+
+        xmax = max(float(view["_score"].max()), 1.0)
+        for i, (_, row) in enumerate(view.iterrows()):
+            inheritance = str(row["_inheritance"]).replace("_", " ")
+            mechanism = str(row["_mechanism"]).replace("_", " ")
+            note = inheritance
+            if mechanism not in {"", ".", "nan", "None"}:
+                note += f" | {mechanism}"
+            ax.text(
+                row["_score"] + 0.02 * xmax,
+                i,
+                note,
+                va="center",
+                fontsize=7.6,
+            )
+        ax.set_xlim(0, xmax * 1.75)
+
+    ax.set_title(label)
+    fig.text(
+        0.5,
+        0.012,
+        (
+            "Rank is research prioritization, not pathogenicity. Gene relevance "
+            "tier is primary; inheritance/mechanism is shown explicitly. "
+            "Panel membership only determines which figure/rank group is used."
+        ),
+        ha="center",
+        fontsize=8.5,
+    )
+    fig.tight_layout(rect=[0, 0.04, 1, 0.97])
+    outputs = save_figure(fig, prefix)
+    plt.close(fig)
+    return outputs, view
 
 
 def main():
@@ -29,87 +271,47 @@ def main():
     if df.empty:
         raise ValueError("Ranked candidate table is empty.")
 
-    gene_col = first_existing(df, ["gene", "Gene", "GENE", "SYMBOL"])
-    score_col = first_existing(df, ["integrated_discovery_score", "discovery_score", "phenotype_score", "PHENOTYPE_SCORE"])
-    sv_count_col = first_existing(df, ["SV_count", "sv_count"])
-    anchor_col = first_existing(df, ["optic_neuropathy_anchor_HPO_count", "anchor_HPO_count"])
-    panel_col = first_existing(df, ["panel_gene", "PANEL_STATUS"])
-    class_col = first_existing(df, ["candidate_group", "classification", "CANDIDATE_CLASS"])
-    if gene_col is None or score_col is None:
-        raise ValueError("Could not infer gene and prioritization score columns.")
-
-    work = df.copy()
-    work["_score"] = numeric(work[score_col]).fillna(0)
-    work["_sv_count"] = numeric(work[sv_count_col]).fillna(0) if sv_count_col else 0
-    work["_anchor"] = numeric(work[anchor_col]).fillna(0) if anchor_col else 0
-    if panel_col:
-        ptxt = work[panel_col].fillna("").astype(str).str.upper()
-        work["_panel"] = ptxt.str.strip().isin(["PANEL_GENE", "YES"])
-    else:
-        work["_panel"] = False
-
-    work = work.sort_values(["_score", "_anchor", gene_col], ascending=[False, False, True]).head(args.top_n).copy()
-    work = work.iloc[::-1].reset_index(drop=True)
-
+    work, score_label = prepare(df)
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    work.to_csv(prefix.with_name(prefix.name + "_top_candidates.tsv"), sep="\t", index=False)
 
-    fig, axes = plt.subplots(1, 2, figsize=(15.8, max(7.6, 0.38 * len(work) + 2.6)), gridspec_kw={"width_ratios": [1.55, 1.05]})
-    ax1, ax2 = axes
-    y = np.arange(len(work))
+    all_outputs = []
+    exported = []
 
-    colors = np.where(work["_panel"], "#0072B2", "#E69F00")
-    ax1.hlines(y, 0, work["_score"], color="#D0D0D0", linewidth=1.1)
-    sizes = 40 + np.sqrt(work["_sv_count"].clip(lower=0)) * 35
-    ax1.scatter(work["_score"], y, s=sizes, c=colors, edgecolor="white", linewidth=0.5, zorder=3)
-    ax1.set_yticks(y)
-    ax1.set_yticklabels(work[gene_col])
-    ax1.set_xlabel(score_col.replace("_", " "))
-    ax1.set_ylabel("Gene")
-    style_axis(ax1, "x")
-    add_panel_label(ax1, "A")
-
-    x_sv = work["_sv_count"].values
-    x_anchor = work["_anchor"].values
-    ax2.scatter(x_sv, x_anchor, s=sizes, c=colors, edgecolor="white", linewidth=0.5)
-    panel_indices = [i for i in range(len(work)) if bool(work["_panel"].iloc[i])]
-    panel_indices = sorted(
-        panel_indices,
-        key=lambda i: (x_anchor[i], x_sv[i], str(work[gene_col].iloc[i])),
-        reverse=True,
-    )[:8]
-    panel_offsets = [(7, 7), (7, -14), (12, 16), (12, -22), (18, 8), (18, -18)]
-    for j, i in enumerate(panel_indices):
-        ax2.annotate(
-            str(work[gene_col].iloc[i]),
-            (x_sv[i], x_anchor[i]),
-            xytext=panel_offsets[j % len(panel_offsets)],
-            textcoords="offset points",
-            fontsize=8.5,
-            arrowprops={"arrowstyle": "-", "linewidth": 0.5, "alpha": 0.55},
+    for group, suffix, label in [
+        (
+            "PANEL_GENE",
+            "panel",
+            "Optic-neuropathy panel genes affected by SVs",
+        ),
+        (
+            "NONPANEL_GENE",
+            "nonpanel",
+            "Non-panel genes affected by SVs",
+        ),
+    ]:
+        out_prefix = prefix.with_name(f"{prefix.name}_{suffix}")
+        outputs, view = plot_group(
+            work,
+            group,
+            label,
+            score_label,
+            out_prefix,
+            args.top_n,
         )
-    ax2.set_xlabel("SV count")
-    ax2.set_ylabel("Optic-neuropathy anchor HPO count")
-    style_axis(ax2, "both")
-    add_panel_label(ax2, "B")
+        all_outputs.extend(outputs)
+        if not view.empty:
+            exported.append(view.assign(RANK_GROUP=group))
 
-    if class_col:
-        groups = work[class_col].value_counts().to_dict()
-        group_text = "Candidate groups: " + "; ".join(f"{k}={v}" for k, v in groups.items())
-    else:
-        group_text = ""
+    if exported:
+        pd.concat(exported, ignore_index=True).to_csv(
+            prefix.with_name(prefix.name + "_panel_nonpanel_rankings.tsv"),
+            sep="\t",
+            index=False,
+        )
 
-    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
-    fig.text(0.5, 0.01, "Blue = panel gene; orange = non-panel gene. Bubble area scales with the number of intersecting SVs. Discovery score is prioritization, not pathogenicity.", ha="center", fontsize=9)
-    if group_text:
-        fig.text(0.5, 0.027, group_text, ha="center", fontsize=7.5)
-    fig.tight_layout(rect=[0, 0.045, 1, 0.97])
-    outputs = save_figure(fig, prefix)
-    plt.close(fig)
-    print("[OK]", *outputs, sep="\n")
+    print("[OK]", *all_outputs, sep="\n")
 
 
 if __name__ == "__main__":
     main()
-
