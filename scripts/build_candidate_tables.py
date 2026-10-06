@@ -336,6 +336,23 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "ACMG_CNV_CLASS": text_value(source, ["ACMG_CNV_CLASS"]),
             "DOSAGE_RELEVANCE": text_value(source, ["DOSAGE_RELEVANCE"]),
             "PANEL_STATUS": text_value(source, ["PANEL_STATUS"]),
+            "HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED": text_value(
+                source,
+                ["HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED"],
+            ),
+            "HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED": text_value(
+                source,
+                ["HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED"],
+            ),
+            "HON_SEMANTIC_SIMILARITY_NORMALIZED": text_value(
+                source,
+                ["HON_SEMANTIC_SIMILARITY_NORMALIZED"],
+            ),
+            "HON_SEMANTIC_METHOD": text_value(
+                source,
+                ["HON_SEMANTIC_METHOD"],
+                default="ASYMMETRIC_RESNIK_QUERY_COVERAGE_NORMALIZED_TO_QUERY_SELF",
+            ),
             "GENE_RELEVANCE_TIER": text_value(
                 source,
                 ["GENE_RELEVANCE_TIER"],
@@ -389,7 +406,10 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             ),
             "HON_CONTEXT_SCORE": round(phenotype_score, 3),
             "PHENOTYPE_RELEVANCE_SCORE": round(phenotype_score, 3),
-            "PHENOTYPE_SCORE_SCOPE": "GENERIC_HON_ANCHOR_CONTEXT_NOT_PATIENT_SPECIFIC",
+            "PHENOTYPE_SCORE_SCOPE": (
+                "GENERIC_HON_ASYMMETRIC_RESNIK_QUERY_COVERAGE_"
+                "CORE_PLUS_CAPPED_MITO_CONTEXT_NOT_PATIENT_SPECIFIC"
+            ),
             "GENE_DISEASE_SCORE": round(disease_score, 3),
             "GENE_RELEVANCE_SCORE": round(gene_score, 3),
             "GENE_RELEVANCE_SCOPE": (
@@ -538,6 +558,23 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
             "GENE_RANK_WITHIN_PANEL_STATUS": text_value(
                 source,
                 ["GENE_RANK_WITHIN_PANEL_STATUS"],
+            ),
+            "HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED": text_value(
+                source,
+                ["HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED"],
+            ),
+            "HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED": text_value(
+                source,
+                ["HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED"],
+            ),
+            "HON_SEMANTIC_SIMILARITY_NORMALIZED": text_value(
+                source,
+                ["HON_SEMANTIC_SIMILARITY_NORMALIZED"],
+            ),
+            "HON_SEMANTIC_METHOD": text_value(
+                source,
+                ["HON_SEMANTIC_METHOD"],
+                default="ASYMMETRIC_RESNIK_QUERY_COVERAGE_NORMALIZED_TO_QUERY_SELF",
             ),
             "HPO_COUNT": text_value(source, ["human_HPO_count"]),
             "OPTIC_NEUROPATHY_HPO_COUNT": text_value(source, ["optic_neuropathy_anchor_HPO_count"]),
