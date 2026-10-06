@@ -409,6 +409,7 @@ rule rank_mitochondrial_genes:
     input:
         integrated=rules.merge_integrated_annotations.output.tsv,
         gene_bed=GENE_BED,
+        panel=GENE_LIST,
         script=SCRIPTS + "/rank_mitochondrial_genes.py"
     output:
         tsv=PATH + "{sample}/gene_discovery/{sample}_mitochondrial_gene_ranking.tsv"
@@ -421,6 +422,7 @@ rule rank_mitochondrial_genes:
         python {input.script} \
             --input {input.integrated} \
             --gene-bed {input.gene_bed} \
+            --panel {input.panel} \
             --output {output.tsv}
 
         test -s {output.tsv}
