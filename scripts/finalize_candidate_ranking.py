@@ -285,15 +285,18 @@ def main():
             errors="coerce",
         ).fillna(10**9)
 
+        # Final gene ordering keeps broad relevance tier first, then lets the
+        # best inheritance/mechanism-aware SV event outrank small continuous
+        # score differences. The continuous score is only a later tie-break.
         genes = genes.sort_values(
             [
                 "PANEL_STATUS",
                 "_tier_rank",
-                "_score",
                 "_best_event_rank",
+                "_score",
                 "GENE",
             ],
-            ascending=[True, False, False, True, True],
+            ascending=[True, False, True, False, True],
         ).reset_index(drop=True)
         genes["FINAL_GENE_RANK_WITHIN_PANEL_STATUS"] = (
             genes.groupby("PANEL_STATUS").cumcount() + 1
