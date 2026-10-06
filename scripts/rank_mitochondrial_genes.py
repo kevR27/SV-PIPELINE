@@ -549,10 +549,11 @@ def main():
         rows.append(row)
 
     out = pd.DataFrame(rows)
+    # Overall encoding rank is panel-neutral. Panel membership only defines
+    # the separate within-panel/non-panel rank below.
     out = out.sort_values(
         [
             "ENCODING_GENOME",
-            "PANEL_STATUS",
             "_GENE_TIER_RANK",
             "_MECHANISM_RANK",
             "_TECHNICAL_RANK",
@@ -562,7 +563,7 @@ def main():
             "GENE",
         ],
         ascending=[
-            True, True, False, False, False, False, False, False, True
+            True, False, False, False, False, False, False, True
         ],
     )
 
