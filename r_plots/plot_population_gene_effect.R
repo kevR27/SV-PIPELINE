@@ -18,7 +18,12 @@ dt <- fread(input_file, na.strings = c("", ".", "NA"))
 if (nrow(dt) == 0) stop("No population/effect rows available.")
 
 dt <- unique(dt, by = c("SV_ID", "GENE"))
-dt[, SCORE_NUM := suppressWarnings(as.numeric(GENE_RELEVANCE_SCORE))]
+score_col <- if ("FINAL_GENE_RELEVANCE_DISPLAY_SCORE" %in% names(dt)) {
+  "FINAL_GENE_RELEVANCE_DISPLAY_SCORE"
+} else {
+  "GENE_RELEVANCE_SCORE"
+}
+dt[, SCORE_NUM := suppressWarnings(as.numeric(get(score_col)))]
 dt[is.na(SCORE_NUM), SCORE_NUM := 0]
 dt[, RARE_FLAG := as.integer(
   POPULATION_CLASS %in% c(
@@ -100,16 +105,44 @@ p0 <- ggplot(global, aes(EFFECT_LABEL, NEEDLR_LABEL, fill = UNIQUE_GENES)) +
     plot.subtitle = element_text(size = 8.5, margin = margin(b = 6))
   )
 
+rank_col <- if ("FINAL_EVENT_RANK_WITHIN_PANEL_STATUS" %in% names(dt)) {
+  "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS"
+} else if ("EVENT_RANK_WITHIN_PANEL_STATUS" %in% names(dt)) {
+  "EVENT_RANK_WITHIN_PANEL_STATUS"
+} else {
+  NA_character_
+}
+
+dt[, PANEL_GROUP := fifelse(PANEL_STATUS == "PANEL_GENE", "Panel", "Non-panel")]
 gene_rank <- dt[, .(
   RARE_COUNT = sum(RARE_FLAG),
-  PANEL_FLAG = max(PANEL_FLAG),
   SCORE = max(SCORE_NUM),
-  SV_COUNT = uniqueN(SV_ID)
-), by = GENE]
-setorder(gene_rank, -PANEL_FLAG, -RARE_COUNT, -SCORE, -SV_COUNT, GENE)
-selected <- head(gene_rank$GENE, top_n)
+  SV_COUNT = uniqueN(SV_ID),
+  BEST_GROUP_RANK = if (!is.na(rank_col)) {
+    suppressWarnings(min(as.numeric(get(rank_col)), na.rm = TRUE))
+  } else {
+    NA_real_
+  }
+), by = .(PANEL_GROUP, GENE)]
+gene_rank[!is.finite(BEST_GROUP_RANK), BEST_GROUP_RANK := NA_real_]
+setorder(
+  gene_rank,
+  PANEL_GROUP,
+  is.na(BEST_GROUP_RANK),
+  BEST_GROUP_RANK,
+  -SCORE,
+  -RARE_COUNT,
+  -SV_COUNT,
+  GENE
+)
+selected_table <- gene_rank[, head(.SD, top_n), by = PANEL_GROUP]
+selected <- selected_table$GENE
 plot_dt <- dt[GENE %in% selected]
-plot_dt[, GENE := factor(GENE, levels = rev(selected))]
+ordered_genes <- c(
+  selected_table[PANEL_GROUP == "Panel", GENE],
+  selected_table[PANEL_GROUP == "Non-panel", GENE]
+)
+plot_dt[, GENE := factor(GENE, levels = rev(unique(ordered_genes)))]
 
 
 needlr <- plot_dt[, .(N = uniqueN(SV_ID)), by = .(GENE, NEEDLR_LABEL)]
