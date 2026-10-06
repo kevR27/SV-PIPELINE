@@ -154,8 +154,12 @@ def main():
 
     if sv.empty:
         Path(args.sv_output).parent.mkdir(parents=True, exist_ok=True)
-        sv.to_csv(args.sv_output, sep="	", index=False)
-        genes.to_csv(args.gene_output, sep="	", index=False)
+        Path(args.gene_output).parent.mkdir(parents=True, exist_ok=True)
+        sv.to_csv(args.sv_output, sep="\t", index=False)
+        genes.to_csv(args.gene_output, sep="\t", index=False)
+        if args.mito_output:
+            Path(args.mito_output).parent.mkdir(parents=True, exist_ok=True)
+            mito.to_csv(args.mito_output, sep="\t", index=False)
         print(f"[OK] ranked_sv_rows=0 ranked_genes={len(genes)}")
         return
 
