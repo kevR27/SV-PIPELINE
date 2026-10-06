@@ -17,11 +17,45 @@ if (nrow(dt) == 0) stop("No SV-gene candidates available for heatmap.")
 
 dt[, CALLER_COUNT_NUM := suppressWarnings(as.numeric(CALLER_COUNT))]
 dt[is.na(CALLER_COUNT_NUM), CALLER_COUNT_NUM := 0]
-dt[, SCORE_NUM := suppressWarnings(as.numeric(GENE_RELEVANCE_SCORE))]
+
+score_source <- if ("FINAL_GENE_RELEVANCE_DISPLAY_SCORE" %in% names(dt)) {
+  "FINAL_GENE_RELEVANCE_DISPLAY_SCORE"
+} else if ("GENE_RELEVANCE_DISPLAY_SCORE" %in% names(dt)) {
+  "GENE_RELEVANCE_DISPLAY_SCORE"
+} else {
+  "GENE_RELEVANCE_SCORE"
+}
+dt[, SCORE_NUM := suppressWarnings(as.numeric(get(score_source)))]
 dt[is.na(SCORE_NUM), SCORE_NUM := 0]
-setorder(dt, -SCORE_NUM, -CALLER_COUNT_NUM)
+
+rank_source <- if ("FINAL_EVENT_RANK_WITHIN_PANEL_STATUS" %in% names(dt)) {
+  "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS"
+} else if ("EVENT_RANK_WITHIN_PANEL_STATUS" %in% names(dt)) {
+  "EVENT_RANK_WITHIN_PANEL_STATUS"
+} else if ("FINAL_EVENT_RANK_GLOBAL" %in% names(dt)) {
+  "FINAL_EVENT_RANK_GLOBAL"
+} else {
+  NA_character_
+}
+
+if (!is.na(rank_source)) {
+  dt[, RANK_NUM := suppressWarnings(as.numeric(get(rank_source)))]
+} else {
+  dt[, RANK_NUM := NA_real_]
+}
+
 dt <- unique(dt, by = c("SV_ID", "GENE"))
-dt <- head(dt, top_n)
+dt[, PANEL_GROUP := fifelse(PANEL_STATUS == "PANEL_GENE", "Panel", "Non-panel")]
+
+if (!is.na(rank_source)) {
+  setorder(dt, PANEL_GROUP, RANK_NUM, -SCORE_NUM, -CALLER_COUNT_NUM)
+} else {
+  setorder(dt, PANEL_GROUP, -SCORE_NUM, -CALLER_COUNT_NUM)
+}
+
+# Keep panel and non-panel candidates represented separately. top_n is applied
+# within each group because panel membership is not a scoring variable.
+dt <- dt[, head(.SD, top_n), by = PANEL_GROUP]
 
 flag <- function(x, positive, unknown = character()) {
   x <- as.character(x)
@@ -164,7 +198,7 @@ group_text <- ifelse(
 )
 group <- factor(group_text, levels = unique(group_text))
 panel_group <- factor(
-  ifelse(dt$PANEL_STATUS == "PANEL_GENE", "Panel", "Non-panel"),
+  dt$PANEL_GROUP,
   levels = c("Panel", "Non-panel")
 )
 row_split <- data.frame(
