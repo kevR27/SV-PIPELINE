@@ -96,8 +96,9 @@ def main():
     mito_mask = df["MITOCARTA_STATUS"].fillna("NO").astype(str).str.upper().eq("YES")
     work = df[mito_mask].copy()
 
-    # The thesis analysis currently focuses on nuclear-encoded mitochondrial
-    # genes. mtDNA-encoded genes remain identifiable in the diagnostic summary.
+    # This pathway figure focuses on nuclear-encoded mitochondrial genes because
+    # MitoCarta pathways describe the mitochondrial proteome. mtDNA-encoded genes
+    # are ranked separately by plot_mitochondrial_gene_ranking.py.
     nuclear = work[
         work["MITOCARTA_ENCODING"]
         .fillna("")
