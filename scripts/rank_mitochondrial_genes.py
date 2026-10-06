@@ -18,43 +18,24 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-
-MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
-
-DIRECT_RELATIONSHIPS = {
-    "WHOLE_GENE_DOSAGE_CONTEXT",
-    "PARTIAL_GENE_OVERLAP",
-    "INSERTION_WITHIN_TRANSCRIPT",
-    "BREAKPOINT_WITHIN_TRANSCRIPT",
-}
-
-PROXIMAL_RELATIONSHIPS = {
-    "INSERTION_PROXIMAL_TO_GENE",
-    "BREAKPOINT_PROXIMAL_TO_GENE",
-    "GENE_PROXIMAL_INTERVAL",
-}
-
-CONTEXT_RELATIONSHIPS = {
-    "INVERSION_SPANS_INTACT_GENE",
-    "INTERVAL_CONTEXT_ONLY",
-}
+from ranking_common import (
+    GENE_TIER_PRIORITY,
+    MISSING,
+    POPULATION_PRIORITY,
+    TECHNICAL_PRIORITY,
+    first_existing,
+    mechanism_inheritance_summary,
+    number,
+    population_summary,
+    relationship_priority,
+    technical_summary,
+)
 
 MTDNA_PROTEIN_GENES = {
     "MT-ATP6", "MT-ATP8", "MT-CO1", "MT-CO2", "MT-CO3", "MT-CYB",
     "MT-ND1", "MT-ND2", "MT-ND3", "MT-ND4", "MT-ND4L", "MT-ND5", "MT-ND6",
 }
 MTDNA_RRNA_GENES = {"MT-RNR1", "MT-RNR2"}
-
-
-def first_existing(df: pd.DataFrame, names: list[str]) -> str | None:
-    lower = {str(c).strip().lower(): c for c in df.columns}
-    for name in names:
-        if name in df.columns:
-            return name
-        hit = lower.get(name.lower())
-        if hit is not None:
-            return hit
-    return None
 
 
 def normalize_chrom(value) -> str:
@@ -64,14 +45,6 @@ def normalize_chrom(value) -> str:
     if text in {"MT", "M", "chrMT"}:
         return "chrM"
     return text if text.startswith("chr") else "chr" + text
-
-
-def number(value):
-    try:
-        result = float(value)
-        return result if np.isfinite(result) else None
-    except Exception:
-        return None
 
 
 def is_yes(value) -> bool:
@@ -107,19 +80,6 @@ def mt_gene_function(gene: str) -> str:
     return "MTDNA_OTHER_FUNCTION"
 
 
-def relationship_rank(value: str) -> int:
-    value = str(value or "").upper()
-    if value in DIRECT_RELATIONSHIPS:
-        return 4
-    if value in PROXIMAL_RELATIONSHIPS:
-        return 3
-    if value in CONTEXT_RELATIONSHIPS:
-        return 2
-    if value not in MISSING:
-        return 1
-    return 0
-
-
 def relationship_scope(value: str) -> str:
     rank = relationship_rank(value)
     return {
@@ -129,70 +89,6 @@ def relationship_scope(value: str) -> str:
         1: "UNRESOLVED_CONTEXT",
         0: "UNRESOLVED_CONTEXT",
     }[rank]
-
-
-def population_rank(row: pd.Series) -> int:
-    afs = []
-    for col in ("GNOMAD_SV_AF", "NEEDLR_AF"):
-        if col in row.index:
-            value = number(row.get(col))
-            if value is not None:
-                afs.append(value)
-    if not afs:
-        return 1
-    return 2 if min(afs) <= 0.01 else 0
-
-
-def technical_rank(row: pd.Series) -> tuple[int, int]:
-    callers = number(row.get("CALLER_COUNT"))
-    if callers is None:
-        callers = number(row.get("SUPP")) or 0
-    tier = 2 if callers >= 2 else (1 if callers >= 1 else 0)
-    review = str(row.get("EVENT_TECHNICAL_REVIEW", "") or "").upper()
-    clean = int(review in {"", ".", "NO_REVIEW_FLAG_FROM_CALLER_EVIDENCE"})
-    return tier, clean
-
-
-def gene_relevance(row: pd.Series) -> float:
-    for col in (
-        "EVENT_GENE_RELEVANCE_SCORE",
-        "GENE_RELEVANCE_SCORE",
-        "INTEGRATED_DISCOVERY_SCORE",
-    ):
-        if col in row.index:
-            value = number(row.get(col))
-            if value is not None:
-                return value
-    phenotype = number(row.get("PHENOTYPE_SCORE")) or 0.0
-    disease = number(row.get("GENE_DISEASE_EVIDENCE_SCORE")) or 0.0
-    return phenotype + disease
-
-
-def disease_context_rank(row: pd.Series) -> int:
-    panel = is_yes(row.get("PANEL_STATUS"))
-    mito_on = is_yes(row.get("MITO_ON_CONTEXT"))
-    anchor = number(row.get("MITO_ON_ANCHOR_HPO_COUNT")) or 0
-    if panel and (mito_on or anchor > 0):
-        return 3
-    if panel:
-        return 2
-    if mito_on or anchor > 0:
-        return 1
-    return 0
-
-
-def priority_tier(mechanism: int, disease: int) -> str:
-    if mechanism >= 4 and disease > 0:
-        return "TIER_1_DIRECT_WITH_ON_DISEASE_CONTEXT"
-    if mechanism >= 4:
-        return "TIER_2_DIRECT_MITOCHONDRIAL_GENE"
-    if mechanism == 3 and disease > 0:
-        return "TIER_2_PROXIMAL_WITH_ON_DISEASE_CONTEXT"
-    if mechanism == 3:
-        return "TIER_3_PROXIMAL_MITOCHONDRIAL_CONTEXT"
-    if mechanism == 2:
-        return "TIER_4_INTERVAL_CONTEXT_ONLY"
-    return "TIER_5_UNRESOLVED_CONTEXT"
 
 
 def read_gene_set(path: str | None) -> set[str]:
@@ -365,7 +261,9 @@ def build_mtdna_overlap_rows(
             is_panel = gene_rec["GENE"] in panel_genes
             row["MITO_ON_CONTEXT"] = "YES" if is_panel else "NO"
             row["MITO_ON_ANCHOR_HPO_COUNT"] = "0"
-            row["PANEL_STATUS"] = "PANEL_GENE" if is_panel else "NON_PANEL"
+            row["PANEL_STATUS"] = "PANEL_GENE" if is_panel else "NONPANEL_GENE"
+            row["GENE_RELEVANCE_TIER"] = "SUPPORTING" if is_panel else "LIMITED"
+            row["GENE_RELEVANCE_DISPLAY_SCORE"] = "0"
             row["EVENT_GENE_RELEVANCE_SCORE"] = "0"
             rows.append(row)
 
@@ -445,96 +343,207 @@ def main():
     if "SV_GENE_RELATIONSHIP" not in candidates.columns:
         candidates["SV_GENE_RELATIONSHIP"] = "GENE_RELATIONSHIP_UNRESOLVED"
 
-    candidates["_MECHANISM_RANK"] = candidates["SV_GENE_RELATIONSHIP"].map(relationship_rank)
-    candidates["_DISEASE_CONTEXT_RANK"] = candidates.apply(disease_context_rank, axis=1)
-    candidates["_GENE_RELEVANCE"] = candidates.apply(gene_relevance, axis=1)
-    candidates["_POPULATION_RANK"] = candidates.apply(population_rank, axis=1)
-    tech = candidates.apply(technical_rank, axis=1)
-    candidates["_TECHNICAL_RANK"] = [x[0] for x in tech]
-    candidates["_TECHNICAL_CLEAN"] = [x[1] for x in tech]
+    # Apply the same evidence axes used by the general event ranker.
+    mechanism_rows = [
+        mechanism_inheritance_summary(row)
+        for _, row in candidates.iterrows()
+    ]
+    technical_rows = [
+        technical_summary(row)
+        for _, row in candidates.iterrows()
+    ]
+    population_rows = [
+        population_summary(row)
+        for _, row in candidates.iterrows()
+    ]
+
+    candidates["_GENE_TIER_RANK"] = (
+        candidates.get(
+            "GENE_RELEVANCE_TIER",
+            pd.Series("LIMITED", index=candidates.index),
+        )
+        .fillna("LIMITED")
+        .astype(str)
+        .str.upper()
+        .map(GENE_TIER_PRIORITY)
+        .fillna(0)
+    )
+    candidates["_GENE_RELEVANCE"] = pd.to_numeric(
+        candidates.get(
+            "GENE_RELEVANCE_DISPLAY_SCORE",
+            candidates.get(
+                "EVENT_GENE_RELEVANCE_SCORE",
+                pd.Series(0, index=candidates.index),
+            ),
+        ),
+        errors="coerce",
+    ).fillna(0)
+
+    candidates["_MECHANISM_CLASS"] = [x["category"] for x in mechanism_rows]
+    candidates["_INHERITANCE_CLASS"] = [
+        x["inheritance_class"] for x in mechanism_rows
+    ]
+    candidates["_MECHANISM_DETAIL"] = [x["detail"] for x in mechanism_rows]
+
+    # Nuclear-encoded genes use the shared inheritance/mechanism rank. mtDNA
+    # genes are a separate biological class and are ordered by direct/proximal/
+    # interval relationship while remaining explicitly marked for specialized
+    # heteroplasmy/mtDNA interpretation.
+    candidates["_MECHANISM_RANK"] = [
+        (
+            relationship_priority(row.get("SV_GENE_RELATIONSHIP"))
+            if str(row.get("_ENCODING_GENOME", "")).upper() == "MTDNA"
+            else int(summary["priority"])
+        )
+        for summary, (_, row) in zip(mechanism_rows, candidates.iterrows())
+    ]
+
+    candidates["_TECHNICAL_TIER"] = [x["tier"] for x in technical_rows]
+    candidates["_TECHNICAL_RANK"] = [
+        TECHNICAL_PRIORITY.get(x["tier"], 0) for x in technical_rows
+    ]
+    candidates["_POPULATION_TIER"] = [x["tier"] for x in population_rows]
+    candidates["_POPULATION_RANK"] = [
+        POPULATION_PRIORITY.get(x["tier"], 1) for x in population_rows
+    ]
+    candidates["_MAX_AF"] = [x["max_af"] for x in population_rows]
 
     rows = []
-    for (encoding, gene), group in candidates.groupby(["_ENCODING_GENOME", "_GENE"], sort=False):
-        group = group.copy()
-        group = group.sort_values(
+    for (encoding, gene), group in candidates.groupby(
+        ["_ENCODING_GENOME", "_GENE"],
+        sort=False,
+    ):
+        group = group.copy().sort_values(
             [
-                "_MECHANISM_RANK", "_DISEASE_CONTEXT_RANK", "_GENE_RELEVANCE",
-                "_TECHNICAL_CLEAN", "_TECHNICAL_RANK", "_POPULATION_RANK", id_col,
+                "_GENE_TIER_RANK",
+                "_MECHANISM_RANK",
+                "_TECHNICAL_RANK",
+                "_POPULATION_RANK",
+                "_GENE_RELEVANCE",
+                id_col,
             ],
-            ascending=[False, False, False, False, False, False, True],
+            ascending=[False, False, False, False, False, True],
         )
         best = group.iloc[0]
 
-        relation = group["SV_GENE_RELATIONSHIP"].fillna(".").astype(str)
-        direct = relation.map(relationship_rank).eq(4)
-        proximal = relation.map(relationship_rank).eq(3)
-        context = relation.map(relationship_rank).eq(2)
+        relation_rank = group["SV_GENE_RELATIONSHIP"].map(
+            relationship_priority
+        )
+        direct = relation_rank.eq(3)
+        proximal = relation_rank.eq(2)
+        context = relation_rank.eq(1)
 
         pathways = sorted({
             item.strip()
-            for raw in group.get("MITOCARTA_MITOPATHWAYS", pd.Series(".", index=group.index)).fillna(".")
+            for raw in group.get(
+                "MITOCARTA_MITOPATHWAYS",
+                pd.Series(".", index=group.index),
+            ).fillna(".")
             for item in str(raw).split(";")
             if item.strip().upper() not in MISSING
         })
         top_pathways = sorted({
             item.strip()
-            for raw in group.get("MITOCARTA_TOP_LEVEL_PATHWAYS", pd.Series(".", index=group.index)).fillna(".")
+            for raw in group.get(
+                "MITOCARTA_TOP_LEVEL_PATHWAYS",
+                pd.Series(".", index=group.index),
+            ).fillna(".")
             for item in str(raw).split(";")
             if item.strip().upper() not in MISSING
         })
         compartments = sorted({
             item.strip()
-            for raw in group.get("MITOCARTA_SUBCOMPARTMENT", pd.Series(".", index=group.index)).fillna(".")
+            for raw in group.get(
+                "MITOCARTA_SUBCOMPARTMENT",
+                pd.Series(".", index=group.index),
+            ).fillna(".")
             for item in str(raw).split(";")
             if item.strip().upper() not in MISSING
         })
 
-        priority = priority_tier(
-            int(best["_MECHANISM_RANK"]),
-            int(best["_DISEASE_CONTEXT_RANK"]),
+        mech_rank = int(best["_MECHANISM_RANK"])
+        gene_tier = str(best.get("GENE_RELEVANCE_TIER", "LIMITED")).upper()
+        if mech_rank >= 4 and gene_tier in {"HIGH", "MODERATE"}:
+            priority = "TIER_1_MECHANISM_AND_GENE_RELEVANCE"
+        elif mech_rank >= 3:
+            priority = "TIER_2_DIRECT_MITOCHONDRIAL_GENE"
+        elif mech_rank >= 2:
+            priority = "TIER_3_PROXIMAL_MITOCHONDRIAL_CONTEXT"
+        elif mech_rank >= 1:
+            priority = "TIER_4_INTERVAL_CONTEXT_ONLY"
+        else:
+            priority = "TIER_5_UNRESOLVED_OR_SPECIALIZED_REVIEW"
+
+        panel_status = (
+            "PANEL_GENE"
+            if group.get(
+                "PANEL_STATUS",
+                pd.Series(".", index=group.index),
+            )
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .eq("PANEL_GENE")
+            .any()
+            else "NONPANEL_GENE"
         )
-        tier_order = {
-            "TIER_1_DIRECT_WITH_ON_DISEASE_CONTEXT": 1,
-            "TIER_2_DIRECT_MITOCHONDRIAL_GENE": 2,
-            "TIER_2_PROXIMAL_WITH_ON_DISEASE_CONTEXT": 2,
-            "TIER_3_PROXIMAL_MITOCHONDRIAL_CONTEXT": 3,
-            "TIER_4_INTERVAL_CONTEXT_ONLY": 4,
-            "TIER_5_UNRESOLVED_CONTEXT": 5,
-        }.get(priority, 5)
 
         row = {
             "GENE": gene,
             "ENCODING_GENOME": encoding,
             "GENE_CLASS": str(best.get("_GENE_CLASS", ".")),
             "MTDNA_FUNCTION": str(best.get("_MTDNA_FUNCTION", ".")),
+            "PANEL_STATUS": panel_status,
+            "ON_PANEL_GENE": "YES" if panel_status == "PANEL_GENE" else "NO",
+            "GENE_RELEVANCE_TIER": gene_tier,
+            "MAX_GENE_RELEVANCE": round(
+                float(group["_GENE_RELEVANCE"].max()), 3
+            ),
             "MITO_PRIORITY_TIER": priority,
-            "_PRIORITY_TIER_ORDER": tier_order,
             "UNIQUE_SVS": int(group[id_col].nunique()),
             "DIRECT_SVS": int(group.loc[direct, id_col].nunique()),
             "PROXIMAL_SVS": int(group.loc[proximal, id_col].nunique()),
             "CONTEXT_SVS": int(group.loc[context, id_col].nunique()),
             "BEST_SV_ID": str(best.get(id_col, ".")),
             "BEST_SVTYPE": str(best.get("SVTYPE", ".")),
-            "BEST_SV_GENE_RELATIONSHIP": str(best.get("SV_GENE_RELATIONSHIP", ".")),
-            "BEST_RELATIONSHIP_SCOPE": relationship_scope(best.get("SV_GENE_RELATIONSHIP", ".")),
-            "ON_PANEL_GENE": "YES" if group.get("PANEL_STATUS", pd.Series(".", index=group.index)).map(is_yes).any() else "NO",
-            "MITO_ON_CONTEXT": "YES" if group.get("MITO_ON_CONTEXT", pd.Series(".", index=group.index)).map(is_yes).any() else "NO",
-            "MAX_ON_ANCHOR_HPO_COUNT": int(max([
-                number(v) or 0 for v in group.get("MITO_ON_ANCHOR_HPO_COUNT", pd.Series(0, index=group.index))
-            ])),
-            "MAX_GENE_RELEVANCE": round(float(group["_GENE_RELEVANCE"].max()), 3),
-            "BEST_TECHNICAL_TIER": str(best.get("EVENT_TECHNICAL_TIER", ".")),
-            "BEST_TECHNICAL_REVIEW": str(best.get("EVENT_TECHNICAL_REVIEW", ".")),
-            "BEST_POPULATION_TIER": str(best.get("EVENT_POPULATION_TIER", ".")),
+            "BEST_SV_GENE_RELATIONSHIP": str(
+                best.get("SV_GENE_RELATIONSHIP", ".")
+            ),
+            "BEST_RELATIONSHIP_SCOPE": relationship_scope(
+                best.get("SV_GENE_RELATIONSHIP", ".")
+            ),
+            "BEST_INHERITANCE_CLASS": str(
+                best.get("_INHERITANCE_CLASS", "UNKNOWN")
+            ),
+            "BEST_INHERITANCE_MECHANISM_CLASS": str(
+                best.get("_MECHANISM_CLASS", "UNRESOLVED")
+            ),
+            "BEST_INHERITANCE_MECHANISM_DETAIL": str(
+                best.get("_MECHANISM_DETAIL", ".")
+            ),
+            "BEST_TECHNICAL_TIER": str(
+                best.get("_TECHNICAL_TIER", ".")
+            ),
+            "BEST_POPULATION_TIER": str(
+                best.get("_POPULATION_TIER", ".")
+            ),
+            "BEST_MAX_EXPLICIT_AF": str(best.get("_MAX_AF", ".")),
             "BEST_GNOMAD_SV_AF": str(best.get("GNOMAD_SV_AF", ".")),
             "BEST_NEEDLR_AF": str(best.get("NEEDLR_AF", ".")),
-            "MITOCARTA_MAESTRO_SCORE": str(best.get("MITOCARTA_MAESTRO_SCORE", ".")),
-            "MITOCARTA_SUBCOMPARTMENT": ";".join(compartments) if compartments else ".",
-            "MITOCARTA_TOP_LEVEL_PATHWAYS": ";".join(top_pathways) if top_pathways else ".",
-            "MITOCARTA_MITOPATHWAYS": ";".join(pathways) if pathways else ".",
-            "_MECHANISM_RANK": int(best["_MECHANISM_RANK"]),
-            "_DISEASE_CONTEXT_RANK": int(best["_DISEASE_CONTEXT_RANK"]),
-            "_TECHNICAL_CLEAN": int(best["_TECHNICAL_CLEAN"]),
+            "MITOCARTA_MAESTRO_SCORE": str(
+                best.get("MITOCARTA_MAESTRO_SCORE", ".")
+            ),
+            "MITOCARTA_SUBCOMPARTMENT": (
+                ";".join(compartments) if compartments else "."
+            ),
+            "MITOCARTA_TOP_LEVEL_PATHWAYS": (
+                ";".join(top_pathways) if top_pathways else "."
+            ),
+            "MITOCARTA_MITOPATHWAYS": (
+                ";".join(pathways) if pathways else "."
+            ),
+            "_GENE_TIER_RANK": int(best["_GENE_TIER_RANK"]),
+            "_MECHANISM_RANK": mech_rank,
             "_TECHNICAL_RANK": int(best["_TECHNICAL_RANK"]),
             "_POPULATION_RANK": int(best["_POPULATION_RANK"]),
         }
@@ -543,43 +552,65 @@ def main():
     out = pd.DataFrame(rows)
     out = out.sort_values(
         [
-            "ENCODING_GENOME", "_PRIORITY_TIER_ORDER",
-            "_DISEASE_CONTEXT_RANK", "MAX_GENE_RELEVANCE",
-            "_MECHANISM_RANK", "_TECHNICAL_CLEAN", "_TECHNICAL_RANK",
-            "_POPULATION_RANK", "UNIQUE_SVS", "GENE",
+            "ENCODING_GENOME",
+            "PANEL_STATUS",
+            "_GENE_TIER_RANK",
+            "_MECHANISM_RANK",
+            "_TECHNICAL_RANK",
+            "_POPULATION_RANK",
+            "MAX_GENE_RELEVANCE",
+            "UNIQUE_SVS",
+            "GENE",
         ],
-        ascending=[True, True, False, False, False, False, False, False, False, True],
-    )
-    out["MITO_RANK_WITHIN_ENCODING"] = out.groupby("ENCODING_GENOME").cumcount() + 1
-    out["MITO_RANKING_MODEL"] = (
-        "mechanism_directness__ON_disease_context__gene_relevance__"
-        "technical_support__explicit_population_evidence__v1"
-    )
-    out["MITO_RANKING_INTERPRETATION"] = (
-        "Research prioritization only. Nuclear-encoded mitochondrial genes and "
-        "mtDNA-encoded genes are ranked separately. MitoCarta membership and "
-        "pathway assignment indicate mitochondrial biology, not pathogenicity. "
-        "Missing or no-match population evidence is neutral and is not treated "
-        "as proof of rarity."
+        ascending=[
+            True, True, False, False, False, False, False, False, True
+        ],
     )
 
-    out = out.drop(columns=[
-        "_PRIORITY_TIER_ORDER", "_MECHANISM_RANK",
-        "_DISEASE_CONTEXT_RANK", "_TECHNICAL_CLEAN",
-        "_TECHNICAL_RANK", "_POPULATION_RANK",
-    ])
+    out["MITO_RANK_WITHIN_ENCODING"] = (
+        out.groupby("ENCODING_GENOME").cumcount() + 1
+    )
+    out["MITO_RANK_WITHIN_ENCODING_PANEL_STATUS"] = (
+        out.groupby(["ENCODING_GENOME", "PANEL_STATUS"]).cumcount() + 1
+    )
+    out["MITO_RANKING_MODEL"] = (
+        "sharedTieredRanking__encoding_panel__geneTier_"
+        "inheritanceMechanism_technical_population__v2"
+    )
+    out["MITO_RANKING_INTERPRETATION"] = (
+        "Research prioritization only. Nuclear-encoded mitochondrial genes "
+        "reuse the same inheritance/mechanism, technical and population axes "
+        "as the general SV-gene ranker. mtDNA genes are ranked separately by "
+        "SV-gene relationship and require mtDNA/heteroplasmy-specific review. "
+        "Panel and non-panel ranks are separate; panel membership is not a score."
+    )
+
+    out = out.drop(
+        columns=[
+            "_GENE_TIER_RANK",
+            "_MECHANISM_RANK",
+            "_TECHNICAL_RANK",
+            "_POPULATION_RANK",
+        ],
+        errors="ignore",
+    )
     ordered = [
-        "MITO_RANK_WITHIN_ENCODING", "GENE", "ENCODING_GENOME", "GENE_CLASS",
-        "MTDNA_FUNCTION", "MITO_PRIORITY_TIER", "UNIQUE_SVS", "DIRECT_SVS", "PROXIMAL_SVS",
-        "CONTEXT_SVS", "BEST_SV_ID", "BEST_SVTYPE", "BEST_SV_GENE_RELATIONSHIP",
-        "BEST_RELATIONSHIP_SCOPE", "ON_PANEL_GENE", "MITO_ON_CONTEXT",
-        "MAX_ON_ANCHOR_HPO_COUNT", "MAX_GENE_RELEVANCE", "BEST_TECHNICAL_TIER",
-        "BEST_TECHNICAL_REVIEW", "BEST_POPULATION_TIER", "BEST_GNOMAD_SV_AF",
-        "BEST_NEEDLR_AF", "MITOCARTA_MAESTRO_SCORE", "MITOCARTA_SUBCOMPARTMENT",
+        "MITO_RANK_WITHIN_ENCODING",
+        "MITO_RANK_WITHIN_ENCODING_PANEL_STATUS",
+        "GENE", "ENCODING_GENOME", "GENE_CLASS", "MTDNA_FUNCTION",
+        "PANEL_STATUS", "ON_PANEL_GENE", "GENE_RELEVANCE_TIER",
+        "MITO_PRIORITY_TIER", "UNIQUE_SVS", "DIRECT_SVS", "PROXIMAL_SVS",
+        "CONTEXT_SVS", "BEST_SV_ID", "BEST_SVTYPE",
+        "BEST_SV_GENE_RELATIONSHIP", "BEST_RELATIONSHIP_SCOPE",
+        "BEST_INHERITANCE_CLASS", "BEST_INHERITANCE_MECHANISM_CLASS",
+        "BEST_INHERITANCE_MECHANISM_DETAIL", "MAX_GENE_RELEVANCE",
+        "BEST_TECHNICAL_TIER", "BEST_POPULATION_TIER",
+        "BEST_MAX_EXPLICIT_AF", "BEST_GNOMAD_SV_AF", "BEST_NEEDLR_AF",
+        "MITOCARTA_MAESTRO_SCORE", "MITOCARTA_SUBCOMPARTMENT",
         "MITOCARTA_TOP_LEVEL_PATHWAYS", "MITOCARTA_MITOPATHWAYS",
         "MITO_RANKING_MODEL", "MITO_RANKING_INTERPRETATION",
     ]
-    out = out[[c for c in ordered if c in out.columns]]
+    out = out[[col for col in ordered if col in out.columns]]
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
