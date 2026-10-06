@@ -77,15 +77,14 @@ def transcript_intervals(row, gene: str, json_col: str | None):
     return intervals
 
 
-def annotsv_gene_value(
+def annotsv_gene_record(
     row,
     gene: str,
     json_col: str | None,
-    names: list[str],
-) -> str:
-    """Recover gene-specific evidence from AnnotSV JSON before compaction."""
+) -> dict:
+    """Return one gene-specific AnnotSV record before compacting the JSON."""
     if not json_col:
-        return "."
+        return {}
     raw = row.get(json_col, ".")
     try:
         records = (
@@ -94,18 +93,24 @@ def annotsv_gene_value(
             else []
         )
     except Exception:
-        return "."
+        return {}
 
     for record in records:
-        if str(record.get("Gene_name", "")).strip().upper() != gene.upper():
-            continue
-        lower = {str(k).lower(): v for k, v in record.items()}
-        for name in names:
-            value = record.get(name)
-            if value is None:
-                value = lower.get(name.lower())
-            if value is not None and str(value).strip().upper() not in MISSING:
-                return str(value).strip()
+        if str(record.get("Gene_name", "")).strip().upper() == gene.upper():
+            return record
+    return {}
+
+
+def first_record_value(record: dict, names: list[str]) -> str:
+    if not record:
+        return "."
+    lower = {str(k).lower(): v for k, v in record.items()}
+    for name in names:
+        value = record.get(name)
+        if value is None:
+            value = lower.get(name.lower())
+        if value is not None and str(value).strip().upper() not in MISSING:
+            return str(value).strip()
     return "."
 
 
@@ -510,6 +515,26 @@ def main():
     buckets = []
     scopes = []
 
+    recover_fields = {
+        "CLINGEN_HI": ["HI"],
+        "CLINGEN_TS": ["TS"],
+        "GNOMAD_PLI": ["pLI", "GnomAD_pLI", "gnomAD_pLI"],
+        "GNOMAD_LOEUF": ["LOEUF", "LOEUF_score", "gnomAD_LOEUF"],
+        "GNOMAD_LOEUF_BIN": ["LOEUF_bin", "gnomAD_LOEUF_bin"],
+        "GENCC_MOI": ["GenCC_moi", "GENCC_moi"],
+        "OMIM_INHERITANCE": ["OMIM_inheritance", "OMIM inheritance"],
+        "GENCC": [
+            "GenCC_classification",
+            "GENCC_classification",
+            "GenCC",
+            "GENCC",
+        ],
+        "OMIM": ["OMIM_phenotype", "OMIM"],
+    }
+    recovered_evidence = {
+        column: [] for column in recover_fields
+    }
+
     for _, row in out.iterrows():
         gene = str(row.get(gene_col, ".")).strip()
 
@@ -558,6 +583,17 @@ def main():
             interpretation_scope(relationship)
         )
 
+        # Parse AnnotSV gene JSON once for all recoverable gene-specific fields.
+        record = annotsv_gene_record(row, gene, json_col)
+        for column, aliases in recover_fields.items():
+            current = row.get(column, ".")
+            if str(current).strip().upper() not in MISSING:
+                recovered_evidence[column].append(current)
+            else:
+                recovered_evidence[column].append(
+                    first_record_value(record, aliases)
+                )
+
     out["SV_GENE_RELATIONSHIP"] = relationships
     out["BREAKPOINT_DISTANCE_TO_GENE_BP"] = distances
     out["SV_EVENT_SIZE_CLASS"] = size_classes
@@ -577,6 +613,9 @@ def main():
     out["EVENT_REVIEW_BUCKET"] = buckets
     out["EVENT_INTERPRETATION_SCOPE"] = scopes
 
+    for column, values in recovered_evidence.items():
+        out[column] = values
+
     out["BREAKPOINT_DEFINED_EVENT"] = (
         out["SVTYPE"]
         .astype(str)
@@ -593,46 +632,6 @@ def main():
         .ge(10_000_000)
         .map({True: "YES", False: "NO"})
     )
-
-    # Recover gene-specific mechanism/constraint fields from the detailed
-    # AnnotSV JSON before compact mode removes that large payload. Existing
-    # explicit integrated columns are always preferred.
-    recover_fields = {
-        "CLINGEN_HI": ["HI"],
-        "CLINGEN_TS": ["TS"],
-        "GNOMAD_PLI": ["pLI", "GnomAD_pLI", "gnomAD_pLI"],
-        "GNOMAD_LOEUF": ["LOEUF", "LOEUF_score", "gnomAD_LOEUF"],
-        "GNOMAD_LOEUF_BIN": ["LOEUF_bin", "gnomAD_LOEUF_bin"],
-        "GENCC_MOI": ["GenCC_moi", "GENCC_moi"],
-        "OMIM_INHERITANCE": ["OMIM_inheritance", "OMIM inheritance"],
-        "GENCC": [
-            "GenCC_classification",
-            "GENCC_classification",
-            "GenCC",
-            "GENCC",
-        ],
-        "OMIM": ["OMIM_phenotype", "OMIM"],
-    }
-
-    for column, aliases in recover_fields.items():
-        if column not in out.columns:
-            out[column] = "."
-        recovered = []
-        for _, row in out.iterrows():
-            current = row.get(column, ".")
-            if str(current).strip().upper() not in MISSING:
-                recovered.append(current)
-                continue
-            gene = str(row.get(gene_col, ".")).strip()
-            recovered.append(
-                annotsv_gene_value(
-                    row,
-                    gene,
-                    json_col,
-                    aliases,
-                )
-            )
-        out[column] = recovered
 
     if args.compact_output:
         # The gene-relationship calculation above is the last downstream step
