@@ -123,6 +123,63 @@ def main():
     pheno = numeric(work[pheno_col]).fillna(0) if pheno_col else pd.Series(0, index=work.index)
     work["Phenotype overlap"] = (pheno > 0).astype(int)
 
+    inheritance_col = first_existing(
+        work,
+        ["GENE_INHERITANCE_CLASS"],
+    )
+    mechanism_col = first_existing(
+        work,
+        [
+            "FINAL_INHERITANCE_MECHANISM_CLASS",
+            "INHERITANCE_MECHANISM_CLASS",
+        ],
+    )
+    recessive_pair_col = first_existing(
+        work,
+        ["RECESSIVE_PAIR_STATUS"],
+    )
+
+    inheritance_flags = []
+    if inheritance_col:
+        inheritance_text = (
+            work[inheritance_col].fillna("UNKNOWN").astype(str).str.upper()
+        )
+        work["AD gene model"] = inheritance_text.eq(
+            "AUTOSOMAL_DOMINANT"
+        ).astype(int)
+        work["AR gene model"] = inheritance_text.eq(
+            "AUTOSOMAL_RECESSIVE"
+        ).astype(int)
+        inheritance_flags += ["AD gene model", "AR gene model"]
+
+    if mechanism_col:
+        mechanism_text = (
+            work[mechanism_col].fillna("UNRESOLVED").astype(str).str.upper()
+        )
+        work["Mechanism compatible"] = mechanism_text.isin(
+            [
+                "STRONG_DOSAGE_OR_BIALLELIC_COMPATIBILITY",
+                "SUPPORTED_DISEASE_MECHANISM",
+                "AR_TRANS_SECOND_ALLELE_SUPPORTED",
+            ]
+        ).astype(int)
+        work["AR second allele required"] = mechanism_text.eq(
+            "DIRECT_EFFECT_RECESSIVE_SECOND_ALLELE_REQUIRED"
+        ).astype(int)
+        inheritance_flags += [
+            "Mechanism compatible",
+            "AR second allele required",
+        ]
+
+    if recessive_pair_col:
+        pair_text = (
+            work[recessive_pair_col].fillna(".").astype(str).str.upper()
+        )
+        work["AR SNV+SV phased trans"] = pair_text.eq(
+            "AR_TRANS_SNV_SV_CANDIDATE"
+        ).astype(int)
+        inheritance_flags.append("AR SNV+SV phased trans")
+
     optional_flags = []
     for source_col, display in [
         ("STRAGLR_MATCH", "Straglr match"),
@@ -167,10 +224,20 @@ def main():
     score_col = first_existing(
         work,
         [
+            "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+            "GENE_RELEVANCE_DISPLAY_SCORE",
             "EVENT_GENE_RELEVANCE_SCORE",
             "INTEGRATED_DISCOVERY_SCORE",
             "integrated_discovery_score",
             "PHENOTYPE_SCORE",
+        ],
+    )
+    rank_col = first_existing(
+        work,
+        [
+            "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
+            "EVENT_RANK_WITHIN_PANEL_STATUS",
+            "EVENT_RANK_GLOBAL",
         ],
     )
     # Match the documented gene-discovery ranking. Database presence, panel
@@ -182,11 +249,35 @@ def main():
     work["_caller_count"] = caller_count
     work["_pheno"] = pheno
     work["_af"] = af
+    work["_rank"] = (
+        numeric(work[rank_col])
+        if rank_col
+        else pd.Series(np.nan, index=work.index)
+    )
+    work["_panel_group"] = (
+        work[panel_col].fillna("NONPANEL_GENE").astype(str).str.upper()
+        if panel_col
+        else "NONPANEL_GENE"
+    )
+    work["_panel_group"] = work["_panel_group"].replace(
+        {"NON_PANEL": "NONPANEL_GENE", "YES": "PANEL_GENE"}
+    )
+
+    # Keep both panel and non-panel candidates visible. Within each group,
+    # prefer the final shared event rank; old outputs fall back to score/support.
+    selected = []
+    for group_name in ["PANEL_GENE", "NONPANEL_GENE"]:
+        subset = work[work["_panel_group"].eq(group_name)].copy()
+        subset = subset.sort_values(
+            ["_rank", "PLOT_ORDER_SCORE", "_pheno", "_caller_count", id_col, gene_col],
+            ascending=[True, False, False, False, True, True],
+            na_position="last",
+        )
+        selected.append(subset.head(args.top_n))
+
     work = (
-        work.sort_values(["PLOT_ORDER_SCORE", "_pheno", "_caller_count", id_col, gene_col],
-                         ascending=[False, False, False, True, True], na_position="last")
+        pd.concat(selected, ignore_index=True)
         .drop_duplicates(subset=[id_col, gene_col], keep="first")
-        .head(args.top_n)
         .copy()
     )
     # Keep the full SV_ID in the exported TSV; the figure uses a shorter label
@@ -195,8 +286,9 @@ def main():
     evidence_cols = [
         "Sniffles2", "cuteSV", "Manta", "Delly", "Multi-caller",
         "needLR evaluable", f"needLR AF ≤ {args.rare_af:g}", "needLR AF = 0",
-        "Panel gene", "AnnotSV class", "OMIM evidence", "GenCC evidence", "Phenotype overlap",
-    ] + optional_flags
+        "Panel gene", "AnnotSV class", "OMIM evidence", "GenCC evidence",
+        "Phenotype overlap",
+    ] + inheritance_flags + optional_flags
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -246,7 +338,7 @@ def main():
     fig.text(
         0.5,
         0.008,
-        "Order follows the available gene-relevance score (fallback: phenotype score). Straglr, TLDR and phasing are complementary same-dataset analyses; methylation indicates local data availability. Context presence is not independent SV confirmation or a pathogenicity classification.",
+        "Panel and non-panel candidates are selected separately. Order follows the final shared event rank when available. AD/AR and mechanism columns are inheritance-context flags, not pathogenicity classifications; AR trans support requires phased SNV+SV evidence.",
         ha="center",
         fontsize=9,
     )
