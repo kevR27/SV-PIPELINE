@@ -23,9 +23,12 @@ from ranking_common import (
     event_sort_tuple,
     first_existing,
     gene_relevance,
+    generic_hon_semantic_map,
+    known,
     mechanism_inheritance_summary,
     number,
     population_summary,
+    summarize_gencc,
     technical_summary,
 )
 
@@ -323,6 +326,21 @@ def main():
         help="Optional compact gnomAD-SV annotation delta produced from the same input row order.",
     )
     parser.add_argument(
+        "--phenotypes",
+        default=None,
+        help="Existing per-sample human gene-HPO table for generic HON semantic ranking.",
+    )
+    parser.add_argument(
+        "--hpo-seeds",
+        default=None,
+        help="Core HON HPO seed TSV used for generic semantic ranking.",
+    )
+    parser.add_argument(
+        "--edges",
+        default=None,
+        help="Monarch edges used for HPO hierarchy/information content.",
+    )
+    parser.add_argument(
         "--rare-af",
         type=float,
         default=0.001,
@@ -409,6 +427,17 @@ def main():
             if column == "_INTEGRATED_ROW_INDEX":
                 continue
             df[column] = delta[column].values
+
+    hon_semantic_by_gene = {}
+    if args.phenotypes and args.hpo_seeds and args.edges:
+        hon_semantic_by_gene = generic_hon_semantic_map(
+            args.phenotypes,
+            args.hpo_seeds,
+            args.edges,
+        )
+        print(
+            f"[INFO] generic_HON_semantic_genes={len(hon_semantic_by_gene)}"
+        )
 
     id_col = first_existing(df, ["SV_ID", "ID"])
     gene_col = first_existing(
@@ -568,37 +597,79 @@ def main():
     # ------------------------------------------------------------------
     # Shared ranking evidence
     # ------------------------------------------------------------------
-    # Gene relevance uses broad tiers so a tiny numerical difference cannot
-    # outrank a much stronger SV-gene mechanism or technical signal.
-    if "GENE_RELEVANCE_TIER" not in out.columns:
-        semantic = (
-            numeric(out["HON_SEMANTIC_SIMILARITY_NORMALIZED"]).fillna(0)
-            if "HON_SEMANTIC_SIMILARITY_NORMALIZED" in out.columns
-            else (
-                numeric(out["PHENOTYPE_SCORE"]).fillna(0).div(10.0)
-                if "PHENOTYPE_SCORE" in out.columns
-                else pd.Series(0.0, index=out.index)
+    # Recalculate generic HON relevance during postprocess when the existing
+    # phenotype/HPO resources are available. This makes the improved ranking
+    # usable without rerunning the expensive LRS calling/annotation workflow.
+    semantic_values = []
+    disease_rows = []
+    relevance_rows = []
+
+    for _, row in out.iterrows():
+        gene = str(row.get(gene_col, ".")).strip().upper()
+
+        if gene in hon_semantic_by_gene:
+            hon = float(hon_semantic_by_gene[gene])
+            phenotype_scope = "GENERIC_HON_RESNIK_BMA_POSTPROCESS"
+        elif "HON_SEMANTIC_SIMILARITY_NORMALIZED" in out.columns:
+            hon = number(row.get("HON_SEMANTIC_SIMILARITY_NORMALIZED")) or 0.0
+            phenotype_scope = "UPSTREAM_HON_RESNIK_BMA"
+        elif "PHENOTYPE_SCORE" in out.columns:
+            hon = min(
+                1.0,
+                max(
+                    0.0,
+                    (number(row.get("PHENOTYPE_SCORE")) or 0.0) / 10.0,
+                ),
             )
-        )
-        disease = (
-            numeric(out["GENE_DISEASE_EVIDENCE_SCORE"]).fillna(0)
-            if "GENE_DISEASE_EVIDENCE_SCORE" in out.columns
-            else pd.Series(0.0, index=out.index)
-        )
-        relevance_rows = [
-            gene_relevance(hon, dis)
-            for hon, dis in zip(semantic, disease)
-        ]
-        out["GENE_RELEVANCE_TIER"] = [x["tier"] for x in relevance_rows]
-        out["GENE_RELEVANCE_DISPLAY_SCORE"] = [
-            x["display_score"] for x in relevance_rows
-        ]
+            phenotype_scope = "LEGACY_HON_SCORE_FALLBACK"
+        else:
+            hon = 0.0
+            phenotype_scope = "NO_HON_PHENOTYPE_EVIDENCE"
 
-    if "GENE_RELEVANCE_DISPLAY_SCORE" not in out.columns:
-        out["GENE_RELEVANCE_DISPLAY_SCORE"] = (
-            numeric(out.get("INTEGRATED_DISCOVERY_SCORE", 0)).fillna(0)
+        gencc = summarize_gencc(
+            [str(row.get("GENCC", "."))],
+            has_omim=known(row.get("OMIM")),
+            hon_semantic_normalized=hon,
+        )
+        relevance = gene_relevance(
+            hon,
+            float(gencc["adjusted_score"]),
         )
 
+        semantic_values.append(hon)
+        disease_rows.append(gencc)
+        relevance_rows.append((relevance, phenotype_scope))
+
+    out["HON_SEMANTIC_SIMILARITY_NORMALIZED"] = [
+        round(x, 6) for x in semantic_values
+    ]
+    out["GENE_DISEASE_EVIDENCE_RAW_SCORE"] = [
+        round(float(x["raw_score"]), 3) for x in disease_rows
+    ]
+    out["GENE_DISEASE_EVIDENCE_SCORE"] = [
+        round(float(x["adjusted_score"]), 3) for x in disease_rows
+    ]
+    out["GENE_DISEASE_EVIDENCE_LEVEL"] = [
+        x["best"] for x in disease_rows
+    ]
+    out["GENE_DISEASE_EVIDENCE_CONFLICT"] = [
+        x["conflict"] for x in disease_rows
+    ]
+    out["GENE_DISEASE_HON_CONTEXT_FACTOR"] = [
+        x["hon_context_factor"] for x in disease_rows
+    ]
+    out["GENE_DISEASE_CONTEXT_SCOPE"] = [
+        x["scope"] for x in disease_rows
+    ]
+    out["GENE_RELEVANCE_TIER"] = [
+        x[0]["tier"] for x in relevance_rows
+    ]
+    out["GENE_RELEVANCE_DISPLAY_SCORE"] = [
+        x[0]["display_score"] for x in relevance_rows
+    ]
+    out["GENE_RELEVANCE_PHENOTYPE_SCOPE"] = [
+        x[1] for x in relevance_rows
+    ]
     out["EVENT_GENE_RELEVANCE_SCORE"] = numeric(
         out["GENE_RELEVANCE_DISPLAY_SCORE"]
     ).fillna(0).round(3)
