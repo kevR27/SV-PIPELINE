@@ -13,15 +13,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from ranking_common import MISSING, event_sort_tuple
 from sv_gene_effects import (
     get_analysis_group,
     get_functional_context,
     get_sv_gene_effect,
     number,
 )
-
-
-MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
 
 
 def first_column(df: pd.DataFrame, names: list[str]) -> str | None:
@@ -228,10 +226,26 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
 
         phenotype_score = numeric_value(
             source,
-            ["HON_CONTEXT_SCORE", "hon_context_score", "PHENOTYPE_SCORE", "phenotype_score"],
+            [
+                "HON_SEMANTIC_SCORE_0_10",
+                "PHENOTYPE_SCORE",
+                "phenotype_score",
+            ],
         ) or 0.0
-        disease_score = numeric_value(source, ["GENE_DISEASE_EVIDENCE_SCORE"]) or 0.0
-        gene_score = phenotype_score + disease_score
+        disease_score = numeric_value(
+            source,
+            ["GENE_DISEASE_EVIDENCE_SCORE"],
+        ) or 0.0
+        gene_score = numeric_value(
+            source,
+            [
+                "GENE_RELEVANCE_DISPLAY_SCORE",
+                "EVENT_GENE_RELEVANCE_SCORE",
+                "INTEGRATED_DISCOVERY_SCORE",
+            ],
+        )
+        if gene_score is None:
+            gene_score = phenotype_score + disease_score
 
         rows.append({
             "SV_ID": text_value(source, ["SV_ID", "ID"]),
@@ -322,12 +336,66 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
             "ACMG_CNV_CLASS": text_value(source, ["ACMG_CNV_CLASS"]),
             "DOSAGE_RELEVANCE": text_value(source, ["DOSAGE_RELEVANCE"]),
             "PANEL_STATUS": text_value(source, ["PANEL_STATUS"]),
+            "GENE_RELEVANCE_TIER": text_value(
+                source,
+                ["GENE_RELEVANCE_TIER"],
+                default="LIMITED",
+            ),
+            "GENE_RELEVANCE_DISPLAY_SCORE": round(gene_score, 3),
+            "GENE_INHERITANCE_CLASS": text_value(
+                source,
+                ["GENE_INHERITANCE_CLASS"],
+                default="UNKNOWN",
+            ),
+            "GENE_MOI_SET": text_value(source, ["GENE_MOI_SET"]),
+            "INHERITANCE_MECHANISM_CLASS": text_value(
+                source,
+                ["INHERITANCE_MECHANISM_CLASS"],
+                default="UNRESOLVED",
+            ),
+            "INHERITANCE_MECHANISM_DETAIL": text_value(
+                source,
+                ["INHERITANCE_MECHANISM_DETAIL"],
+            ),
+            "EVENT_TECHNICAL_TIER_V2": text_value(
+                source,
+                ["EVENT_TECHNICAL_TIER_V2", "EVENT_TECHNICAL_TIER"],
+                default="REVIEW",
+            ),
+            "EVENT_MAX_CALLER_READ_SUPPORT": text_value(
+                source,
+                ["EVENT_MAX_CALLER_READ_SUPPORT"],
+            ),
+            "EVENT_POPULATION_TIER_V2": text_value(
+                source,
+                ["EVENT_POPULATION_TIER_V2", "EVENT_POPULATION_TIER"],
+                default="UNKNOWN",
+            ),
+            "EVENT_MAX_EXPLICIT_AF": text_value(
+                source,
+                ["EVENT_MAX_EXPLICIT_AF"],
+            ),
+            "EVENT_POPULATION_AF_CONFLICT": text_value(
+                source,
+                ["EVENT_POPULATION_AF_CONFLICT"],
+            ),
+            "CLINGEN_HI": text_value(source, ["CLINGEN_HI"]),
+            "CLINGEN_TS": text_value(source, ["CLINGEN_TS"]),
+            "GNOMAD_LOEUF": text_value(source, ["GNOMAD_LOEUF"]),
+            "EVENT_RANK_GLOBAL": text_value(source, ["EVENT_RANK_GLOBAL"]),
+            "EVENT_RANK_WITHIN_PANEL_STATUS": text_value(
+                source,
+                ["EVENT_RANK_WITHIN_PANEL_STATUS"],
+            ),
             "HON_CONTEXT_SCORE": round(phenotype_score, 3),
             "PHENOTYPE_RELEVANCE_SCORE": round(phenotype_score, 3),
             "PHENOTYPE_SCORE_SCOPE": "GENERIC_HON_ANCHOR_CONTEXT_NOT_PATIENT_SPECIFIC",
             "GENE_DISEASE_SCORE": round(disease_score, 3),
             "GENE_RELEVANCE_SCORE": round(gene_score, 3),
-            "GENE_RELEVANCE_SCOPE": "GENERIC_HON_CONTEXT_PLUS_CURATED_GENE_DISEASE_NOT_PATHOGENICITY",
+            "GENE_RELEVANCE_SCOPE": (
+                "TIERED_HON_SEMANTIC_PLUS_CURATED_DISEASE_"
+                "PRIMARY_ORDER_USES_SHARED_EVENT_RANKING"
+            ),
             "GENE_DISEASE_EVIDENCE": text_value(source, ["GENE_DISEASE_EVIDENCE_LEVEL", "GENCC"]),
             "GENE_CATEGORY": compact_gene_category(source),
             "MITOCARTA": text_value(source, ["MITOCARTA_ENCODING", "MITOCARTA_STATUS"]),
@@ -348,23 +416,19 @@ def build_sv_table(events: pd.DataFrame, near_breakpoint_bp: int) -> pd.DataFram
     if out.empty:
         return out
 
-    population_order = {
-        "PROVISIONAL_LOW_FREQUENCY": 0,
-        "NOT_EVALUABLE_GE_10MB": 1,
-        "NOT_EVALUABLE_BREAKEND": 1,
-        "NO_POPULATION_MATCH": 1,
-        "UNKNOWN": 1,
-        "PROVISIONAL_HIGH_FREQUENCY": 2,
-    }
-    out["_population_order"] = out["POPULATION_STATUS"].map(population_order).fillna(2)
-    out["_caller_count"] = pd.to_numeric(out["CALLER_COUNT"], errors="coerce").fillna(0)
-
-    out = out.sort_values(
-        ["SV_ANALYSIS_GROUP", "GENE_RELEVANCE_SCORE", "_population_order", "_caller_count", "GENE"],
-        ascending=[True, False, True, False, True],
+    # Reuse the exact same ordering logic as rank_sv_gene_events.py.
+    order = sorted(
+        range(len(out)),
+        key=lambda i: event_sort_tuple(out.iloc[i]),
     )
-    out["RANK_IN_GROUP"] = out.groupby("SV_ANALYSIS_GROUP").cumcount() + 1
-    return out.drop(columns=["_population_order", "_caller_count"])
+    out = out.iloc[order].reset_index(drop=True)
+    out["RANK_IN_GROUP"] = (
+        out.groupby("SV_ANALYSIS_GROUP").cumcount() + 1
+    )
+    out["RANK_WITHIN_PANEL_STATUS"] = (
+        out.groupby("PANEL_STATUS").cumcount() + 1
+    )
+    return out
 
 
 def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) -> pd.DataFrame:
@@ -434,7 +498,34 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
 
         rows.append({
             "GENE": gene,
-            "PANEL_STATUS": "PANEL_GENE" if text_value(source, ["panel_gene", "PANEL_STATUS"]).upper() in {"YES", "PANEL_GENE"} else "NON_PANEL",
+            "PANEL_STATUS": (
+                "PANEL_GENE"
+                if text_value(
+                    source,
+                    ["panel_gene", "PANEL_STATUS"],
+                ).upper() in {"YES", "PANEL_GENE"}
+                else "NONPANEL_GENE"
+            ),
+            "GENE_RELEVANCE_TIER": text_value(
+                source,
+                ["GENE_RELEVANCE_TIER"],
+                default="LIMITED",
+            ),
+            "GENE_RELEVANCE_DISPLAY_SCORE": text_value(
+                source,
+                ["GENE_RELEVANCE_DISPLAY_SCORE", "integrated_discovery_score"],
+                default="0",
+            ),
+            "GENE_INHERITANCE_CLASS": text_value(
+                source,
+                ["GENE_INHERITANCE_CLASS"],
+                default="UNKNOWN",
+            ),
+            "GENE_MOI_SET": text_value(source, ["GENE_MOI_SET"]),
+            "GENE_RANK_WITHIN_PANEL_STATUS": text_value(
+                source,
+                ["GENE_RANK_WITHIN_PANEL_STATUS"],
+            ),
             "HPO_COUNT": text_value(source, ["human_HPO_count"]),
             "OPTIC_NEUROPATHY_HPO_COUNT": text_value(source, ["optic_neuropathy_anchor_HPO_count"]),
             "HON_CONTEXT_SCORE": round(phenotype, 3),
@@ -462,15 +553,38 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
         })
 
     out = pd.DataFrame(rows)
-    out["_on_hpo_count"] = pd.to_numeric(
-        out["OPTIC_NEUROPATHY_HPO_COUNT"],
+    tier_rank = {
+        "HIGH": 3,
+        "MODERATE": 2,
+        "SUPPORTING": 1,
+        "LIMITED": 0,
+    }
+    out["_tier_rank"] = (
+        out["GENE_RELEVANCE_TIER"]
+        .fillna("LIMITED")
+        .astype(str)
+        .str.upper()
+        .map(tier_rank)
+        .fillna(0)
+    )
+    out["_display_score"] = pd.to_numeric(
+        out["GENE_RELEVANCE_DISPLAY_SCORE"],
         errors="coerce",
     ).fillna(0)
     out = out.sort_values(
-        ["GENE_RELEVANCE_SCORE", "GENE_DISEASE_SCORE", "_on_hpo_count", "GENE"],
-        ascending=[False, False, False, True],
+        [
+            "PANEL_STATUS",
+            "_tier_rank",
+            "_display_score",
+            "GENE_DISEASE_SCORE",
+            "GENE",
+        ],
+        ascending=[True, False, False, False, True],
     )
-    return out.drop(columns=["_on_hpo_count"])
+    out["FINAL_GENE_RANK_WITHIN_PANEL_STATUS"] = (
+        out.groupby("PANEL_STATUS").cumcount() + 1
+    )
+    return out.drop(columns=["_tier_rank", "_display_score"])
 
 
 def main():
