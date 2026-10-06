@@ -25,6 +25,11 @@ def parse_args():
     p.add_argument("--input", required=True, help="MitoCarta-annotated integrated TSV")
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--top-n", type=int, default=25)
+    p.add_argument(
+        "--ranking-table",
+        default=None,
+        help="Optional *_mitochondrial_gene_ranking.tsv for stable gene ordering.",
+    )
     return p.parse_args()
 
 
@@ -101,34 +106,89 @@ def main():
         .eq("NUCLEAR_MITOCHONDRIAL_GENE")
     ].copy()
 
-    effects = nuclear.apply(
-        lambda row: get_sv_gene_effect(row.to_dict(), str(row[gene_col]), 10000),
-        axis=1,
-    )
-    nuclear["_gene_effect"] = [item[0] for item in effects]
-    nuclear["_functional_context"] = [
-        get_functional_context(str(row.get("SVTYPE", "")), effect)
-        for (_, row), effect in zip(nuclear.iterrows(), nuclear["_gene_effect"])
-    ]
+    # The compact postprocess table intentionally drops ANNOTSV_GENE_ROWS_JSON
+    # after rank_sv_gene_events.py has converted it into the stable
+    # SV_GENE_RELATIONSHIP field. Prefer that field so plotting remains
+    # compatible with the compact final table. Fall back to the older JSON-
+    # based reconstruction only for legacy completed runs.
+    direct_relationships = {
+        "WHOLE_GENE_DOSAGE_CONTEXT",
+        "PARTIAL_GENE_OVERLAP",
+        "INSERTION_WITHIN_TRANSCRIPT",
+        "BREAKPOINT_WITHIN_TRANSCRIPT",
+    }
+    proximal_relationships = {
+        "INSERTION_PROXIMAL_TO_GENE",
+        "BREAKPOINT_PROXIMAL_TO_GENE",
+        "GENE_PROXIMAL_INTERVAL",
+    }
+    context_relationships = {
+        "INVERSION_SPANS_INTACT_GENE",
+        "INTERVAL_CONTEXT_ONLY",
+    }
 
-    def impact_scope(row):
-        effect = str(row["_gene_effect"])
-        context = str(row["_functional_context"])
-        if (
-            effect.startswith("WHOLE_GENE_")
-            or effect.startswith("PARTIAL_GENE_")
-            or effect.startswith("INSERTION_IN_")
-            or "BREAKPOINT_IN_" in effect
-            or "TWO_BREAKPOINTS_IN_GENE" in effect
-        ):
-            return "DIRECT_STRUCTURAL_EFFECT"
-        if "SPANNED_BY_INVERSION" in effect:
-            return "INVERSION_SPANNED_CONTEXT"
-        if "REGULATORY_OR_POSITION_EFFECT" in context or "BREAKPOINT_NEAR_GENE" in effect:
-            return "REGULATORY_POSITION_CONTEXT"
-        return "UNRESOLVED_CONTEXT"
+    relationship_col = first_existing(nuclear, ["SV_GENE_RELATIONSHIP"])
+    scope_col = first_existing(nuclear, ["EVENT_INTERPRETATION_SCOPE"])
 
-    nuclear["_impact_scope"] = nuclear.apply(impact_scope, axis=1)
+    if relationship_col:
+        nuclear["_gene_effect"] = (
+            nuclear[relationship_col].fillna(".").astype(str).str.upper()
+        )
+        nuclear["_functional_context"] = (
+            nuclear[scope_col].fillna(".").astype(str)
+            if scope_col
+            else "."
+        )
+
+        def impact_scope(row):
+            relationship = str(row["_gene_effect"]).upper()
+            if relationship in direct_relationships:
+                return "DIRECT_STRUCTURAL_EFFECT"
+            if relationship in proximal_relationships:
+                return "REGULATORY_POSITION_CONTEXT"
+            if relationship == "INVERSION_SPANS_INTACT_GENE":
+                return "INVERSION_SPANNED_CONTEXT"
+            if relationship in context_relationships:
+                return "INTERVAL_CONTEXT"
+            return "UNRESOLVED_CONTEXT"
+
+        nuclear["_impact_scope"] = nuclear.apply(impact_scope, axis=1)
+    else:
+        effects = nuclear.apply(
+            lambda row: get_sv_gene_effect(
+                row.to_dict(), str(row[gene_col]), 10000
+            ),
+            axis=1,
+        )
+        nuclear["_gene_effect"] = [item[0] for item in effects]
+        nuclear["_functional_context"] = [
+            get_functional_context(str(row.get("SVTYPE", "")), effect)
+            for (_, row), effect in zip(
+                nuclear.iterrows(), nuclear["_gene_effect"]
+            )
+        ]
+
+        def impact_scope(row):
+            effect = str(row["_gene_effect"])
+            context = str(row["_functional_context"])
+            if (
+                effect.startswith("WHOLE_GENE_")
+                or effect.startswith("PARTIAL_GENE_")
+                or effect.startswith("INSERTION_IN_")
+                or "BREAKPOINT_IN_" in effect
+                or "TWO_BREAKPOINTS_IN_GENE" in effect
+            ):
+                return "DIRECT_STRUCTURAL_EFFECT"
+            if "SPANNED_BY_INVERSION" in effect:
+                return "INVERSION_SPANNED_CONTEXT"
+            if (
+                "REGULATORY_OR_POSITION_EFFECT" in context
+                or "BREAKPOINT_NEAR_GENE" in effect
+            ):
+                return "REGULATORY_POSITION_CONTEXT"
+            return "UNRESOLVED_CONTEXT"
+
+        nuclear["_impact_scope"] = nuclear.apply(impact_scope, axis=1)
 
     gene_text = df[gene_col].fillna(".").astype(str).str.strip()
     diagnostic = {
@@ -272,15 +332,68 @@ def main():
             }
         )
 
-    gene_summary = pd.DataFrame(gene_rows).sort_values(
-        ["ON_context", "direct_SVs", "gene_relevance", "unique_SVs", "gene"],
-        ascending=[False, False, False, False, True],
-    ).head(args.top_n)
+    gene_summary = pd.DataFrame(gene_rows)
 
-    # Pathway counts are restricted to direct structural effects so that one
-    # giant inversion does not make hundreds of intact, merely spanned genes
-    # look like a mitochondrial pathway disruption signal.
-    pathway_pairs = pairs[pairs["_impact_scope"].eq("DIRECT_STRUCTURAL_EFFECT")].copy()
+    if args.ranking_table and Path(args.ranking_table).exists():
+        ranking = read_tsv(args.ranking_table)
+        ranking_gene = first_existing(ranking, ["GENE", "gene"])
+        ranking_rank = first_existing(
+            ranking, ["MITO_RANK_WITHIN_ENCODING"]
+        )
+        ranking_encoding = first_existing(
+            ranking, ["ENCODING_GENOME"]
+        )
+        if ranking_gene and ranking_rank:
+            nuclear_ranking = ranking.copy()
+            if ranking_encoding:
+                nuclear_ranking = nuclear_ranking[
+                    nuclear_ranking[ranking_encoding]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                    .eq("NUCLEAR")
+                ]
+            rank_map = dict(
+                zip(
+                    nuclear_ranking[ranking_gene].astype(str),
+                    pd.to_numeric(
+                        nuclear_ranking[ranking_rank], errors="coerce"
+                    ),
+                )
+            )
+            gene_summary["mitochondrial_rank"] = (
+                gene_summary["gene"].map(rank_map)
+            )
+            gene_summary = gene_summary.sort_values(
+                [
+                    "mitochondrial_rank",
+                    "ON_context",
+                    "direct_SVs",
+                    "gene_relevance",
+                    "unique_SVs",
+                    "gene",
+                ],
+                ascending=[True, False, False, False, False, True],
+                na_position="last",
+            )
+        else:
+            gene_summary = gene_summary.sort_values(
+                ["ON_context", "direct_SVs", "gene_relevance", "unique_SVs", "gene"],
+                ascending=[False, False, False, False, True],
+            )
+    else:
+        gene_summary = gene_summary.sort_values(
+            ["ON_context", "direct_SVs", "gene_relevance", "unique_SVs", "gene"],
+            ascending=[False, False, False, False, True],
+        )
+
+    gene_summary = gene_summary.head(args.top_n)
+
+    # Keep pathway context visible even when there are no direct effects.
+    # Direct, proximal and interval/inversion-spanned relationships are counted
+    # separately so a large inversion cannot masquerade as direct pathway
+    # disruption while still remaining biologically inspectable.
+    pathway_pairs = pairs.copy()
 
     pathway_rows = []
     for _, row in pathway_pairs.iterrows():
@@ -299,19 +412,75 @@ def main():
             ]
 
         for pathway in pathways:
-            pathway_rows.append((pathway, row[id_col], row[gene_col]))
+            pathway_rows.append(
+                (pathway, row[id_col], row[gene_col], row["_impact_scope"])
+            )
 
-    pathway_df = pd.DataFrame(pathway_rows, columns=["pathway", "SV_ID", "gene"])
+    pathway_df = pd.DataFrame(
+        pathway_rows,
+        columns=["pathway", "SV_ID", "gene", "impact_scope"],
+    )
     if not pathway_df.empty:
-        pathway_summary = (
-            pathway_df.drop_duplicates()
-            .groupby("pathway")
-            .agg(unique_SVs=("SV_ID", "nunique"), unique_genes=("gene", "nunique"))
-            .reset_index()
-            .sort_values(["unique_genes", "unique_SVs", "pathway"], ascending=[False, False, True])
+        pathway_records = []
+        for pathway, group in pathway_df.drop_duplicates().groupby(
+            "pathway", sort=False
+        ):
+            pathway_records.append(
+                {
+                    "pathway": pathway,
+                    "unique_SVs": int(group["SV_ID"].nunique()),
+                    "unique_genes": int(group["gene"].nunique()),
+                    "direct_genes": int(
+                        group.loc[
+                            group["impact_scope"].eq(
+                                "DIRECT_STRUCTURAL_EFFECT"
+                            ),
+                            "gene",
+                        ].nunique()
+                    ),
+                    "proximal_genes": int(
+                        group.loc[
+                            group["impact_scope"].eq(
+                                "REGULATORY_POSITION_CONTEXT"
+                            ),
+                            "gene",
+                        ].nunique()
+                    ),
+                    "context_genes": int(
+                        group.loc[
+                            group["impact_scope"].isin(
+                                [
+                                    "INVERSION_SPANNED_CONTEXT",
+                                    "INTERVAL_CONTEXT",
+                                ]
+                            ),
+                            "gene",
+                        ].nunique()
+                    ),
+                }
+            )
+        pathway_summary = pd.DataFrame(pathway_records).sort_values(
+            [
+                "direct_genes",
+                "proximal_genes",
+                "context_genes",
+                "unique_genes",
+                "unique_SVs",
+                "pathway",
+            ],
+            ascending=[False, False, False, False, False, True],
         )
     else:
-        pathway_summary = pd.DataFrame(columns=["pathway", "unique_SVs", "unique_genes"])
+        pathway_summary = pd.DataFrame(
+            columns=[
+                "pathway",
+                "unique_SVs",
+                "unique_genes",
+                "direct_genes",
+                "proximal_genes",
+                "context_genes",
+            ]
+        )
 
     compartment_rows = []
     for _, row in pairs.iterrows():
@@ -402,15 +571,35 @@ def main():
 
     ps = pathway_summary.head(15).iloc[::-1]
     if not ps.empty:
-        ax2.barh(np.arange(len(ps)), ps["unique_genes"])
-        ax2.set_yticks(np.arange(len(ps)))
+        y2 = np.arange(len(ps))
+        height = 0.24
+        ax2.barh(
+            y2 - height,
+            ps["direct_genes"],
+            height=height,
+            label="Direct structural effect",
+        )
+        ax2.barh(
+            y2,
+            ps["proximal_genes"],
+            height=height,
+            label="Breakpoint/proximal context",
+        )
+        ax2.barh(
+            y2 + height,
+            ps["context_genes"],
+            height=height,
+            label="Interval/inversion-spanned context",
+        )
+        ax2.set_yticks(y2)
         pathway_labels = [
             str(value).replace("_", " ")
             for value in ps["pathway"]
         ]
         ax2.set_yticklabels(pathway_labels, fontsize=8.5)
         ax2.set_xlabel("Unique mitochondrial genes")
-        ax2.set_title("MitoCarta pathways: direct SV-gene effects only")
+        ax2.set_title("MitoCarta pathway context by SV-gene relationship")
+        ax2.legend(frameon=False, fontsize=8)
         style_axis(ax2, "x")
     else:
         cs = compartment_summary.head(15).iloc[::-1]
@@ -465,8 +654,8 @@ def main():
         (
             "Left: number of unique SVs overlapping each nuclear mitochondrial gene; labels separate "
             f"direct structural effects from inversion-spanned context and show the gene-relevance score ({score_name}). "
-            "Right: pathway counts use direct SV-gene effects only so giant inversion intervals do not dominate. "
-            "Inversion-spanned and regulatory contexts remain in the companion TSV for review. "
+            "Right: pathways separate direct, breakpoint/proximal and interval/inversion-spanned contexts so "
+            "large rearrangements remain visible without being presented as direct pathway disruption. "
             "MitoCarta membership does not establish SV causality."
         ),
         ha="center",
