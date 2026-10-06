@@ -163,7 +163,7 @@ def plot_panel(ax, data, title):
     )
     data = data.sort_values(
         ["EVENT_REVIEW_BUCKET", "_final_rank", "_score"],
-        ascending=[True, False, True],
+        ascending=[True, True, False],
     ).reset_index(drop=True)
 
     y = np.arange(len(data))
