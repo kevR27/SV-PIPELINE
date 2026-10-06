@@ -203,7 +203,10 @@ def summarize_gencc(
         source = "NONE"
 
     semantic = hon_semantic_normalized if hon_semantic_normalized is not None else 0.0
-    context_factor = 1.0 if semantic >= 0.25 else 0.4
+    # The normalized HON score is query/self-normalized (0-1). Full curated
+    # disease weight therefore requires at least moderate HON coverage; weaker
+    # phenotype context is retained at reduced weight rather than discarded.
+    context_factor = 1.0 if semantic >= 0.50 else 0.4
     conflict_factor = 0.5 if conflict else 1.0
     adjusted = raw_score * context_factor * conflict_factor
 
@@ -239,11 +242,11 @@ def gene_relevance(
 
     display_score = 5.0 * hon + 5.0 * disease_signal
 
-    if hon >= 0.50 and disease_signal >= 0.50:
+    if hon >= 0.75 and disease_signal >= 0.50:
         tier = "HIGH"
     elif hon >= 0.50 or disease_signal >= 0.50:
         tier = "MODERATE"
-    elif hon >= 0.15 or disease_signal > 0:
+    elif hon >= 0.25 or disease_signal > 0:
         tier = "SUPPORTING"
     else:
         tier = "LIMITED"
@@ -357,7 +360,15 @@ def inferred_effect_class(svtype: str, relationship: str) -> str:
 
     if svtype in {"DEL"}:
         return "LOSS_OR_LOF"
-    if svtype in {"DUP"}:
+    if svtype == "DUP":
+        # A whole-gene duplication is primarily a copy-gain event, whereas an
+        # intragenic/partial duplication can disrupt transcript structure and
+        # may behave as a LoF allele depending on orientation and breakpoint.
+        if relationship in {
+            "PARTIAL_GENE_OVERLAP",
+            "BREAKPOINT_WITHIN_TRANSCRIPT",
+        }:
+            return "DISRUPTION_OR_LOF"
         return "COPY_GAIN"
     if svtype in {"INS", "INV", "BND", "TRA"}:
         return "DISRUPTION_OR_LOF"
@@ -702,9 +713,15 @@ def generic_hon_semantic_components(
 
     result = {}
     for gene, terms in gene_terms.items():
-        core = engine["normalized_bma"](terms, groups["core"])
+        core = engine["normalized_query_coverage"](
+            groups["core"],
+            terms,
+        )
         context = (
-            engine["normalized_bma"](terms, groups["context"])
+            engine["normalized_query_coverage"](
+                groups["context"],
+                terms,
+            )
             if groups["context"]
             else 0.0
         )
@@ -768,7 +785,19 @@ def semantic_engine(edges_path: str):
             return 0.0
         return max(ic(term) for term in common)
 
+    def directional_best_match(query, target):
+        """Average best Resnik match from each query term to the target set."""
+        query = tuple(sorted(set(query)))
+        target = tuple(sorted(set(target)))
+        if not query or not target:
+            return 0.0
+        return sum(
+            max(pair_similarity(q, t) for t in target)
+            for q in query
+        ) / len(query)
+
     def bma(left, right):
+        """Symmetric best-match average retained for legacy/diagnostic use."""
         left = tuple(sorted(set(left)))
         right = tuple(sorted(set(right)))
         if not left or not right:
@@ -781,15 +810,40 @@ def semantic_engine(edges_path: str):
         ) / 2.0
 
     def normalized_bma(left, right):
+        """Legacy symmetric normalization against theoretical maximum IC."""
         if not left or not right or max_ic <= 0:
             return 0.0
         return min(1.0, bma(left, right) / max_ic)
+
+    def normalized_query_coverage(query, target):
+        """Directional phenotype-query coverage normalized to query self-match.
+
+        Each query HPO term contributes its best Resnik match in the candidate
+        target set. The numerator is normalized by the same query terms matched
+        to themselves, so a perfect explanation scores 1.0. Extra unrelated
+        target annotations do not penalize a pleiotropic gene.
+        """
+        query = tuple(sorted(set(query)))
+        target = tuple(sorted(set(target)))
+        if not query or not target:
+            return 0.0
+
+        numerator = sum(
+            max(pair_similarity(q, t) for t in target)
+            for q in query
+        )
+        denominator = sum(pair_similarity(q, q) for q in query)
+        if denominator <= 0:
+            return 0.0
+        return min(1.0, max(0.0, numerator / denominator))
 
     return {
         "parents": parents,
         "all_gene_terms": all_gene_terms,
         "max_ic": max_ic,
         "pair_similarity": pair_similarity,
+        "directional_best_match": directional_best_match,
         "bma": bma,
         "normalized_bma": normalized_bma,
+        "normalized_query_coverage": normalized_query_coverage,
     }
