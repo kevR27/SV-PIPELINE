@@ -205,6 +205,79 @@ def main():
         round(mle, 6) if estimate_ok else np.nan
     )
 
+    # Per-block orientation evidence, following the likelihood-ratio idea used
+    # by SkewX. The published report code defines a signed log10 odds quantity
+    # whose sign is opposite to the intuitive H1-Xa direction. We retain that
+    # raw value for traceability and also report an explicitly oriented value:
+    #
+    #   > 0 : H1 is more likely the preferential Xa (H2 preferential Xi)
+    #   < 0 : H2 is more likely the preferential Xa (H1 preferential Xi)
+    #
+    # |log10 odds| = 1 corresponds to 10:1 orientation odds.
+    if estimate_ok and not filtered.empty:
+        eps = 1e-12
+        p_minor = min(max(float(mle), eps), 0.5 - eps)
+        successes = filtered["SUCCESS_H1_XA"].astype(float)
+        trials = filtered["TRIALS"].astype(float)
+
+        skewx_raw = (
+            (2.0 * successes - trials) * math.log10(p_minor)
+            + (trials - 2.0 * successes) * math.log10(1.0 - p_minor)
+        )
+        h1_xa_log10_odds = -skewx_raw
+
+        filtered["SKEWX_LOG10_ORIENTATION_ODDS_RAW"] = skewx_raw
+        filtered["LOG10_ODDS_H1_XA_VS_H2_XA"] = h1_xa_log10_odds
+
+        # Convert log10 odds into an easily interpretable posterior-like
+        # orientation probability under equal prior odds for the two possible
+        # block orientations. This is a likelihood-based orientation
+        # plausibility, not a disease probability.
+        clipped = np.clip(h1_xa_log10_odds.to_numpy(dtype=float), -300, 300)
+        odds = np.power(10.0, clipped)
+        prob_h1_xa = odds / (1.0 + odds)
+
+        filtered["P_H1_PREFERENTIAL_XA"] = prob_h1_xa
+        filtered["P_H2_PREFERENTIAL_XA"] = 1.0 - prob_h1_xa
+        filtered["PREFERRED_XA_HAPLOTYPE"] = np.where(
+            prob_h1_xa > 0.5,
+            "H1",
+            np.where(prob_h1_xa < 0.5, "H2", "UNRESOLVED"),
+        )
+        filtered["PREFERRED_XI_HAPLOTYPE"] = np.where(
+            prob_h1_xa > 0.5,
+            "H2",
+            np.where(prob_h1_xa < 0.5, "H1", "UNRESOLVED"),
+        )
+        filtered["ORIENTATION_PLAUSIBILITY"] = np.maximum(
+            prob_h1_xa,
+            1.0 - prob_h1_xa,
+        )
+
+        abs_logodds = np.abs(h1_xa_log10_odds)
+        filtered["ORIENTATION_EVIDENCE"] = np.select(
+            [
+                abs_logodds >= 2.0,
+                abs_logodds >= 1.0,
+                abs_logodds >= 0.5,
+            ],
+            [
+                "VERY_STRONG_GE_100_TO_1",
+                "STRONG_GE_10_TO_1",
+                "MODERATE_GE_3_TO_1",
+            ],
+            default="WEAK_LT_3_TO_1",
+        )
+    else:
+        filtered["SKEWX_LOG10_ORIENTATION_ODDS_RAW"] = np.nan
+        filtered["LOG10_ODDS_H1_XA_VS_H2_XA"] = np.nan
+        filtered["P_H1_PREFERENTIAL_XA"] = np.nan
+        filtered["P_H2_PREFERENTIAL_XA"] = np.nan
+        filtered["PREFERRED_XA_HAPLOTYPE"] = "."
+        filtered["PREFERRED_XI_HAPLOTYPE"] = "."
+        filtered["ORIENTATION_PLAUSIBILITY"] = np.nan
+        filtered["ORIENTATION_EVIDENCE"] = "NOT_ESTIMATED"
+
     out_blocks = Path(args.blocks_output)
     out_blocks.parent.mkdir(parents=True, exist_ok=True)
     filtered.to_csv(out_blocks, sep="\t", index=False)
@@ -219,6 +292,27 @@ def main():
         if "TRIALS" in filtered.columns
         else 0
     )
+
+    strong_orientation_blocks = 0
+    very_strong_orientation_blocks = 0
+    median_abs_log10_odds = np.nan
+    median_orientation_plausibility = np.nan
+    if "LOG10_ODDS_H1_XA_VS_H2_XA" in filtered.columns and not filtered.empty:
+        lod = pd.to_numeric(
+            filtered["LOG10_ODDS_H1_XA_VS_H2_XA"],
+            errors="coerce",
+        )
+        plaus = pd.to_numeric(
+            filtered["ORIENTATION_PLAUSIBILITY"],
+            errors="coerce",
+        )
+        if lod.notna().any():
+            abs_lod = lod.abs()
+            strong_orientation_blocks = int((abs_lod >= 1.0).sum())
+            very_strong_orientation_blocks = int((abs_lod >= 2.0).sum())
+            median_abs_log10_odds = float(abs_lod.median())
+        if plaus.notna().any():
+            median_orientation_plausibility = float(plaus.median())
 
     summary = pd.DataFrame(
         [
@@ -236,6 +330,22 @@ def main():
                 "INFORMATIVE_CPG_ISLAND_SUM": informative_cgis,
                 "INFORMATIVE_READS": informative_reads,
                 "MIN_READS_PER_BLOCK": args.min_block_reads,
+                "STRONG_ORIENTATION_BLOCKS_LOG10_ODDS_GE_1": (
+                    strong_orientation_blocks
+                ),
+                "VERY_STRONG_ORIENTATION_BLOCKS_LOG10_ODDS_GE_2": (
+                    very_strong_orientation_blocks
+                ),
+                "MEDIAN_ABS_LOG10_ORIENTATION_ODDS": (
+                    round(median_abs_log10_odds, 4)
+                    if np.isfinite(median_abs_log10_odds)
+                    else "."
+                ),
+                "MEDIAN_ORIENTATION_PLAUSIBILITY": (
+                    round(median_orientation_plausibility, 4)
+                    if np.isfinite(median_orientation_plausibility)
+                    else "."
+                ),
                 "GLOBAL_FOLDED_SKEW_P": (
                     round(mle, 6) if estimate_ok else "."
                 ),
@@ -251,12 +361,16 @@ def main():
                 "NEUTRAL_THRESHOLD_P": args.neutral_threshold,
                 "METHOD": (
                     "CpG-island Xa/Xi clustering + WhatsHap HP/PS + "
-                    "folded-binomial MLE; LongPhase used as phase-consistency QC"
+                    "folded-binomial MLE + per-block log10 orientation odds; "
+                    "LongPhase used as phase-consistency QC"
                 ),
                 "INTERPRETATION": (
                     "P=0.5 is balanced after folding; values closer to 0 "
-                    "represent stronger skew. Haplotype labels are local/arbitrary "
-                    "unless separately oriented to a disease allele."
+                    "represent stronger skew. Per-block |log10 odds| >=1 means "
+                    "at least 10:1 support for one Xa/Xi orientation; >=2 means "
+                    "at least 100:1. These are orientation likelihoods, not "
+                    "pathogenicity probabilities. Haplotype labels remain local "
+                    "unless separately linked to a disease allele."
                 ),
             }
         ]
