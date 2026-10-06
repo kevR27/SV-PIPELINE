@@ -74,7 +74,8 @@ rule hpo_semantic_similarity:
         gene_phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         edges=MONARCH_EDGES_EXT,
         patient=hpo_optional_input,
-        script=SCRIPTS + "/hpo_semantic_similarity.py"
+        script=SCRIPTS + "/hpo_semantic_similarity.py",
+        ranking_common=SCRIPTS + "/ranking_common.py"
     output:
         tsv=PATH + "{sample}/gene_discovery/final/{sample}_hpo_semantic_similarity.tsv"
     params:
@@ -111,6 +112,7 @@ rule build_final_candidate_tables:
         genes=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         events=rules.merge_integrated_annotations.output.tsv,
         script=SCRIPTS + "/build_candidate_tables.py",
+        ranking_common=SCRIPTS + "/ranking_common.py",
         effects=SCRIPTS + "/sv_gene_effects.py"
     output:
         genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.pre_depth.tsv",
@@ -218,7 +220,8 @@ rule integrate_depth_into_final_candidates:
         sv=rules.build_final_candidate_tables.output.sv,
         depth=rules.summarize_large_sv_depth.output.summary,
         hpo=rules.hpo_semantic_similarity.output.tsv,
-        script=SCRIPTS + "/integrate_depth_into_candidates.py"
+        script=SCRIPTS + "/integrate_depth_into_candidates.py",
+        ranking_common=SCRIPTS + "/ranking_common.py"
     output:
         genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.tsv",
         sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.tsv"
@@ -295,9 +298,40 @@ rule build_snv_sv_candidates:
         """
 
 
+rule finalize_candidate_ranking:
+    input:
+        genes=rules.integrate_depth_into_final_candidates.output.genes,
+        sv=rules.integrate_depth_into_final_candidates.output.sv,
+        snv_sv=rules.build_snv_sv_candidates.output.tsv,
+        recurrence=PATH + "cohort_analysis/sv_recurrence.tsv",
+        recurrence_members=PATH + "cohort_analysis/sv_recurrence_members.tsv",
+        script=SCRIPTS + "/finalize_candidate_ranking.py",
+        ranking_common=SCRIPTS + "/ranking_common.py"
+    output:
+        genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
+        sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        set -euo pipefail
+        python {input.script} \
+            --genes {input.genes} \
+            --sv {input.sv} \
+            --snv-sv {input.snv_sv} \
+            --sample {wildcards.sample} \
+            --recurrence-summary {input.recurrence} \
+            --recurrence-members {input.recurrence_members} \
+            --gene-output {output.genes} \
+            --sv-output {output.sv}
+        test -s {output.genes}
+        test -s {output.sv}
+        """
+
+
 rule build_population_gene_effect:
     input:
-        candidates=rules.integrate_depth_into_final_candidates.output.sv,
+        candidates=rules.finalize_candidate_ranking.output.sv,
         script=SCRIPTS + "/build_population_gene_effect_table.py"
     output:
         table=PATH + "{sample}/gene_discovery/final/{sample}_population_gene_effect.tsv",
@@ -333,7 +367,7 @@ rule r_population_gene_effect:
 
 rule r_candidate_evidence_heatmap:
     input:
-        candidates=rules.integrate_depth_into_final_candidates.output.sv
+        candidates=rules.finalize_candidate_ranking.output.sv
     output:
         pdf=PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.pdf",
         png=PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.png",
@@ -349,7 +383,7 @@ rule r_candidate_evidence_heatmap:
 rule r_hpo_heatmap:
     input:
         phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
-        genes=rules.integrate_depth_into_final_candidates.output.genes
+        genes=rules.finalize_candidate_ranking.output.genes
     output:
         pdf=PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.pdf",
         png=PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.png",
@@ -436,6 +470,14 @@ FINAL_THESIS_OUTPUTS = [
     ),
     *expand(
         PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
         sample=POSTPROCESS_SAMPLES,
     ),
     *expand(
