@@ -242,7 +242,7 @@ def main():
     )
     # Match the documented gene-discovery ranking. Database presence, panel
     # membership and optional analyses must not silently create another score.
-    work["PLOT_ORDER_BASIS"] = score_col or (pheno_col or "UNRANKED")
+    work["PLOT_ORDER_BASIS"] = rank_col or score_col or (pheno_col or "UNRANKED")
     work["PLOT_ORDER_SCORE"] = numeric(work[score_col]) if score_col else (
         numeric(work[pheno_col]) if pheno_col else np.nan
     )
@@ -292,7 +292,7 @@ def main():
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    work[[id_col, gene_col, "PLOT_ORDER_BASIS", "PLOT_ORDER_SCORE"] + evidence_cols].to_csv(
+    work[[id_col, gene_col, "_panel_group", "_rank", "PLOT_ORDER_BASIS", "PLOT_ORDER_SCORE"] + evidence_cols].to_csv(
         prefix.with_name(prefix.name + "_matrix.tsv"), sep="\t", index=False
     )
 
@@ -308,7 +308,13 @@ def main():
     wrapped_evidence = ["\n".join(textwrap.wrap(x, width=14)) for x in evidence_cols]
     ax.set_xticklabels(wrapped_evidence, rotation=35, ha="right", fontsize=8.5)
     ax.set_yticks(np.arange(n))
-    ax.set_yticklabels(work["_label"], fontsize=9)
+    ax.set_yticklabels(
+        [
+            ("P | " if group == "PANEL_GENE" else "NP | ") + label
+            for group, label in zip(work["_panel_group"], work["_label"])
+        ],
+        fontsize=9,
+    )
     ax.set_xlabel("Evidence layer")
     ax.set_ylabel("SV | overlapping gene")
     ax.legend(handles=[Patch(facecolor="#0B6E69", label="Reported"),
