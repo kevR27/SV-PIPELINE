@@ -125,10 +125,11 @@ gene_rank <- dt[, .(
   }
 ), by = .(PANEL_GROUP, GENE)]
 gene_rank[!is.finite(BEST_GROUP_RANK), BEST_GROUP_RANK := NA_real_]
+gene_rank[, RANK_MISSING := as.integer(is.na(BEST_GROUP_RANK))]
 setorder(
   gene_rank,
   PANEL_GROUP,
-  is.na(BEST_GROUP_RANK),
+  RANK_MISSING,
   BEST_GROUP_RANK,
   -SCORE,
   -RARE_COUNT,
