@@ -81,14 +81,13 @@ def mt_gene_function(gene: str) -> str:
 
 
 def relationship_scope(value: str) -> str:
-    rank = relationship_rank(value)
+    rank = relationship_priority(value)
     return {
-        4: "DIRECT_STRUCTURAL_EFFECT",
-        3: "PROXIMAL_OR_BREAKPOINT_CONTEXT",
-        2: "INTERVAL_OR_INVERSION_SPANNED_CONTEXT",
-        1: "UNRESOLVED_CONTEXT",
+        3: "DIRECT_STRUCTURAL_EFFECT",
+        2: "PROXIMAL_OR_BREAKPOINT_CONTEXT",
+        1: "INTERVAL_OR_INVERSION_SPANNED_CONTEXT",
         0: "UNRESOLVED_CONTEXT",
-    }[rank]
+    }.get(rank, "UNRESOLVED_CONTEXT")
 
 
 def read_gene_set(path: str | None) -> set[str]:
