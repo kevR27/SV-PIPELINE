@@ -44,8 +44,11 @@ The old anchor-count score (`min(10, anchor_count * 5)`) is no longer the
 primary gene-relevance model.
 
 Generic hereditary optic-neuropathy relevance is calculated with
-**Resnik best-match-average semantic similarity** against the broader human
-gene-HPO background. The reference is now split into two roles:
+**directional Resnik phenotype-query coverage** against the broader human
+gene-HPO background. Each HON query term is matched to its best gene-associated
+HPO term and the result is normalized to the HON query's own self-similarity.
+This avoids penalizing pleiotropic genes simply because they have many additional
+phenotype annotations. The reference is now split into two roles:
 
 - **core HON ocular terms**, which remain the primary phenotype signal;
 - **mitochondrial/syndromic context terms** such as hearing impairment, ataxia,
@@ -62,14 +65,21 @@ Important fields include:
 HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED
 HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED
 HON_SEMANTIC_SIMILARITY_NORMALIZED
+HON_SEMANTIC_METHOD
 GENE_RELEVANCE_TIER
 GENE_RELEVANCE_DISPLAY_SCORE
 GENE_RELEVANCE_PHENOTYPE_SCOPE
 ```
 
 The display score is balanced between phenotype and curated disease evidence
-and is retained for interpretation/tie-breaking. The primary ordering uses the
-broad relevance tier:
+and is retained for interpretation/tie-breaking. The current generic semantic
+method is recorded as:
+
+```text
+ASYMMETRIC_RESNIK_QUERY_COVERAGE_NORMALIZED_TO_QUERY_SELF
+```
+
+The primary ordering uses the broad relevance tier:
 
 ```text
 HIGH
@@ -84,9 +94,11 @@ evidence.
 ### Patient-specific HPO
 
 If a patient HPO file is configured, the final thesis-analysis layer uses the
-patient's Resnik BMA result:
+same directional Resnik query-coverage logic, with the patient HPO terms as the
+query:
 
 ```text
+HPO_QUERY_RESNIK_NORMALIZED
 HPO_BMA_RESNIK_NORMALIZED
 FINAL_GENE_RELEVANCE_TIER
 FINAL_GENE_RELEVANCE_DISPLAY_SCORE
@@ -168,8 +180,12 @@ Examples of the intended interpretation:
   `MIXED_AD_AR_DISEASE_MODEL_REVIEW` state unless disease-specific evidence
   resolves which model applies. The pipeline does not simply choose the more
   favorable inheritance mode.
-- A DUP is promoted by established/emerging **triplosensitivity (TS)** evidence,
-  not simply because the gene has a dominant disease.
+- A whole-gene DUP is treated primarily as copy gain and is promoted by
+  established/emerging **triplosensitivity (TS)** evidence, not simply because
+  the gene has a dominant disease.
+- A partial/intragenic DUP or a duplication breakpoint within a transcript is
+  treated as a possible disruptive/LoF mechanism rather than automatically as
+  pure copy gain. Orientation and breakpoint structure still require review.
 - A direct heterozygous SV in an **AR gene** remains
   `DIRECT_EFFECT_RECESSIVE_SECOND_ALLELE_REQUIRED` unless a biallelic state or
   suitable second allele is demonstrated.
@@ -390,7 +406,6 @@ cohort.
 
 No field in these tables is a validated probability of pathogenicity.
 
-## 13. Interpretation limits
 
 The ranking does not replace:
 
