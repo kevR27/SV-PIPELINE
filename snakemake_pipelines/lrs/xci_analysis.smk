@@ -89,7 +89,9 @@ rule xci_extract_haplotags:
 rule xci_compare_phasing:
     input:
         whatshap=PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
-        longphase=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
+        whatshap_index=PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi",
+        longphase=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
+        longphase_index=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz.tbi"
     output:
         blocks=PATH + "{sample}/xci/{sample}_whatshap_longphase_phase_blocks.tsv",
         summary=PATH + "{sample}/xci/{sample}_whatshap_longphase_phase_summary.tsv"
