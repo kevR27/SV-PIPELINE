@@ -61,6 +61,15 @@ def main():
     pheno_col = first_existing(df, ["PHENOTYPE_SCORE", "phenotype_score"])
     disease_col = first_existing(df, ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"])
     panel_col = first_existing(df, ["PANEL_STATUS", "panel_gene"])
+    rank_col = first_existing(
+        df,
+        [
+            "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
+            "EVENT_RANK_WITHIN_PANEL_STATUS",
+            "FINAL_EVENT_RANK_GLOBAL",
+            "EVENT_RANK_GLOBAL",
+        ],
+    )
     af_col = first_existing(df, ["NEEDLR_AF"])
 
     if id_col is None or gene_col is None:
@@ -69,6 +78,11 @@ def main():
     work = df.copy()
     work["_gene"] = work[gene_col].fillna(".").astype(str)
     work["_caller_count"] = numeric(work[caller_col]).fillna(0) if caller_col else 0
+    work["_rank"] = (
+        numeric(work[rank_col])
+        if rank_col
+        else pd.Series(np.nan, index=work.index)
+    )
     work["_priority"] = numeric(work[score_col]).fillna(0) if score_col else 0
     work["_phenotype"] = numeric(work[pheno_col]).fillna(0) if pheno_col else 0
     work["_disease"] = numeric(work[disease_col]).fillna(0) if disease_col else 0
@@ -106,15 +120,25 @@ def main():
     else:
         work["_complementary"] = False
 
-    work = (
-        work.sort_values(
-            ["_priority", "_phenotype", "_disease", "_caller_count", id_col, "_gene"],
-            ascending=[False, False, False, False, True, True],
-        )
-        .drop_duplicates([id_col, gene_col], keep="first")
-        .head(args.top_n)
-        .copy()
-    )
+    work = work.drop_duplicates([id_col, gene_col], keep="first").copy()
+
+    selected = []
+    for panel_value in (True, False):
+        subset = work[work["_panel"].eq(panel_value)].copy()
+        if rank_col:
+            subset = subset.sort_values(
+                ["_rank", "_priority", "_caller_count", id_col, "_gene"],
+                ascending=[True, False, False, True, True],
+                na_position="last",
+            )
+        else:
+            subset = subset.sort_values(
+                ["_priority", "_phenotype", "_disease", "_caller_count", id_col, "_gene"],
+                ascending=[False, False, False, False, True, True],
+            )
+        selected.append(subset.head(args.top_n))
+
+    work = pd.concat(selected, ignore_index=True)
 
     work["PAIR_LABEL"] = work[id_col].astype(str) + " | " + work["_gene"]
     work["PANEL_GROUP"] = np.where(work["_panel"], "PANEL", "NONPANEL")
