@@ -489,7 +489,20 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
             source,
             ["hon_context_score", "HON_CONTEXT_SCORE", "phenotype_score", "PHENOTYPE_SCORE"],
         ) or 0.0
-        disease = numeric_value(source, ["gene_disease_evidence_score", "GENE_DISEASE_EVIDENCE_SCORE"]) or 0.0
+        disease = numeric_value(
+            source,
+            ["gene_disease_evidence_score", "GENE_DISEASE_EVIDENCE_SCORE"],
+        ) or 0.0
+        relevance_display = numeric_value(
+            source,
+            [
+                "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+                "GENE_RELEVANCE_DISPLAY_SCORE",
+                "integrated_discovery_score",
+            ],
+        )
+        if relevance_display is None:
+            relevance_display = phenotype + disease
         mito, pathways = mito_by_gene.get(gene, (".", "."))
         vep = vep_by_gene.get(
             gene,
@@ -533,8 +546,11 @@ def build_gene_table(gene_ranking: pd.DataFrame, sv_candidates: pd.DataFrame) ->
             "PHENOTYPE_SCORE_SCOPE": "GENERIC_HON_ANCHOR_CONTEXT_NOT_PATIENT_SPECIFIC",
             "GENE_DISEASE_EVIDENCE": text_value(source, ["gene_disease_evidence_level", "GENE_DISEASE_EVIDENCE_LEVEL"]),
             "GENE_DISEASE_SCORE": round(disease, 3),
-            "GENE_RELEVANCE_SCORE": round(phenotype + disease, 3),
-            "GENE_RELEVANCE_SCOPE": "GENERIC_HON_CONTEXT_PLUS_CURATED_GENE_DISEASE_NOT_PATHOGENICITY",
+            "GENE_RELEVANCE_SCORE": round(relevance_display, 3),
+            "GENE_RELEVANCE_SCOPE": (
+                "BALANCED_HON_SEMANTIC_AND_CURATED_DISEASE_DISPLAY_SCORE_"
+                "PRIMARY_ORDER_USES_RELEVANCE_TIER_AND_BEST_EVENT"
+            ),
             "SV_COUNT": text_value(source, ["SV_count"]),
             "SV_TYPES": text_value(source, ["SV_types"]),
             "SV_LT_100KB": text_value(source, ["SV_count_lt100kb"]),
