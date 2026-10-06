@@ -957,6 +957,24 @@ def main() -> int:
                     ("CLINGEN_HI", first(ann_row, ["HI"])),
                     ("CLINGEN_TS", first(ann_row, ["TS"])),
                     (
+                        "GNOMAD_PLI",
+                        first(ann_row, ["pLI", "GnomAD_pLI", "gnomAD_pLI"]),
+                    ),
+                    (
+                        "GNOMAD_LOEUF",
+                        first(
+                            ann_row,
+                            ["LOEUF", "LOEUF_score", "gnomAD_LOEUF"],
+                        ),
+                    ),
+                    (
+                        "GNOMAD_LOEUF_BIN",
+                        first(
+                            ann_row,
+                            ["LOEUF_bin", "gnomAD_LOEUF_bin"],
+                        ),
+                    ),
+                    (
                         "DOSAGE_RELEVANCE",
                         dosage_relevance(
                             sv["SVTYPE"],
@@ -1109,6 +1127,61 @@ def main() -> int:
                         "PANEL_GENE"
                         if gene in panel
                         else ("UNRESOLVED" if gene == MISSING else "NONPANEL_GENE"),
+                    ),
+                    (
+                        "HON_SEMANTIC_SIMILARITY_NORMALIZED",
+                        first(
+                            ranking_row,
+                            [
+                                "HON_SEMANTIC_SIMILARITY_NORMALIZED",
+                                "hon_semantic_similarity_normalized",
+                            ],
+                        ),
+                    ),
+                    (
+                        "GENE_RELEVANCE_TIER",
+                        first(ranking_row, ["GENE_RELEVANCE_TIER"]),
+                    ),
+                    (
+                        "GENE_RELEVANCE_TIER_RANK",
+                        first(ranking_row, ["GENE_RELEVANCE_TIER_RANK"]),
+                    ),
+                    (
+                        "GENE_RELEVANCE_DISPLAY_SCORE",
+                        first(ranking_row, ["GENE_RELEVANCE_DISPLAY_SCORE"]),
+                    ),
+                    (
+                        "GENE_INHERITANCE_CLASS",
+                        first(ranking_row, ["GENE_INHERITANCE_CLASS"]),
+                    ),
+                    (
+                        "GENE_MOI_SET",
+                        first(ranking_row, ["GENE_MOI_SET"]),
+                    ),
+                    (
+                        "GENE_DISEASE_EVIDENCE_RAW_SCORE",
+                        first(
+                            ranking_row,
+                            ["gene_disease_evidence_raw_score"],
+                        ),
+                    ),
+                    (
+                        "GENE_DISEASE_HON_CONTEXT_FACTOR",
+                        first(
+                            ranking_row,
+                            ["GENE_DISEASE_HON_CONTEXT_FACTOR"],
+                        ),
+                    ),
+                    (
+                        "GENE_DISEASE_CONTEXT_SCOPE",
+                        first(ranking_row, ["GENE_DISEASE_CONTEXT_SCOPE"]),
+                    ),
+                    (
+                        "GENE_RANK_WITHIN_PANEL_STATUS",
+                        first(
+                            ranking_row,
+                            ["GENE_RANK_WITHIN_PANEL_STATUS"],
+                        ),
                     ),
                     ("PHENOTYPE_SCORE", first(ranking_row, ["phenotype_score", "PHENOTYPE_SCORE"])),
                     (
