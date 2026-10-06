@@ -128,11 +128,17 @@ Then build the orthogonal-evidence interpretation tables with:
 snakemake -s Snakefile_LRS_postprocess --use-conda --cores 8
 ```
 
-The post-processing `rule all` generates only:
+The post-processing `rule all` retains one authoritative compressed SV-gene table plus small interpretation summaries:
 
 ```text
-<sample>_integrated_SV_gene_with_orthogonal_evidence.tsv
+<sample>_integrated_SV_gene_analysis.final.tsv.gz
+<sample>_independent_complementary_findings.tsv
+<sample>_mitocarta_annotation_summary.tsv
+<sample>_gene_multimodal_evidence_summary.tsv
+<sample>_mitochondrial_gene_ranking.tsv
 ```
+
+Large intermediate annotation tables are compact `.delta.tsv.gz` files under `.postprocess_tmp/` and are removed by Snakemake after the final table is built.
 
 Thesis plots are a separate explicit target and are never part of either core `rule all`:
 
@@ -163,7 +169,7 @@ The sample-level runner now writes figures and their source TSVs into thematic f
 ├── 04_population_frequency/
 ├── 05_candidate_prioritization/
 ├── 06_phenotype/
-├── 07_orthogonal/
+├── 07_complementary_evidence/
 │   ├── straglr/
 │   └── tldr/
 ├── 08_phasing/
@@ -175,20 +181,7 @@ The sample-level runner now writes figures and their source TSVs into thematic f
 └── 14_mitochondrial_context/
 ```
 
-The post-processing workflow also creates three interpretation tables in
-`<sample>/gene_discovery/`:
-
-```text
-<sample>_integrated_SV_gene_with_orthogonal_evidence.tsv
-<sample>_independent_orthogonal_findings.tsv
-<sample>_gene_multimodal_evidence_summary.tsv
-```
-
-The extended master table keeps the Jasmine-defined SV universe and adds
-coordinate-aware Straglr/TLDR evidence plus LongPhase SV phasing. The
-independent table retains PASS TLDR and Straglr findings without a Jasmine
-counterpart. The gene summary collapses evidence without double-counting the
-same master SV across multiple SV-gene rows.
+The post-processing workflow keeps one final integrated table and small persistent summaries in `<sample>/gene_discovery/`. Straglr/TLDR/LongPhase, WhatsHap/modkit, MitoCarta and optional exact gnomAD-SV annotations are generated as compact deltas and merged once. This preserves the Jasmine-defined SV set without creating repeated full-table copies.
 
 WhatsHap is retained as a small-variant phasing/QC layer rather than treated as
 an SV caller. Methylation remains a candidate-region annotation because a CpG
@@ -207,7 +200,7 @@ The plot runner now writes each analysis layer into a dedicated sample folder:
 ├── 04_population_frequency/
 ├── 05_candidate_prioritization/
 ├── 06_phenotype/
-├── 07_orthogonal/
+├── 07_complementary_evidence/
 │   ├── straglr/
 │   └── tldr/
 ├── 08_phasing/
@@ -215,16 +208,7 @@ The plot runner now writes each analysis layer into a dedicated sample folder:
 └── 10_integrated_evidence/
 ```
 
-The downstream interpretation tables are also separated by biological meaning:
-
-```text
-<sample>_integrated_SV_gene_with_orthogonal_evidence.tsv
-<sample>_independent_orthogonal_findings.tsv
-<sample>_integrated_SV_gene_with_multimodal_context.tsv
-<sample>_gene_multimodal_evidence_summary.tsv
-```
-
-The orthogonal table contains coordinate-/ID-compatible Straglr, TLDR and LongPhase evidence attached to the Jasmine-defined master SV universe. The multimodal-context table adds nearby WhatsHap-phased small variants and local modkit methylation context without treating either as SV confirmation.
+The current architecture does not persist serial orthogonal/multimodal/MitoCarta full-table copies. Those annotation layers are compact temporary deltas attached to the same ranked SV-gene rows and merged once into `*_integrated_SV_gene_analysis.final.tsv.gz`.
 
 Modkit plotting now accepts standard bedMethyl content compressed under `.bedmethyl.gz` or generic `.bed.gz` names. With no configured candidate region it produces a genome-wide canonical-chromosome methylation summary; when `thesis_methylation_region` is set, it produces a detailed regional methylation/coverage track instead.
 
@@ -286,13 +270,20 @@ Outputs:
 
 ## MitoCarta3.0 gene context
 
-The post-processing workflow now creates:
+MitoCarta annotations are written as a compact temporary delta and merged into:
 
 ```text
-<sample>_integrated_SV_gene_with_mitocarta.tsv
+<sample>_integrated_SV_gene_analysis.final.tsv.gz
 ```
 
-The table retains the complete SV-gene evidence schema and adds:
+A persistent diagnostic summary and a separate mitochondrial-gene ranking are also created:
+
+```text
+<sample>_mitocarta_annotation_summary.tsv
+<sample>_mitochondrial_gene_ranking.tsv
+```
+
+The final table contains:
 
 ```text
 MITOCARTA_STATUS
@@ -307,23 +298,12 @@ MITO_ON_CONTEXT
 MITO_ON_ASSOCIATION_CLASS
 ```
 
-`MITOCARTA_ENCODING=NUCLEAR_MITOCHONDRIAL_GENE` explicitly distinguishes
-nuclear-encoded mitochondrial proteins from the 13 mtDNA-encoded proteins.
-`MITO_ON_CONTEXT=YES` means that the same gene also has positive
-optic-neuropathy phenotype evidence under the current pipeline's phenotype
-model. This is co-annotation, not a causality or pathogenicity statement.
+`MITOCARTA_ENCODING=NUCLEAR_MITOCHONDRIAL_GENE` identifies nuclear genes in the full MitoCarta3.0 mitochondrial inventory across mitochondrial pathways and subcompartments. The dedicated mitochondrial ranking additionally intersects chrM SVs with the gene BED so all mtDNA gene classes can be reviewed separately: protein-coding genes, mitochondrial rRNAs and mitochondrial tRNAs. `MITO_ON_CONTEXT=YES` is disease-context co-annotation, not a causality or pathogenicity statement.
 
 
 ## Mechanism-aware SV-gene event ranking
 
-The post-processing workflow now creates:
-
-```text
-<sample>_ranked_SV_gene_events.tsv
-```
-
-This table preserves one row per master `(SV_ID, gene)` association and keeps
-event mechanism separate from gene relevance. It adds:
+Mechanism-aware event ranking now occurs before the large audit fields are discarded. The ranked table is a temporary compact file under `.postprocess_tmp/`; its relationship/ranking fields are retained in the final integrated table. This preserves one row per `(SV_ID, gene)` association while avoiding another persistent full-table copy. It adds:
 
 ```text
 SV_GENE_RELATIONSHIP
