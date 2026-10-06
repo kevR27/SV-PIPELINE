@@ -32,6 +32,15 @@ def main():
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
     score_col = first_existing(df, ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
     panel_col = first_existing(df, ["PANEL_STATUS", "panel_gene"])
+    rank_col = first_existing(
+        df,
+        [
+            "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
+            "EVENT_RANK_WITHIN_PANEL_STATUS",
+            "FINAL_EVENT_RANK_GLOBAL",
+            "EVENT_RANK_GLOBAL",
+        ],
+    )
     if id_col is None or gene_col is None:
         raise ValueError("Input needs SV_ID and overlapping-gene columns.")
 
@@ -40,6 +49,11 @@ def main():
     work = work[~work["_gene"].isin(["", ".", "NA", "N/A", "nan", "None"])].copy()
     work["_priority"] = numeric(work[score_col]).fillna(0) if score_col else 0
     work["_caller_count"] = numeric(work[caller_col]).fillna(0) if caller_col else 0
+    work["_rank"] = (
+        numeric(work[rank_col])
+        if rank_col
+        else pd.Series(np.nan, index=work.index)
+    )
     work["_svtype"] = normalize_svtype(work[type_col]) if type_col else "OTHER"
     relationship_col = first_existing(work, ["SV_GENE_RELATIONSHIP"])
     work["_interval_context_only"] = (
@@ -56,15 +70,25 @@ def main():
     else:
         work["_panel"] = False
 
-    work = (
-        work.sort_values(
-            ["_interval_context_only", "_priority", "_caller_count", id_col, "_gene"],
-            ascending=[True, False, False, True, True],
-        )
-        .drop_duplicates([id_col, gene_col], keep="first")
-        .head(args.top_n_pairs)
-        .copy()
-    )
+    work = work.drop_duplicates([id_col, gene_col], keep="first").copy()
+
+    selected = []
+    for panel_value in (True, False):
+        subset = work[work["_panel"].eq(panel_value)].copy()
+        if rank_col:
+            subset = subset.sort_values(
+                ["_rank", "_interval_context_only", "_priority", "_caller_count", id_col, "_gene"],
+                ascending=[True, True, False, False, True, True],
+                na_position="last",
+            )
+        else:
+            subset = subset.sort_values(
+                ["_interval_context_only", "_priority", "_caller_count", id_col, "_gene"],
+                ascending=[True, False, False, True, True],
+            )
+        selected.append(subset.head(args.top_n_pairs))
+
+    work = pd.concat(selected, ignore_index=True)
     if work.empty:
         raise ValueError("No SV-gene pairs with resolved genes were available.")
 
