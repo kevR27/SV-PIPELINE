@@ -273,6 +273,11 @@ xci_min_block_reads: 5
 # descriptive flag, not a clinical pathogenicity threshold.
 xci_neutral_threshold: 0.40
 
+# Folded P <= 0.20 corresponds to a major:minor ratio >=80:20 and is reported
+# as high skew for descriptive purposes, following the interpretation used in
+# the SkewX study. This is not a clinical pathogenicity threshold.
+xci_high_skew_threshold: 0.20
+
 # Haplotype-specific modkit tracks are summarized in 5-Mb bins for the
 # chromosome-wide methylation figure. Read-level CpG-island clustering remains
 # the primary estimator of XCI skew.
