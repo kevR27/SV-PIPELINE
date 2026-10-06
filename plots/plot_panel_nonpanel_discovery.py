@@ -58,7 +58,16 @@ def main():
     panel_col = first_existing(df, ["PANEL_STATUS", "panel_gene"])
     pheno_col = first_existing(df, ["PHENOTYPE_SCORE", "phenotype_score"])
     disease_col = first_existing(df, ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"])
-    score_col = first_existing(df, ["INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"])
+    score_col = first_existing(
+        df,
+        [
+            "EVENT_GENE_RELEVANCE_SCORE",
+            "INTEGRATED_DISCOVERY_SCORE",
+            "integrated_discovery_score",
+            "PHENOTYPE_SCORE",
+            "ALLELE_RESEARCH_SCORE",
+        ],
+    )
     if id_col is None or gene_col is None:
         raise ValueError("Input needs SV_ID and overlapping-gene columns.")
 
