@@ -151,8 +151,27 @@ class SavedOutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp);(d/"genes").write_text("A\n");(d/"panel").write_text("A\n")
             table(d/"hpo",[],["gene_symbol","hpo_id","optic_neuropathy_anchor"])
+            table(
+                d/"hon_seeds.tsv",
+                [{
+                    "hpo_id":"HP:0000648",
+                    "hpo_label":"Optic atrophy",
+                    "hon_seed_role":"CORE_OCULAR_HON",
+                }],
+            )
+            table(
+                d/"edges.tsv",
+                [],
+                ["subject","object","predicate","category"],
+            )
             table(d/"ann",[{"ID":"v","AnnotSV_ID":endpoint,"Gene_name":"A","Annotation_mode":"split"} for endpoint in ["left","right"]])
-            self.run_script("rank_sv_gene_candidates.py","--annotsv",d/"ann","--genes",d/"genes","--phenotypes",d/"hpo","--panel",d/"panel","--output",d/"rank")
+            self.run_script(
+                "rank_sv_gene_candidates.py",
+                "--annotsv",d/"ann","--genes",d/"genes",
+                "--phenotypes",d/"hpo","--panel",d/"panel",
+                "--hpo-seeds",d/"hon_seeds.tsv","--edges",d/"edges.tsv",
+                "--output",d/"rank",
+            )
             r=read(d/"rank")[0]
             self.assertEqual(r["SV_count"],"1")
 
