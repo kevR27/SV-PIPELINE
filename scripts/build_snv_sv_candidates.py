@@ -125,8 +125,10 @@ def main():
         "IMPACT", "CLINVAR_OR_EXISTING_ID", "SMALL_GT", "SMALL_PS",
         "SMALL_PHASED", "SMALL_ALT_HAPLOTYPE", "SV_ID", "SVTYPE",
         "SV_GENE_EFFECT", "SV_POPULATION_STATUS", "SV_CALL_SUPPORT",
+        "GENE_INHERITANCE_CLASS", "GENE_MOI_SET",
+        "INHERITANCE_MECHANISM_CLASS",
         "SV_GT", "SV_PS", "SV_ALT_HAPLOTYPE", "PHASE_RELATION",
-        "INTERPRETATION",
+        "RECESSIVE_PAIR_STATUS", "INTERPRETATION",
     ]
 
     if vep.empty:
@@ -225,6 +227,32 @@ def main():
             ):
                 relation = "CIS" if small_var["SMALL_ALT_HAPLOTYPE"] == sv_haplotype else "TRANS"
 
+            inheritance_class = str(
+                sv_row.get("GENE_INHERITANCE_CLASS", "UNKNOWN")
+            ).upper()
+            moi_set = str(sv_row.get("GENE_MOI_SET", ".")).upper()
+            mechanism_class = str(
+                sv_row.get("INHERITANCE_MECHANISM_CLASS", "UNRESOLVED")
+            )
+
+            is_recessive = (
+                inheritance_class == "AUTOSOMAL_RECESSIVE"
+                or "AR" in {
+                    token.strip()
+                    for token in moi_set.split(";")
+                    if token.strip()
+                }
+            )
+
+            if is_recessive and relation == "TRANS":
+                recessive_status = "AR_TRANS_SNV_SV_CANDIDATE"
+            elif is_recessive and relation == "CIS":
+                recessive_status = "AR_CIS_NOT_BIALLELIC_BY_PHASE"
+            elif is_recessive:
+                recessive_status = "AR_SECOND_ALLELE_CANDIDATE_PHASE_UNRESOLVED"
+            else:
+                recessive_status = "NOT_AR_PAIRING_MODEL"
+
             output_rows.append({
                 **small_var.to_dict(),
                 "SV_ID": sv_row["SV_ID"],
@@ -232,13 +260,19 @@ def main():
                 "SV_GENE_EFFECT": sv_row["SV_GENE_EFFECT"],
                 "SV_POPULATION_STATUS": sv_row["POPULATION_STATUS"],
                 "SV_CALL_SUPPORT": sv_row["CALL_SUPPORT"],
+                "GENE_INHERITANCE_CLASS": inheritance_class,
+                "GENE_MOI_SET": moi_set,
+                "INHERITANCE_MECHANISM_CLASS": mechanism_class,
                 "SV_GT": sv_gt,
                 "SV_PS": sv_ps,
                 "SV_ALT_HAPLOTYPE": sv_haplotype,
                 "PHASE_RELATION": relation,
+                "RECESSIVE_PAIR_STATUS": recessive_status,
                 "INTERPRETATION": (
-                    "Same-gene small variant and SV. TRANS requires matching phase-set evidence; "
-                    "UNRESOLVED does not imply cis or trans."
+                    "Same-gene small variant and SV. An AR trans-pair label is "
+                    "reported only when both variants are phased in the same "
+                    "phase set on opposite haplotypes. Cis is not biallelic; "
+                    "unresolved phase does not imply cis or trans."
                 ),
             })
 
