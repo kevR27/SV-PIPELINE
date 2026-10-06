@@ -600,6 +600,57 @@ def load_hpo_background(edges_path: str):
     return parents, all_gene_terms
 
 
+def load_hpo_seed_terms(path: str) -> set[str]:
+    terms = set()
+    with open(path, encoding="utf-8") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            value = str(
+                row.get("hpo_id")
+                or row.get("HPO_ID")
+                or row.get("term")
+                or ""
+            ).strip()
+            if value.startswith("HP:"):
+                terms.add(value)
+    return terms
+
+
+def load_gene_hpo_terms(path: str) -> dict[str, set[str]]:
+    terms = defaultdict(set)
+    with open(path, encoding="utf-8") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            gene = str(
+                row.get("gene_symbol")
+                or row.get("GENE")
+                or row.get("gene")
+                or ""
+            ).strip().upper()
+            value = str(
+                row.get("hpo_id")
+                or row.get("HPO_ID")
+                or ""
+            ).strip()
+            if gene and value.startswith("HP:"):
+                terms[gene].add(value)
+    return terms
+
+
+def generic_hon_semantic_map(
+    phenotype_path: str,
+    seed_path: str,
+    edges_path: str,
+) -> dict[str, float]:
+    engine = semantic_engine(edges_path)
+    seeds = load_hpo_seed_terms(seed_path)
+    gene_terms = load_gene_hpo_terms(phenotype_path)
+    return {
+        gene: engine["normalized_bma"](terms, seeds)
+        for gene, terms in gene_terms.items()
+    }
+
+
 def semantic_engine(edges_path: str):
     parents, all_gene_terms = load_hpo_background(edges_path)
 
