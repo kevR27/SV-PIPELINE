@@ -703,6 +703,12 @@ rule cohort_thesis_comparison:
         """
 
 
+# Optional X-chromosome inactivation module. It is opt-in through
+# config_lrs.yaml:xci_samples and reuses the existing WhatsHap, LongPhase,
+# mosdepth and native-DNA methylation information.
+include: "xci_analysis.smk"
+
+
 # Explicit target only. It is NOT part of rule all.
 rule all_thesis_plots:
     input:
@@ -714,7 +720,8 @@ rule all_thesis_plots:
             PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done",
             sample=POSTPROCESS_SAMPLES,
         ),
-        COHORT_PLOT_OUTPUTS
+        COHORT_PLOT_OUTPUTS,
+        XCI_PLOT_DONE
 
 
 include: "../common/allele_assessment.smk"
