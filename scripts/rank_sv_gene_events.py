@@ -23,7 +23,7 @@ from ranking_common import (
     event_sort_tuple,
     first_existing,
     gene_relevance,
-    generic_hon_semantic_map,
+    generic_hon_semantic_components,
     known,
     mechanism_inheritance_summary,
     number,
@@ -467,7 +467,7 @@ def main():
 
     hon_semantic_by_gene = {}
     if args.phenotypes and args.hpo_seeds and args.edges:
-        hon_semantic_by_gene = generic_hon_semantic_map(
+        hon_semantic_by_gene = generic_hon_semantic_components(
             args.phenotypes,
             args.hpo_seeds,
             args.edges,
@@ -672,6 +672,8 @@ def main():
     # phenotype/HPO resources are available. This makes the improved ranking
     # usable without rerunning the expensive LRS calling/annotation workflow.
     semantic_values = []
+    semantic_core_values = []
+    semantic_context_values = []
     disease_rows = []
     relevance_rows = []
 
@@ -679,10 +681,27 @@ def main():
         gene = str(row.get(gene_col, ".")).strip().upper()
 
         if gene in hon_semantic_by_gene:
-            hon = float(hon_semantic_by_gene[gene])
-            phenotype_scope = "GENERIC_HON_RESNIK_BMA_POSTPROCESS"
+            semantic_components = hon_semantic_by_gene[gene]
+            hon_core = float(semantic_components["core"])
+            hon_context = float(semantic_components["context"])
+            hon = float(semantic_components["combined"])
+            phenotype_scope = (
+                "GENERIC_HON_CORE_PLUS_CAPPED_MITO_CONTEXT_RESNIK_BMA_POSTPROCESS"
+            )
         elif "HON_SEMANTIC_SIMILARITY_NORMALIZED" in out.columns:
             hon = number(row.get("HON_SEMANTIC_SIMILARITY_NORMALIZED")) or 0.0
+            hon_core = (
+                number(row.get("HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED"))
+                or hon
+            )
+            hon_context = (
+                number(
+                    row.get(
+                        "HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED"
+                    )
+                )
+                or 0.0
+            )
             phenotype_scope = "UPSTREAM_HON_RESNIK_BMA"
         elif "PHENOTYPE_SCORE" in out.columns:
             hon = min(
@@ -692,9 +711,13 @@ def main():
                     (number(row.get("PHENOTYPE_SCORE")) or 0.0) / 10.0,
                 ),
             )
+            hon_core = hon
+            hon_context = 0.0
             phenotype_scope = "LEGACY_HON_SCORE_FALLBACK"
         else:
             hon = 0.0
+            hon_core = 0.0
+            hon_context = 0.0
             phenotype_scope = "NO_HON_PHENOTYPE_EVIDENCE"
 
         gencc = summarize_gencc(
@@ -720,9 +743,17 @@ def main():
         )
 
         semantic_values.append(hon)
+        semantic_core_values.append(hon_core)
+        semantic_context_values.append(hon_context)
         disease_rows.append(gencc)
         relevance_rows.append((relevance, phenotype_scope))
 
+    out["HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED"] = [
+        round(x, 6) for x in semantic_core_values
+    ]
+    out["HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED"] = [
+        round(x, 6) for x in semantic_context_values
+    ]
     out["HON_SEMANTIC_SIMILARITY_NORMALIZED"] = [
         round(x, 6) for x in semantic_values
     ]
