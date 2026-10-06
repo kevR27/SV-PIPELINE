@@ -631,8 +631,9 @@ def load_hpo_background(edges_path: str):
     return parents, all_gene_terms
 
 
-def load_hpo_seed_terms(path: str) -> set[str]:
-    terms = set()
+def load_hpo_seed_groups(path: str) -> dict[str, set[str]]:
+    """Load core HON seeds separately from lower-weight syndromic context."""
+    groups = {"core": set(), "context": set()}
     with open(path, encoding="utf-8") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
@@ -642,9 +643,31 @@ def load_hpo_seed_terms(path: str) -> set[str]:
                 or row.get("term")
                 or ""
             ).strip()
-            if value.startswith("HP:"):
-                terms.add(value)
-    return terms
+            if not value.startswith("HP:"):
+                continue
+            role = str(row.get("hon_seed_role", "") or "").upper()
+            if "MITO_SYNDROMIC_CONTEXT" in role:
+                groups["context"].add(value)
+            else:
+                groups["core"].add(value)
+    return groups
+
+
+def load_hpo_seed_terms(path: str) -> set[str]:
+    groups = load_hpo_seed_groups(path)
+    return set(groups["core"]) | set(groups["context"])
+
+
+def combine_hon_semantic(core_score: float, context_score: float) -> float:
+    """Keep ocular HON relevance primary while allowing mitochondrial context.
+
+    Context-only similarity is capped at 0.35, so generic hearing/ataxia/
+    metabolic overlap can support discovery but cannot by itself reach the
+    MODERATE/HIGH phenotype tiers. Patient-specific HPO is handled separately.
+    """
+    core = min(max(core_score or 0.0, 0.0), 1.0)
+    context = min(max(context_score or 0.0, 0.0), 1.0)
+    return min(1.0, max(core, 0.35 * context))
 
 
 def load_gene_hpo_terms(path: str) -> dict[str, set[str]]:
@@ -668,17 +691,44 @@ def load_gene_hpo_terms(path: str) -> dict[str, set[str]]:
     return terms
 
 
+def generic_hon_semantic_components(
+    phenotype_path: str,
+    seed_path: str,
+    edges_path: str,
+) -> dict[str, dict[str, float]]:
+    engine = semantic_engine(edges_path)
+    groups = load_hpo_seed_groups(seed_path)
+    gene_terms = load_gene_hpo_terms(phenotype_path)
+
+    result = {}
+    for gene, terms in gene_terms.items():
+        core = engine["normalized_bma"](terms, groups["core"])
+        context = (
+            engine["normalized_bma"](terms, groups["context"])
+            if groups["context"]
+            else 0.0
+        )
+        result[gene] = {
+            "core": core,
+            "context": context,
+            "combined": combine_hon_semantic(core, context),
+        }
+    return result
+
+
 def generic_hon_semantic_map(
     phenotype_path: str,
     seed_path: str,
     edges_path: str,
 ) -> dict[str, float]:
-    engine = semantic_engine(edges_path)
-    seeds = load_hpo_seed_terms(seed_path)
-    gene_terms = load_gene_hpo_terms(phenotype_path)
+    components = generic_hon_semantic_components(
+        phenotype_path,
+        seed_path,
+        edges_path,
+    )
     return {
-        gene: engine["normalized_bma"](terms, seeds)
-        for gene, terms in gene_terms.items()
+        gene: values["combined"]
+        for gene, values in components.items()
     }
 
 
