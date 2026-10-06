@@ -98,7 +98,7 @@ def main() -> int:
         }
     )
     with open(args.phenotypes, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh, delimiter="	"):
+        for row in csv.DictReader(fh, delimiter="\t"):
             gene = str(row.get("gene_symbol", "")).upper().strip()
             if gene not in genes:
                 continue
@@ -248,14 +248,14 @@ def main() -> int:
         p = pheno[gene]
         a = annotsv[gene]
 
-        hon_core_similarity = semantic["normalized_bma"](
-            p["hpos"],
+        hon_core_similarity = semantic["normalized_query_coverage"](
             hon_seed_groups["core"],
+            p["hpos"],
         )
         hon_context_similarity = (
-            semantic["normalized_bma"](
-                p["hpos"],
+            semantic["normalized_query_coverage"](
                 hon_seed_groups["context"],
+                p["hpos"],
             )
             if hon_seed_groups["context"]
             else 0.0
@@ -351,6 +351,9 @@ def main() -> int:
             ),
             "HON_SEMANTIC_SIMILARITY_NORMALIZED": round(hon_similarity, 6),
             "HON_SEMANTIC_SCORE_0_10": round(phenotype_score_0_10, 3),
+            "HON_SEMANTIC_METHOD": (
+                "ASYMMETRIC_RESNIK_QUERY_COVERAGE_NORMALIZED_TO_QUERY_SELF"
+            ),
             "phenotype_score": round(phenotype_score_0_10, 3),
             "phenotype_score_scope": (
                 "GENERIC_HON_RESNIK_BMA_NOT_PATIENT_SPECIFIC"
@@ -423,7 +426,7 @@ def main() -> int:
             "candidate_group": candidate_group,
             "classification": candidate_group,
             "ranking_model": (
-                "HON_corePlusCappedMitoContext_resnikBMA__balancedDiseaseEvidence__tiered_v6"
+                "HON_asymmetricResnikQueryCoverage__corePlusCappedMitoContext__balancedDiseaseEvidence__tiered_v7"
             ),
             "interpretation": (
                 "Research prioritization only. Primary gene ordering uses a "
