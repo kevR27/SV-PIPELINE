@@ -79,17 +79,78 @@ def main():
     if work.empty:
         raise ValueError("No human HPO associations found in the phenotype table.")
 
+    panel_genes = []
+    nonpanel_genes = []
     if args.ranking:
         rank = read_tsv(args.ranking)
         rgene = first_existing(rank, ["gene", "Gene", "GENE"])
-        score = first_existing(rank, ["integrated_discovery_score", "phenotype_score"])
-        if rgene and score:
-            rank["_score"] = pd.to_numeric(rank[score], errors="coerce").fillna(0)
-            genes = rank.sort_values("_score", ascending=False)[rgene].astype(str).head(args.top_genes).tolist()
+        score = first_existing(
+            rank,
+            [
+                "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+                "GENE_RELEVANCE_DISPLAY_SCORE",
+                "integrated_discovery_score",
+                "phenotype_score",
+            ],
+        )
+        panel_col = first_existing(rank, ["PANEL_STATUS", "panel_gene"])
+        rank_col = first_existing(
+            rank,
+            [
+                "FINAL_GENE_RANK_WITHIN_PANEL_STATUS",
+                "GENE_RANK_WITHIN_PANEL_STATUS",
+            ],
+        )
+        if rgene and score and panel_col:
+            rank["_score"] = pd.to_numeric(
+                rank[score], errors="coerce"
+            ).fillna(0)
+            rank["_panel_group"] = np.where(
+                rank[panel_col]
+                .fillna("")
+                .astype(str)
+                .str.upper()
+                .isin(["PANEL_GENE", "YES", "TRUE", "1"]),
+                "PANEL_GENE",
+                "NONPANEL_GENE",
+            )
+            rank["_rank"] = (
+                pd.to_numeric(rank[rank_col], errors="coerce")
+                if rank_col
+                else np.nan
+            )
+            rank = rank.sort_values(
+                ["_panel_group", "_rank", "_score", rgene],
+                ascending=[True, True, False, True],
+                na_position="last",
+            )
+            panel_genes = (
+                rank[rank["_panel_group"].eq("PANEL_GENE")][rgene]
+                .astype(str)
+                .head(args.top_genes)
+                .tolist()
+            )
+            nonpanel_genes = (
+                rank[rank["_panel_group"].eq("NONPANEL_GENE")][rgene]
+                .astype(str)
+                .head(args.top_genes)
+                .tolist()
+            )
+            genes = panel_genes + nonpanel_genes
         else:
-            genes = work[gene_col].value_counts().head(args.top_genes).index.tolist()
+            genes = (
+                work[gene_col]
+                .value_counts()
+                .head(args.top_genes)
+                .index.tolist()
+            )
     else:
-        genes = work[gene_col].value_counts().head(args.top_genes).index.tolist()
+        genes = (
+            work[gene_col]
+            .value_counts()
+            .head(args.top_genes)
+            .index.tolist()
+        )
 
     work = work[work[gene_col].isin(genes)].copy()
 
@@ -128,7 +189,42 @@ def main():
     prefix.parent.mkdir(parents=True, exist_ok=True)
     matrix.to_csv(prefix.with_name(prefix.name + "_matrix.tsv"), sep="\t")
 
-    outputs = make_heatmap(matrix, xlabels, anchor_hpos, prefix, args.title, hpos)
+    outputs = make_heatmap(
+        matrix,
+        xlabels,
+        anchor_hpos,
+        prefix,
+        args.title,
+        hpos,
+    )
+
+    # Separate panel/non-panel HPO figures when a ranking table supplies both
+    # groups. The combined matrix is kept as a compact overview.
+    for label, selected in [
+        ("panel", panel_genes),
+        ("nonpanel", nonpanel_genes),
+    ]:
+        selected = [gene for gene in selected if gene in matrix.index]
+        if not selected:
+            continue
+        group_matrix = matrix.reindex(index=selected)
+        group_prefix = prefix.with_name(prefix.name + "_" + label)
+        group_matrix.to_csv(
+            group_prefix.with_name(group_prefix.name + "_matrix.tsv"),
+            sep="\t",
+        )
+        make_heatmap(
+            group_matrix,
+            xlabels,
+            anchor_hpos,
+            group_prefix,
+            (
+                "Panel gene–HPO associations"
+                if label == "panel"
+                else "Non-panel gene–HPO associations"
+            ),
+            hpos,
+        )
 
     anchor_present = [h for h in ordered_anchor if h in matrix.columns]
     if anchor_present:
