@@ -63,8 +63,8 @@ def main():
     pheno_col = first_existing(
         df,
         [
+            "HPO_QUERY_RESNIK_NORMALIZED",
             "HON_SEMANTIC_SIMILARITY_NORMALIZED",
-            "FINAL_PATIENT_HPO_SIMILARITY",
             "PHENOTYPE_SCORE",
             "phenotype_score",
         ],
