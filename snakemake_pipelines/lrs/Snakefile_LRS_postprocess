@@ -506,7 +506,7 @@ rule thesis_plots_sample:
         candidate_events=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
         ranked_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
-        mitochondrial_ranking=rules.rank_mitochondrial_genes.output.tsv,
+        mitochondrial_ranking=PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv",
         available=existing_plot_inputs,
         plot_scripts=[
             PLOTS + "/run_thesis_plots.py",
