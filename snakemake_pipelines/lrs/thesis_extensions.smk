@@ -431,6 +431,10 @@ FINAL_THESIS_OUTPUTS = [
         sample=POSTPROCESS_SAMPLES,
     ),
     *expand(
+        PATH + "{sample}/gene_discovery/{sample}_mitochondrial_gene_ranking.tsv",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
         PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.tsv",
         sample=POSTPROCESS_SAMPLES,
     ),
