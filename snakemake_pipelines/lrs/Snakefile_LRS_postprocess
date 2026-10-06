@@ -46,6 +46,10 @@ GENEBED = GENE_BED
 GENE_LIST = config["candidate_genes_list"]
 MONARCH_NODES = config["monarch_nodes"]
 MONARCH_EDGES = config["monarch_edges"]
+HON_HPO_SEEDS = config.get(
+    "discovery_hpo_file",
+    os.path.join(REPO_ROOT, "reference", "hon_hpo_seed_terms.tsv"),
+)
 MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS_FILE = config.get("mitocarta_pathways_file")
 GNOMAD_SV_VCF = config.get("gnomad_sv_vcf")
@@ -225,6 +229,9 @@ rule rank_sv_gene_events:
     input:
         integrated=PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv",
         gnomad=PATH + "{sample}/gene_discovery/.postprocess_tmp/{sample}.gnomad.delta.tsv.gz",
+        phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
+        hpo_seeds=HON_HPO_SEEDS,
+        edges=MONARCH_EDGES,
         script=SCRIPTS + "/rank_sv_gene_events.py",
         ranking_common=SCRIPTS + "/ranking_common.py"
     output:
@@ -242,6 +249,9 @@ rule rank_sv_gene_events:
         python {input.script} \
             --input {input.integrated} \
             --gnomad-delta {input.gnomad} \
+            --phenotypes {input.phenotypes} \
+            --hpo-seeds {input.hpo_seeds} \
+            --edges {input.edges} \
             --output {output.tsv} \
             --breakpoint-gene-tolerance {params.breakpoint_tolerance} \
             --rare-af {params.rare_af} \
