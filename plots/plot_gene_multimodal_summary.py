@@ -77,21 +77,36 @@ def main():
                 if col and col not in cols:
                     cols.append(col)
             rank_view = ranked[cols].drop_duplicates(ranked_gene).copy()
-            rank_view = rank_view.rename(columns={ranked_gene: "_merge_gene"})
+            rename_map = {ranked_gene: "_merge_gene"}
+            if ranked_panel:
+                rename_map[ranked_panel] = "_ranking_panel_status"
+            if ranked_rank:
+                rename_map[ranked_rank] = "_ranking_final_rank"
+            if ranked_score:
+                rename_map[ranked_score] = "_ranking_final_relevance"
+            rank_view = rank_view.rename(columns=rename_map)
+
             work["_merge_gene"] = work[gene_col].astype(str)
             work = work.merge(rank_view, on="_merge_gene", how="left")
 
-            if ranked_panel and ranked_panel in work.columns:
-                ptxt = work[ranked_panel].fillna("").astype(str).str.upper()
+            if "_ranking_panel_status" in work.columns:
+                ptxt = (
+                    work["_ranking_panel_status"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                )
                 work["_panel_status"] = np.where(
                     ptxt.isin(["PANEL_GENE", "YES", "TRUE", "1"]),
                     "PANEL_GENE",
                     "NONPANEL_GENE",
                 )
-            if ranked_rank and ranked_rank in work.columns:
-                work["_final_rank"] = numeric(work[ranked_rank])
-            if ranked_score and ranked_score in work.columns:
-                work["_final_relevance"] = numeric(work[ranked_score])
+            if "_ranking_final_rank" in work.columns:
+                work["_final_rank"] = numeric(work["_ranking_final_rank"])
+            if "_ranking_final_relevance" in work.columns:
+                work["_final_relevance"] = numeric(
+                    work["_ranking_final_relevance"]
+                )
 
     anchor_col = first_existing(
         work,
