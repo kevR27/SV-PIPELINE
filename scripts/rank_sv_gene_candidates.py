@@ -24,6 +24,7 @@ from pathlib import Path
 
 from ranking_common import (
     MISSING,
+    combine_hon_semantic,
     gene_relevance,
     inheritance_class,
     known,
@@ -49,14 +50,19 @@ def read_list(path: str) -> set[str]:
     return out
 
 
-def read_hpo_seeds(path: str) -> set[str]:
-    out = set()
+def read_hpo_seeds(path: str) -> dict[str, set[str]]:
+    out = {"core": set(), "context": set()}
     with open(path, encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="	")
         for row in reader:
             hp = str(row.get("hpo_id", "")).strip()
-            if hp.startswith("HP:"):
-                out.add(hp)
+            if not hp.startswith("HP:"):
+                continue
+            role = str(row.get("hon_seed_role", "") or "").upper()
+            if "MITO_SYNDROMIC_CONTEXT" in role:
+                out["context"].add(hp)
+            else:
+                out["core"].add(hp)
     return out
 
 
@@ -95,7 +101,7 @@ def main() -> int:
 
     genes = read_list(args.genes) - INVALID_GENE_LABELS
     panel = read_list(args.panel)
-    hon_seeds = read_hpo_seeds(args.hpo_seeds)
+    hon_seed_groups = read_hpo_seeds(args.hpo_seeds)
     semantic = semantic_engine(args.edges)
 
     pheno = defaultdict(
@@ -256,9 +262,21 @@ def main() -> int:
         p = pheno[gene]
         a = annotsv[gene]
 
-        hon_similarity = semantic["normalized_bma"](
+        hon_core_similarity = semantic["normalized_bma"](
             p["hpos"],
-            hon_seeds,
+            hon_seed_groups["core"],
+        )
+        hon_context_similarity = (
+            semantic["normalized_bma"](
+                p["hpos"],
+                hon_seed_groups["context"],
+            )
+            if hon_seed_groups["context"]
+            else 0.0
+        )
+        hon_similarity = combine_hon_semantic(
+            hon_core_similarity,
+            hon_context_similarity,
         )
         phenotype_score_0_10 = 10.0 * hon_similarity
 
@@ -339,6 +357,12 @@ def main() -> int:
             ),
             "human_HPO_count": len(p["hpos"]),
             "optic_neuropathy_anchor_HPO_count": len(p["anchors"]),
+            "HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED": round(
+                hon_core_similarity, 6
+            ),
+            "HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED": round(
+                hon_context_similarity, 6
+            ),
             "HON_SEMANTIC_SIMILARITY_NORMALIZED": round(hon_similarity, 6),
             "HON_SEMANTIC_SCORE_0_10": round(phenotype_score_0_10, 3),
             "phenotype_score": round(phenotype_score_0_10, 3),
@@ -413,7 +437,7 @@ def main() -> int:
             "candidate_group": candidate_group,
             "classification": candidate_group,
             "ranking_model": (
-                "HON_resnikBMA__balancedDiseaseEvidence__tiered_v5"
+                "HON_corePlusCappedMitoContext_resnikBMA__balancedDiseaseEvidence__tiered_v6"
             ),
             "interpretation": (
                 "Research prioritization only. Primary gene ordering uses a "
