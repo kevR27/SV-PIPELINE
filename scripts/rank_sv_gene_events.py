@@ -889,7 +889,7 @@ def main():
 
     out["EVENT_RANKING_MODEL"] = (
         "sharedTieredRanking__geneTier_mechanismInheritance_"
-        "technical_population_constraint__v5"
+        "technical_population_constraint__v6"
     )
     out["EVENT_RANKING_INTERPRETATION"] = (
         "Research prioritization only. Primary order uses broad gene-relevance "
