@@ -161,7 +161,60 @@ def main():
     outputs += save_figure(fig, outdir / f"{args.sample}_xci_chrX_block_skew")
     plt.close(fig)
 
-    # 3. Haplotype-specific methylation from modkit --phased.
+    # 3. Per-block confidence that H1 or H2 is the preferential active X.
+    fig, ax = plt.subplots(figsize=(10.5, 6.0))
+    if (
+        blocks.empty
+        or "LOG10_ODDS_H1_XA_VS_H2_XA" not in blocks.columns
+    ):
+        ax.axis("off")
+        ax.text(
+            0.5, 0.5,
+            "No block-level XCI orientation odds available",
+            ha="center", va="center",
+            transform=ax.transAxes,
+        )
+    else:
+        trials = pd.to_numeric(blocks["TRIALS"], errors="coerce")
+        logodds = pd.to_numeric(
+            blocks["LOG10_ODDS_H1_XA_VS_H2_XA"],
+            errors="coerce",
+        )
+        valid = trials.notna() & logodds.notna()
+        ax.scatter(
+            trials[valid],
+            logodds[valid],
+            s=np.clip(np.sqrt(trials[valid]) * 11, 20, 180),
+            alpha=0.75,
+        )
+        ax.axhline(0, linewidth=1.1)
+        ax.axhline(1, linestyle="--", linewidth=1.4)
+        ax.axhline(-1, linestyle="--", linewidth=1.4)
+        ax.axhline(2, linestyle=":", linewidth=1.2)
+        ax.axhline(-2, linestyle=":", linewidth=1.2)
+        ax.set_xlabel("Informative reads in phase block")
+        ax.set_ylabel("log10 odds: H1 Xa vs H2 Xa")
+        ax.set_title(
+            f"{args.sample}: confidence in local X-inactivation orientation"
+        )
+        ax.text(
+            0.99, 0.98,
+            "+1 = 10:1 support for H1 as Xa\n"
+            "-1 = 10:1 support for H2 as Xa\n"
+            "|2| = 100:1 support",
+            transform=ax.transAxes,
+            ha="right", va="top",
+            fontsize=8.5,
+        )
+        style_axis(ax, "both")
+    fig.tight_layout()
+    outputs += save_figure(
+        fig,
+        outdir / f"{args.sample}_xci_orientation_log_odds",
+    )
+    plt.close(fig)
+
+    # 4. Haplotype-specific methylation from modkit --phased.
     hp1 = binned_methylation(
         read_bedmethyl(args.hp1_bedmethyl),
         args.methylation_bin_bp,
@@ -206,7 +259,7 @@ def main():
     outputs += save_figure(fig, outdir / f"{args.sample}_xci_haplotype_methylation")
     plt.close(fig)
 
-    # 4. LongPhase / WhatsHap phase concordance.
+    # 5. LongPhase / WhatsHap phase concordance.
     fig, ax = plt.subplots(figsize=(10.5, 5.8))
     if phase.empty:
         ax.axis("off")
@@ -267,6 +320,9 @@ def main():
                     round(float(global_p), 6)
                     if np.isfinite(global_p)
                     else "."
+                ),
+                "orientation_log_odds_plot": (
+                    str(outdir / f"{args.sample}_xci_orientation_log_odds")
                 ),
                 "plot_directory": str(outdir),
             }
