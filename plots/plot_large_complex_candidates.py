@@ -60,6 +60,15 @@ def compact_population(value):
 
 def choose(df, buckets, n):
     parts = []
+    final_rank_col = first_existing(
+        df,
+        [
+            "FINAL_EVENT_RANK_GLOBAL",
+            "EVENT_RANK_GLOBAL",
+            "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
+            "EVENT_RANK_WITHIN_PANEL_STATUS",
+        ],
+    )
 
     for bucket in buckets:
         sub = df[df["EVENT_REVIEW_BUCKET"].eq(bucket)].copy()
@@ -69,9 +78,11 @@ def choose(df, buckets, n):
         sub["_score"] = numeric(
             sub["EVENT_GENE_RELEVANCE_SCORE"]
         ).fillna(0)
-        sub["_rank"] = numeric(
-            sub["EVENT_RANK_WITHIN_BUCKET"]
-        ).fillna(np.inf)
+        sub["_rank"] = (
+            numeric(sub[final_rank_col]).fillna(np.inf)
+            if final_rank_col
+            else numeric(sub["EVENT_RANK_WITHIN_BUCKET"]).fillna(np.inf)
+        )
 
         if "PANEL_STATUS" in sub.columns:
             panel_mask = (
@@ -136,9 +147,23 @@ def plot_panel(ax, data, title):
 
     data = data.copy()
     data["_score"] = numeric(data["EVENT_GENE_RELEVANCE_SCORE"]).fillna(0)
+    final_rank_col = first_existing(
+        data,
+        [
+            "FINAL_EVENT_RANK_GLOBAL",
+            "EVENT_RANK_GLOBAL",
+            "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
+            "EVENT_RANK_WITHIN_PANEL_STATUS",
+        ],
+    )
+    data["_final_rank"] = (
+        numeric(data[final_rank_col]).fillna(np.inf)
+        if final_rank_col
+        else np.inf
+    )
     data = data.sort_values(
-        ["EVENT_REVIEW_BUCKET", "_score"],
-        ascending=[True, True],
+        ["EVENT_REVIEW_BUCKET", "_final_rank", "_score"],
+        ascending=[True, False, True],
     ).reset_index(drop=True)
 
     y = np.arange(len(data))
@@ -162,10 +187,15 @@ def plot_panel(ax, data, title):
         pop = compact_population(row.get("EVENT_POPULATION_TIER", "."))
         genes = str(row.get("SV_GENE_COUNT", "."))
         panel = "panel" if str(row.get("PANEL_STATUS", "")).upper() == "PANEL_GENE" else "non-panel"
+        final_rank = (
+            int(row["_final_rank"])
+            if np.isfinite(row["_final_rank"])
+            else "."
+        )
         ax.text(
             bar.get_width() + 0.012 * xmax,
             bar.get_y() + bar.get_height() / 2,
-            f"{callers} caller(s); {pop}; genes={genes}; {panel}",
+            f"rank={final_rank}; {callers} caller(s); {pop}; genes={genes}; {panel}",
             va="center",
             fontsize=7.8,
         )
