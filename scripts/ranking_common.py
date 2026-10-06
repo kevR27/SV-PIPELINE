@@ -311,10 +311,11 @@ def parse_clingen_dosage(value) -> int | None:
 
 
 def extract_loeuf(row) -> float | None:
+    available = set(row.index) if hasattr(row, "index") else set(row)
     for name in (
         "GNOMAD_LOEUF", "LOEUF", "LOEUF_score", "ANNOTSV_LOEUF",
     ):
-        if name in row.index if hasattr(row, "index") else name in row:
+        if name in available:
             value = number(row.get(name))
             if value is not None:
                 return value
@@ -549,9 +550,9 @@ def recurrence_tiebreak(row) -> int:
     for col in ("COHORT_SAMPLE_COUNT", "RECURRENT_SAMPLE_COUNT", "SAMPLE_COUNT"):
         value = number(row.get(col))
         if value is not None:
-            # Fewer recurrent samples rank slightly higher, but only after the
-            # major evidence axes.
-            return -int(value)
+            # event_sort_tuple is sorted ascending. A smaller cohort count is
+            # therefore preferred only after all major evidence axes.
+            return int(value)
     return 0
 
 
