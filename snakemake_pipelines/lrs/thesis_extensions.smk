@@ -420,6 +420,20 @@ rule r_large_sv_depth:
         "../../r_plots/plot_large_sv_depth.R"
 
 
+rule r_sequencing_qc:
+    input:
+        qc=PATH + "{sample}/qc/{sample}.dorado_qc.tsv",
+        n50=PATH + "{sample}/qc/{sample}.n50.tsv"
+    output:
+        pdf=PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
+        png=PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.png",
+        svg=PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.svg"
+    conda:
+        CONDAENV + "r_plot.yaml"
+    script:
+        "../../r_plots/plot_sequencing_qc.R"
+
+
 def cohort_recurrence_args():
     return " ".join(
         "--sample-input " + shlex.quote(
@@ -527,6 +541,10 @@ FINAL_THESIS_OUTPUTS = [
     ),
     *expand(
         PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.pdf",
+        sample=POSTPROCESS_SAMPLES,
+    ),
+    *expand(
+        PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
         sample=POSTPROCESS_SAMPLES,
     ),
     *expand(
