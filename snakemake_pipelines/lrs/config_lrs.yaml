@@ -4,9 +4,7 @@
 
 samples:
   # Always quote sample IDs that are numeric.
-  "14996": "/DATA/casadei7/nanopore/WGS/14996_HMW_bam/14996_HMW_merged.bam"
   "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
-  "12066": "/DATA/casadei7/nanopore/WGS/CONTROL/12066/12066.merge.sort.bam"
   "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
 
 path: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/outs_test_CNTRL"
@@ -282,7 +280,7 @@ xci_high_skew_threshold: 0.20
 # chromosome-wide methylation figure. Read-level CpG-island clustering remains
 # the primary estimator of XCI skew.
 xci_methylation_bin_bp: 5000000
-xci_threads: 8
+xci_threads: 32
 
 
 # ============================================================
@@ -314,15 +312,12 @@ r_plot_top_hpo: 20
 # Dorado basecalling. These paths currently point to the WGS BAMs used by the
 # pipeline; if a BAM no longer retains the required Dorado metadata, replace
 # that sample path with its original Dorado basecalled BAM.
-dorado_bin: "dorado"
+dorado_bin: " /home/casadei7/dorado-1.3.0/bin/dorado"
 dorado_summary_bams:
-  "14996": "/DATA/casadei7/nanopore/WGS/14996_HMW_bam/14996_HMW_merged.bam"
   "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
-  "12066": "/DATA/casadei7/nanopore/WGS/CONTROL/12066/12066.merge.sort.bam"
   "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
 
 # Read-length threshold used to report the long-read subset separately from
 # all reads. N50 itself is a QC metric; this threshold is what separates the
 # short-read tail from the long-read QC subset.
 n50_min_length: 1000
-
