@@ -28,6 +28,7 @@ XCI_HIGH_SKEW_THRESHOLD = float(config.get("xci_high_skew_threshold", 0.20))
 XCI_METHYLATION_BIN_BP = int(config.get("xci_methylation_bin_bp", 5000000))
 XCI_THREADS = int(config.get("xci_threads", min(int(config.get("threads", 8)), 8)))
 XCI_MODKIT = config.get("modkitenv", "modkit")
+XCI_R_PLOTS = os.path.join(REPO_ROOT, "r_plots")
 XCI_MODKIT_IO_THREADS = int(config.get("modkit_io_threads", XCI_THREADS))
 XCI_MODKIT_SAMPLING_THREADS = int(
     config.get("modkit_sampling_threads", XCI_THREADS)
@@ -253,7 +254,7 @@ rule xci_plot_analysis:
         phase_summary=rules.xci_compare_phasing.output.summary,
         hp1=rules.xci_modkit_phased_chrX.output.hp1,
         hp2=rules.xci_modkit_phased_chrX.output.hp2,
-        script=PLOTS + "/plot_xci_analysis.py"
+        script=XCI_R_PLOTS + "/plot_xci.R"
     output:
         done=PATH + "{sample}/plots/15_x_inactivation/.xci_plots.done"
     params:
@@ -261,25 +262,26 @@ rule xci_plot_analysis:
             PATH + f"{wc.sample}/plots/15_x_inactivation"
         )
     conda:
-        CONDAENV + "plots.yaml"
+        CONDAENV + "r_plot.yaml"
     shell:
         """
         set -euo pipefail
         mkdir -p {params.outdir}
 
-        python {input.script} \
-            --block-skew {input.blocks} \
-            --summary {input.summary} \
-            --phase-blocks {input.phase_blocks} \
-            --phase-summary {input.phase_summary} \
-            --hp1-bedmethyl {input.hp1} \
-            --hp2-bedmethyl {input.hp2} \
-            --out-dir {params.outdir} \
-            --sample {wildcards.sample} \
-            --methylation-bin-bp {XCI_METHYLATION_BIN_BP}
+        Rscript {input.script} \
+            {input.blocks} \
+            {input.summary} \
+            {input.phase_blocks} \
+            {input.phase_summary} \
+            {input.hp1} \
+            {input.hp2} \
+            {params.outdir} \
+            {wildcards.sample} \
+            {XCI_METHYLATION_BIN_BP}
 
         test -s {params.outdir}/{wildcards.sample}_xci_block_skew_distribution.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_chrX_block_skew.pdf
+        test -s {params.outdir}/{wildcards.sample}_xci_orientation_log_odds.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_haplotype_methylation.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_phase_concordance.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_plot_manifest.tsv
