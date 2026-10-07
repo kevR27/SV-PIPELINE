@@ -15,7 +15,6 @@ import argparse
 from pathlib import Path
 import math
 import pandas as pd
-import pysam
 
 
 MISSING = {None, "", ".", "NA", "N/A", "nan", "None"}
@@ -181,6 +180,16 @@ def main():
     vcf_path = Path(args.gnomad_vcf)
     if not vcf_path.exists():
         raise FileNotFoundError(f"Configured gnomAD-SV VCF does not exist: {vcf_path}")
+
+    # Loading a tabix-indexed VCF requires pysam, but the exact-match helpers
+    # remain independently testable without that optional runtime dependency.
+    try:
+        import pysam
+    except ImportError as error:
+        raise RuntimeError(
+            "pysam is required for gnomAD-SV VCF access. Run this script "
+            "through the gnomad_sv.yaml Snakemake environment."
+        ) from error
 
     vcf = pysam.VariantFile(str(vcf_path))
     cache = {}

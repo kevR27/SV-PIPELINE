@@ -19,6 +19,7 @@ import pandas as pd
 from ranking_common import (
     DIRECT_RELATIONSHIPS,
     MISSING,
+    POPULATION_PRIORITY,
     PROXIMAL_RELATIONSHIPS,
     event_sort_tuple,
     first_existing,

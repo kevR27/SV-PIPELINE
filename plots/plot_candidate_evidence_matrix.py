@@ -280,6 +280,21 @@ def main():
         .drop_duplicates(subset=[id_col, gene_col], keep="first")
         .copy()
     )
+    # Selection is balanced between panel and non-panel candidates, but panel
+    # membership must not become an undeclared ranking score. Display the
+    # selected rows by the shared rank/score across both groups.
+    work = work.sort_values(
+        [
+            "_rank",
+            "PLOT_ORDER_SCORE",
+            "_pheno",
+            "_caller_count",
+            id_col,
+            gene_col,
+        ],
+        ascending=[True, False, False, False, True, True],
+        na_position="last",
+    ).reset_index(drop=True)
     # Keep the full SV_ID in the exported TSV; the figure uses a shorter label
     # so candidate rows remain readable at thesis scale.
 

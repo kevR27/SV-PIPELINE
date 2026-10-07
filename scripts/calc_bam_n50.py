@@ -11,8 +11,6 @@ import argparse
 import statistics
 from pathlib import Path
 
-import pysam
-
 
 def n50(lengths):
     if not lengths:
@@ -36,6 +34,16 @@ def median_value(values):
 
 
 def main():
+    # Keep pysam local to BAM processing so the pure read-length functions can
+    # be tested without loading the full sequencing environment.
+    try:
+        import pysam
+    except ImportError as error:
+        raise RuntimeError(
+            "pysam is required to read BAM files. Run this script through "
+            "the read_qc.yaml Snakemake environment."
+        ) from error
+
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--bam", required=True)
     p.add_argument("--min-length", type=int, default=1000)

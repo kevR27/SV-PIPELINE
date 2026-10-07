@@ -80,6 +80,16 @@ POPULATION_PRIORITY = {
     "LOW_FREQUENCY_MAX_AF_0.001_TO_0.01": 2,
     "UNKNOWN": 1,
     "TOO_COMMON_MAX_AF_GT_0.01": 0,
+    # Compatibility labels retained for tables produced before the population
+    # evidence terminology was made more explicit. Missing or non-evaluable
+    # evidence remains neutral; it is not treated as evidence of rarity.
+    "PROVISIONAL_LOW_AF_LE_0.01": 2,
+    "NO_MATCH": 1,
+    "UNKNOWN_OR_MISSING": 1,
+    "NOT_EVALUABLE_BND": 1,
+    "NOT_EVALUABLE_GE10MB": 1,
+    "NOT_EVALUABLE_GE_10MB": 1,
+    "PROVISIONAL_HIGH_AF_GT_0.01": 0,
 }
 
 MECHANISM_PRIORITY = {
