@@ -1,0 +1,6 @@
+name: srs-vep-113
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - ensembl-vep=113

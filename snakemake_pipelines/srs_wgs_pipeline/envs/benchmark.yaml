@@ -1,0 +1,9 @@
+name: srs-benchmark
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - truvari>=5,<6
+  - bcftools>=1.20
+  - htslib>=1.20
+  - pandas>=2.0

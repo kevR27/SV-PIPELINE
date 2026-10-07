@@ -18,5 +18,5 @@ jobs:
         working-directory: snakemake_pipelines/lrs
       - run: snakemake -s Snakefile_LRS_postprocess --list-rules
         working-directory: snakemake_pipelines/lrs
-      - run: snakemake -s Snakefile_SRS --list-rules
-        working-directory: snakemake_pipelines/srs
+      - run: snakemake -s Snakefile_SRS_WGS --list-rules
+        working-directory: snakemake_pipelines/srs_wgs_pipeline

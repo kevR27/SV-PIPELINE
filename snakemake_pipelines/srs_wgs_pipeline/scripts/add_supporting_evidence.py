@@ -116,6 +116,7 @@ def read_vcf(path: str) -> list[dict]:
                     "pos": as_int(fields[1]),
                     "id": fields[2],
                     "alt": fields[4],
+                    "qual": fields[5],
                     "filter": fields[6],
                     "info": info,
                     "sample": sample,
@@ -201,7 +202,7 @@ def load_integrated_vcf(path: str) -> dict[str, dict]:
     }
 
 
-def load_gridss(path: str | None):
+def load_gridss(path: str | None, min_qual: float | None = None):
     """Index GRIDSS breakends by first chromosome."""
     index = defaultdict(list)
 
@@ -209,6 +210,11 @@ def load_gridss(path: str | None):
         return index
 
     for record in read_vcf(path):
+        if record["filter"] not in {"PASS", "."}:
+            continue
+        qual = as_float(record.get("qual"))
+        if min_qual is not None and (qual is None or qual < min_qual):
+            continue
         chromosome_1, position_1, chromosome_2, position_2 = parse_breakend(record)
 
         if position_1 is not None:
@@ -472,6 +478,7 @@ def main() -> int:
     parser.add_argument("--integrated", required=True)
     parser.add_argument("--integrated-vcf", required=True)
     parser.add_argument("--gridss")
+    parser.add_argument("--gridss-min-qual", type=float)
     parser.add_argument("--melt")
     parser.add_argument("--expansionhunter", required=True)
     parser.add_argument(
@@ -488,7 +495,7 @@ def main() -> int:
         input_columns = list(reader.fieldnames or [])
 
     integrated_vcf = load_integrated_vcf(args.integrated_vcf)
-    gridss_index = load_gridss(args.gridss)
+    gridss_index = load_gridss(args.gridss, args.gridss_min_qual)
     melt_index = load_melt(args.melt)
     expansionhunter_index = load_expansionhunter(
         args.expansionhunter

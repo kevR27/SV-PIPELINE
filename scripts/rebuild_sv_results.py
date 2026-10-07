@@ -31,6 +31,8 @@ def main():
     p.add_argument("--unannotated")
     p.add_argument("--panel", required=True)
     p.add_argument("--phenotypes", help="Previously saved human gene/HPO table; no network lookup")
+    p.add_argument("--hpo-seeds", help="HON/phenotype HPO seed TSV used by the current ranker")
+    p.add_argument("--monarch-edges", help="Monarch edge TSV used for semantic HPO ranking")
     p.add_argument("--needlr")
     p.add_argument("--vep", help="Saved VEP text output, for a gene coverage comparison")
     p.add_argument("--annotations-dir", help="Optional installed AnnotSV resources")
@@ -51,7 +53,7 @@ def main():
         if name in [c for c, _ in callers]:
             p.error("Supply only one VCF per caller")
         callers.append((name, path))
-    inputs = {k: v for k, v in vars(a).items() if k in {"vcf", "annotsv", "unannotated", "panel", "phenotypes", "needlr", "vep"} and v}
+    inputs = {k: v for k, v in vars(a).items() if k in {"vcf", "annotsv", "unannotated", "panel", "phenotypes", "hpo_seeds", "monarch_edges", "needlr", "vep"} and v}
     inputs.update({f"caller_{name}": path for name, path in callers})
     for path in inputs.values():
         if not Path(path).is_file():
@@ -90,8 +92,17 @@ def main():
     if not phenotypes:
         phenotypes = product("_human_gene_phenotypes_not_supplied.tsv")
         Path(phenotypes).write_text("gene_symbol\thpo_id\toptic_neuropathy_anchor\n")
+    hpo_seeds = a.hpo_seeds
+    if not hpo_seeds:
+        hpo_seeds = product("_hpo_seeds_not_supplied.tsv")
+        Path(hpo_seeds).write_text("hpo_id\thpo_label\thon_seed_role\n")
+    monarch_edges = a.monarch_edges
+    if not monarch_edges:
+        monarch_edges = product("_monarch_edges_not_supplied.tsv")
+        Path(monarch_edges).write_text("subject\tobject\tpredicate\tcategory\n")
     run("rank_sv_gene_candidates.py", "--annotsv", a.annotsv, "--genes", product("_sv_genes.txt"),
-        "--phenotypes", phenotypes, "--panel", a.panel, "--output", product("_ranked_candidates.tsv"))
+        "--phenotypes", phenotypes, "--panel", a.panel, "--hpo-seeds", hpo_seeds,
+        "--edges", monarch_edges, "--output", product("_ranked_candidates.tsv"))
     run("summarize_sv_caller_support.py", "--vcf", a.vcf, "--caller-order", a.caller_order,
         "--output", product("_caller_support_summary.tsv"))
     caller_args = []

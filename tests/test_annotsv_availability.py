@@ -138,7 +138,7 @@ class PanelFilterTests(unittest.TestCase):
         legacy=(ROOT/'snakemake_pipelines/lrs/Snakefile_LRS').read_text()
         self.assertIn('include: "Snakefile_LRS_update"',legacy)
         self.assertNotIn('--pick',legacy)
-        for name in ['lrs/Snakefile_LRS_update','srs/Snakefile_SRS']:
+        for name in ['lrs/Snakefile_LRS_update','srs_wgs_pipeline/Snakefile_SRS_WGS']:
             text=(ROOT/'snakemake_pipelines'/name).read_text()
             self.assertIn('--flag_pick',text)
             self.assertNotIn('--pick ',text)

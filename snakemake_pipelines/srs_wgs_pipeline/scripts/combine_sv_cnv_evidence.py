@@ -179,6 +179,17 @@ def read_cnvpytor_calls(
 
             flags: list[str] = []
 
+            # Missing QC values are not evidence of quality.  They are kept
+            # for audit/review but cannot admit an unmatched depth-only CNV.
+            if q0 is None:
+                flags.append("MISSING_Q0")
+
+            if pN is None:
+                flags.append("MISSING_PN")
+
+            if eval1 is None:
+                flags.append("MISSING_EVAL1")
+
             if q0 is not None and q0 > max_q0:
                 flags.append("HIGH_Q0")
 

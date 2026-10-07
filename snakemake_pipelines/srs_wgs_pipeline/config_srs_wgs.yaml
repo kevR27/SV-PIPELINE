@@ -19,18 +19,20 @@ threads: 32
 condaenv: "../../envs/"
 bed: "../../PANEL_OA/optic_neuropathy_panel.bed"
 candidate_genes_list: "../../PANEL_OA/optic_neuropathy_genes.txt"
+nuclear_mito_candidate_bed: "../../PANEL_OA/optic_neuropathy_mito_panel_annotated.tsv"
 exclude_bed: "../../reference/delly_hg38_exclude.bed"
 expansionhunter_catalog: "../../reference/variant_catalog_hg38_repeats.json"
 
 vep_cache_dir: "/DATA/Reference/vep"
 vep_assembly: "GRCh38"
+vep_cache_version: 113
 annotsv_annotations_dir: "/DATA/Reference/AnnotSV_annotations"
 annotsv_benign_af: 0.01
 hpo_terms: null
 
 monarch_nodes: "/DATA/Reference/monarch/monarch-kg_nodes.tsv"
 monarch_edges: "/DATA/Reference/monarch/monarch-kg_edges.tsv"
-discovery_hpo_file: "../../reference/optic_neuropathy_hpo_terms.tsv"
+discovery_hpo_file: "../../reference/hon_hpo_seed_terms.tsv"
 
 # ============================================================
 # HOW TO READ THIS CONFIG
@@ -48,6 +50,9 @@ discovery_hpo_file: "../../reference/optic_neuropathy_hpo_terms.tsv"
 # mosdepth + samtools flagstat/stats are mandatory outputs.
 # Sample identity/relatedness/sex QC remains appropriate for your separate
 # Somalier cohort workflow rather than being duplicated here.
+qc_min_mean_coverage: 25
+qc_min_mapped_percent: 95
+canonical_chromosomes_only: true
 
 # ============================================================
 # MANTA / DELLY BREAKPOINT CALLING
@@ -74,6 +79,7 @@ multi_caller_min_support: 2
 # ============================================================
 gridss_enabled: true
 gridss_threads: 8
+gridss_min_qual: null
 # GRIDSS recommends the ENCODE hg38 exclusion list (ENCFF356LFX) for UCSC
 # chromosome naming. Leave null until that BED is installed locally.
 gridss_exclude_bed: null
@@ -85,6 +91,8 @@ gridss_skip_softclip_realignment: false
 # DEEPVARIANT — WHOLE-GENOME SNV/INDEL
 # ============================================================
 # No panel BED restriction. Panel/non-panel filtering happens downstream.
+# The complete VCF is preserved; a focused review view is also generated from
+# nuclear_mito_candidate_bed and annotated with VEP.
 
 # ============================================================
 # CNVpytor — independent read-depth CNV evidence + BAF context
@@ -163,6 +171,20 @@ supporting_evidence_breakpoint_tolerance: 500
 mitocarta_enabled: false
 mitocarta_file: "/DATA/Reference/mitocarta/Human.MitoCarta3.0.xls"
 mitocarta_pathways_gmx: "/DATA/Reference/mitocarta/Human.MitoPathways3.0.gmx"
+
+# The diagnostic-support table is produced even when MitoCarta is disabled.
+# With MitoCarta enabled, nuclear-encoded mitochondrial genes and their
+# bioenergetic pathways are placed ahead of mtDNA findings in the review tier.
+diagnostic_candidate_top_n: 100
+samplot_enabled: true
+samplot_top_n: 20
+samplot_min_mapq: 20
+
+# Optional validation/benchmark inputs. Leave null/empty for ordinary runs.
+# candidate_truth_tsv columns: GENE (required), SV_ID (optional).
+candidate_truth_tsv: null
+# Per-sample, bgzip-compressed truth SV VCFs for Truvari.
+sv_truth_vcfs: {}
 
 # ============================================================
 # ALLELE-LEVEL RESEARCH ASSESSMENT

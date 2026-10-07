@@ -1,9 +1,0 @@
-channels:
-  - conda-forge
-  - bioconda
-  - defaults
-dependencies:
-  - gridss=2.13.2
-  - samtools
-  - bcftools
-  - htslib

@@ -35,6 +35,7 @@ THREADS = int(config.get("threads", 16))
 
 PANEL_BED = config.get("bed")
 GENE_LIST = config["candidate_genes_list"]
+NUCLEAR_MITO_BED = config["nuclear_mito_candidate_bed"]
 EXCLUDE_BED = config["exclude_bed"]
 EH_CATALOG = config["expansionhunter_catalog"]
 
@@ -51,6 +52,11 @@ MONARCH_EDGES = config["monarch_edges"]
 DISCOVERY_HPO_FILE = config["discovery_hpo_file"]
 VEP_CACHE_DIR = config["vep_cache_dir"]
 VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
+VEP_CACHE_VERSION = int(config.get("vep_cache_version", 113))
+CANONICAL_ONLY = config.get("canonical_chromosomes_only", True)
+CANONICAL_FLAG = "--canonical-only" if CANONICAL_ONLY else ""
+QC_MIN_MEAN_COVERAGE = float(config.get("qc_min_mean_coverage", 25))
+QC_MIN_MAPPED_PERCENT = float(config.get("qc_min_mapped_percent", 95))
 
 FILTER_SV_EVIDENCE_SCRIPT = config.get(
     "filter_sv_evidence_script",
@@ -75,6 +81,7 @@ GRIDSS_ENABLED = config.get("gridss_enabled", True)
 GRIDSS_EXCLUDE_BED = config.get("gridss_exclude_bed")
 GRIDSS_SKIP_SOFTCLIP = config.get("gridss_skip_softclip_realignment", False)
 GRIDSS_THREADS = min(int(config.get("gridss_threads", 8)), THREADS)
+GRIDSS_MIN_QUAL = config.get("gridss_min_qual")
 
 CNVPYTOR_MAIN_BIN = int(config.get("cnvpytor_main_bin_size", 10000))
 CNVPYTOR_LARGE_CNV_BIN = int(config.get("cnvpytor_large_cnv_bin_size", 100000))
@@ -104,6 +111,16 @@ MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS = config.get("mitocarta_pathways_gmx")
 
 SUPPORTING_BP_TOLERANCE = int(config.get("supporting_evidence_breakpoint_tolerance", 500))
+DIAGNOSTIC_TOP_N = int(config.get("diagnostic_candidate_top_n", 100))
+SAMPLOT_ENABLED = config.get("samplot_enabled", True)
+SAMPLOT_TOP_N = int(config.get("samplot_top_n", 20))
+SAMPLOT_MIN_MAPQ = int(config.get("samplot_min_mapq", 20))
+CANDIDATE_TRUTH = config.get("candidate_truth_tsv")
+SV_TRUTH_VCFS = config.get("sv_truth_vcfs", {})
+
+# The shared audit defaults to the LRS merged callset. SRS annotation is run
+# on the post-CNV integrated callset, so reconcile against that exact VCF.
+ANNOTSV_AUDIT_VCF = PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz"
 
 
 def bam_index_for(sample):
@@ -120,6 +137,11 @@ def melt_optional_input(wc):
     if not MELT_ENABLED:
         return []
     return PATH + f"{wc.sample}/mei/melt/{wc.sample}.MEI.merged.vcf.gz"
+
+
+def diagnostic_source(wc):
+    suffix = "_integrated_SV_gene_with_mitocarta.tsv" if MITOCARTA_ENABLED else "_integrated_SV_gene_with_supporting_evidence.tsv"
+    return PATH + f"{wc.sample}/gene_discovery/{wc.sample}{suffix}"
 
 
 GRIDSS_TARGETS = []
@@ -154,23 +176,38 @@ MITOCARTA_TARGETS = []
 if MITOCARTA_ENABLED:
     if not MITOCARTA_FILE:
         raise ValueError("mitocarta_enabled is true but mitocarta_file is not configured")
-    MITOCARTA_TARGETS = expand(
-        PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
-        sample=SAMPLES,
+    MITOCARTA_TARGETS = (
+        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv", sample=SAMPLES)
+        + expand(PATH + "{sample}/gene_discovery/{sample}_mitocarta_summary.tsv", sample=SAMPLES)
     )
+
+SAMPLOT_TARGETS = expand(PATH + "{sample}/diagnostic_review/{sample}.samplot_manifest.tsv", sample=SAMPLES) if SAMPLOT_ENABLED else []
+CANDIDATE_BENCHMARK_TARGETS = []
+if CANDIDATE_TRUTH:
+    CANDIDATE_BENCHMARK_TARGETS = (
+        expand(PATH + "{sample}/benchmark/{sample}.candidate_benchmark.tsv", sample=SAMPLES)
+        + expand(PATH + "{sample}/benchmark/{sample}.candidate_benchmark.json", sample=SAMPLES)
+    )
+SV_BENCHMARK_SAMPLES = sorted(set(SAMPLES) & set(SV_TRUTH_VCFS))
+SV_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/truari", sample=SV_BENCHMARK_SAMPLES)
 
 
 rule all:
     input:
+        PATH + "reference_checks/srs_preflight.tsv",
+        PATH + "reference_checks/srs_preflight.json",
         # QC
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
         expand(PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt", sample=SAMPLES),
         expand(PATH + "{sample}/qc/{sample}.flagstat.txt", sample=SAMPLES),
         expand(PATH + "{sample}/qc/{sample}.samtools.stats.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/qc/{sample}.wgs_qc_summary.tsv", sample=SAMPLES),
 
         # Genome-wide SNV/indel and short-read local phasing
         expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi", sample=SAMPLES),
+        expand(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz", sample=SAMPLES),
+        expand(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vep.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi", sample=SAMPLES),
 
@@ -200,12 +237,18 @@ rule all:
 
         # Annotation and candidate discovery
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
         expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.summary.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_supporting_evidence.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv", sample=SAMPLES),
+        SAMPLOT_TARGETS,
+        CANDIDATE_BENCHMARK_TARGETS,
+        SV_BENCHMARK_TARGETS,
 
         # Specialized variant classes
         expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
@@ -214,12 +257,41 @@ rule all:
         MITOCARTA_TARGETS
 
 
+rule srs_preflight:
+    input:
+        script=LOCAL_SCRIPTS + "/preflight_srs_wgs.py",
+        bams=list(BAMS.values()),
+        bais=[bam_index_for(sample) for sample in SAMPLES]
+    output:
+        tsv=PATH + "reference_checks/srs_preflight.tsv",
+        json=PATH + "reference_checks/srs_preflight.json"
+    params:
+        gridss=str(GRIDSS_ENABLED).lower(), mt=str(MTDNA_ENABLED).lower(), mito=str(MITOCARTA_ENABLED).lower(),
+        mito_file=(f"--mitocarta {MITOCARTA_FILE}" if MITOCARTA_FILE else ""),
+        pathways=(f"--pathways-gmx {MITOCARTA_PATHWAYS}" if MITOCARTA_PATHWAYS else "")
+    conda:
+        LOCAL_ENVS + "/qc.yaml"
+    shell:
+        """
+        python {input.script:q} --reference {REF:q} --panel-bed {PANEL_BED:q} --gene-list {GENE_LIST:q} \
+          --nuclear-mito-bed {NUCLEAR_MITO_BED:q} \
+          --exclude-bed {EXCLUDE_BED:q} --repeat-catalog {EH_CATALOG:q} --hpo-seeds {DISCOVERY_HPO_FILE:q} \
+          --monarch-nodes {MONARCH_NODES:q} --monarch-edges {MONARCH_EDGES:q} \
+          --annotsv-dir {ANNOTSV_ANNOTATIONS_DIR:q} --vep-cache-dir {VEP_CACHE_DIR:q} \
+          --gridss-enabled {params.gridss} --mt-enabled {params.mt} --mt-contig {MT_CONTIG:q} \
+          --mitocarta-enabled {params.mito} {params.mito_file} {params.pathways} \
+          --bam {input.bams:q} --bai {input.bais:q} \
+          --output-tsv {output.tsv:q} --output-json {output.json:q}
+        """
+
+
 ########################
 # WGS alignment QC
 ########################
 
 rule mosdepth_coverage:
     input:
+        preflight=rules.srs_preflight.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample)
     output:
@@ -242,6 +314,7 @@ rule mosdepth_coverage:
 
 rule alignment_qc:
     input:
+        preflight=rules.srs_preflight.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample)
     output:
@@ -261,12 +334,30 @@ rule alignment_qc:
         """
 
 
+rule summarize_wgs_qc:
+    input:
+        flagstat=rules.alignment_qc.output.flagstat,
+        summary=rules.mosdepth_coverage.output.summary,
+        script=LOCAL_SCRIPTS + "/build_qc_summary.py"
+    output:
+        tsv=PATH + "{sample}/qc/{sample}.wgs_qc_summary.tsv"
+    conda:
+        LOCAL_ENVS + "/qc.yaml"
+    shell:
+        """
+        python {input.script:q} --sample {wildcards.sample:q} --flagstat {input.flagstat:q} \
+          --mosdepth-summary {input.summary:q} --min-mean-coverage {QC_MIN_MEAN_COVERAGE} \
+          --min-mapped-percent {QC_MIN_MAPPED_PERCENT} --output {output.tsv:q}
+        """
+
+
 ########################
 # Breakpoint SV callers
 ########################
 
 rule manta_sv_calling:
     input:
+        preflight=rules.srs_preflight.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
@@ -293,6 +384,7 @@ rule manta_sv_calling:
 
 rule delly_sv_calling:
     input:
+        preflight=rules.srs_preflight.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
@@ -314,8 +406,30 @@ rule delly_sv_calling:
         """
 
 
+rule gridss_reference_setup:
+    input:
+        preflight=rules.srs_preflight.output.tsv,
+        ref=REF,
+        fai=REF + ".fai"
+    output:
+        marker=PATH + "reference_checks/gridss_reference_setup.ok"
+    conda:
+        LOCAL_ENVS + "/gridss.yaml"
+    shell:
+        """
+        set -euo pipefail
+        GRIDSS_JAR=$(find "$CONDA_PREFIX/share" -type f -name '*gridss*jar-with-dependencies.jar' | head -n 1)
+        test -n "$GRIDSS_JAR"
+        gridss -s setupreference -r {input.ref:q} -j "$GRIDSS_JAR"
+        mkdir -p $(dirname {output.marker:q})
+        touch {output.marker:q}
+        """
+
+
 rule gridss_sv_calling:
     input:
+        preflight=rules.srs_preflight.output.tsv,
+        setup=rules.gridss_reference_setup.output.marker,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
@@ -391,7 +505,7 @@ rule filter_manta_sv:
         set -euo pipefail
         python {FILTER_SV_EVIDENCE_SCRIPT} --caller-tsv {input.tsv} --caller Manta \
             --min-support {EVIDENCE_MIN_SUPPORT} --min-svlen {EVIDENCE_MIN_SVLEN} \
-            --max-svlen {EVIDENCE_MAX_SVLEN} {params.gq} {params.blacklist} \
+            --max-svlen {EVIDENCE_MAX_SVLEN} {CANONICAL_FLAG} {params.gq} {params.blacklist} \
             --output-tsv {output.tsv} --output-ids {output.ids}
         bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.vcf}
         """
@@ -415,7 +529,7 @@ rule filter_delly_sv:
         set -euo pipefail
         python {FILTER_SV_EVIDENCE_SCRIPT} --caller-tsv {input.tsv} --caller Delly \
             --min-support {EVIDENCE_MIN_SUPPORT} --min-svlen {EVIDENCE_MIN_SVLEN} \
-            --max-svlen {EVIDENCE_MAX_SVLEN} {params.gq} {params.blacklist} \
+            --max-svlen {EVIDENCE_MAX_SVLEN} {CANONICAL_FLAG} {params.gq} {params.blacklist} \
             --output-tsv {output.tsv} --output-ids {output.ids}
         bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.vcf}
         """
@@ -485,6 +599,7 @@ rule summarize_caller_support:
 
 rule deepvariant_snv_indel_calling:
     input:
+        preflight=rules.srs_preflight.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
@@ -528,6 +643,39 @@ rule whatshap_phasing:
         mkdir -p $(dirname {output.phased})
         whatshap phase --reference {input.ref} -o {output.phased} {input.vcf} {input.bam} --ignore-read-groups
         tabix -f -p vcf {output.phased}
+        """
+
+
+rule nuclear_mito_small_variant_candidates:
+    input:
+        vcf=rules.deepvariant_snv_indel_calling.output.vcf,
+        tbi=rules.deepvariant_snv_indel_calling.output.tbi,
+        bed=NUCLEAR_MITO_BED
+    output:
+        vcf=PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz",
+        tbi=PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz.tbi"
+    conda:
+        CONDAENV + "annotsv.yaml"
+    shell:
+        """
+        bcftools view -f 'PASS,.' -R {input.bed:q} -Oz -o {output.vcf:q} {input.vcf:q}
+        tabix -f -p vcf {output.vcf:q}
+        """
+
+
+rule vep_nuclear_mito_small_variants:
+    input:
+        vcf=rules.nuclear_mito_small_variant_candidates.output.vcf
+    output:
+        tsv=PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vep.tsv"
+    threads: THREADS
+    conda:
+        LOCAL_ENVS + "/vep.yaml"
+    shell:
+        """
+        vep --input_file {input.vcf:q} --format vcf --output_file {output.tsv:q} --tab --force_overwrite \
+          --cache --offline --dir_cache {VEP_CACHE_DIR:q} --cache_version {VEP_CACHE_VERSION} \
+          --assembly {VEP_ASSEMBLY} --canonical --flag_pick --symbol --biotype --numbers --fork {threads}
         """
 
 
@@ -714,9 +862,11 @@ rule human_gene_phenotypes:
 rule rank_genomewide_candidates:
     input:
         annotsv=rules.annotsv_annotation.output.tsv,
-        genes=rules.extract_nonpanel_genes.output.genes,
+        genes=rules.extract_sv_genes.output.genes,
         phenotypes=rules.human_gene_phenotypes.output.tsv,
-        panel=GENE_LIST
+        panel=GENE_LIST,
+        hpo=DISCOVERY_HPO_FILE,
+        edges=MONARCH_EDGES
     output:
         tsv=PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv"
     conda:
@@ -724,7 +874,8 @@ rule rank_genomewide_candidates:
     shell:
         """
         python {SCRIPTS}/rank_sv_gene_candidates.py --annotsv {input.annotsv} --genes {input.genes} \
-            --phenotypes {input.phenotypes} --panel {input.panel} --output {output.tsv}
+            --phenotypes {input.phenotypes} --panel {input.panel} --hpo-seeds {input.hpo} \
+            --edges {input.edges} --output {output.tsv}
         """
 
 
@@ -739,13 +890,13 @@ rule vep_sv_annotation:
         txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
     threads: THREADS
     conda:
-        CONDAENV + "vep.yaml"
+        LOCAL_ENVS + "/vep.yaml"
     shell:
         """
         set -euo pipefail
         mkdir -p $(dirname {output.txt})
         vep --input_file {input.vcf} --format vcf --output_file {output.txt} --cache --offline \
-            --dir_cache {VEP_CACHE_DIR} --assembly {VEP_ASSEMBLY} --canonical --overlaps \
+            --dir_cache {VEP_CACHE_DIR} --cache_version {VEP_CACHE_VERSION} --assembly {VEP_ASSEMBLY} --canonical --overlaps \
             --flag_pick --symbol --biotype --max_sv_size 250000000 --batch_size 100 --fork {threads}
         """
 
@@ -757,7 +908,7 @@ rule vep_sv_annotation_panel_only:
     output:
         txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
     conda:
-        CONDAENV + "vep.yaml"
+        LOCAL_ENVS + "/vep.yaml"
     shell:
         """
         python {SCRIPTS}/filter_vep_panel.py --vep {input.txt} --genes {input.genes} --output {output.txt}
@@ -969,14 +1120,15 @@ rule add_supporting_evidence:
         melt=lambda wc: (
             f"--melt {PATH}{wc.sample}/mei/melt/{wc.sample}.MEI.merged.vcf.gz"
             if MELT_ENABLED else ""
-        )
+        ),
+        gridss_qual=lambda wc: f"--gridss-min-qual {GRIDSS_MIN_QUAL}" if GRIDSS_MIN_QUAL is not None else ""
     conda:
         CONDAENV + "monarch.yaml"
     shell:
         """
         python {LOCAL_SCRIPTS}/add_supporting_evidence.py --integrated {input.integrated:q} \
             --integrated-vcf {input.integrated_vcf:q} --expansionhunter {input.expansionhunter:q} \
-            {params.gridss} {params.melt} --breakpoint-tolerance {SUPPORTING_BP_TOLERANCE} \
+            {params.gridss} {params.gridss_qual} {params.melt} --breakpoint-tolerance {SUPPORTING_BP_TOLERANCE} \
             --output {output.tsv:q}
         """
 
@@ -1003,6 +1155,79 @@ rule mitocarta_context_srs:
         python {SCRIPTS}/annotate_mitocarta_context.py --integrated {input.integrated:q} \
             --mitocarta {input.mitocarta:q} {params.pathways} --ranking {input.ranking:q} \
             --output {output.tsv:q} --summary-output {output.summary:q}
+        """
+
+
+##############################################
+# Diagnostic-support review and benchmarking
+##############################################
+
+rule build_diagnostic_candidates:
+    input:
+        table=diagnostic_source,
+        script=LOCAL_SCRIPTS + "/build_diagnostic_candidates.py"
+    output:
+        tsv=PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        python {input.script:q} --input {input.table:q} --top-n {DIAGNOSTIC_TOP_N} --output {output.tsv:q}
+        """
+
+
+rule samplot_diagnostic_candidates:
+    input:
+        candidates=rules.build_diagnostic_candidates.output.tsv,
+        bam=lambda wc: BAMS[wc.sample],
+        bai=lambda wc: bam_index_for(wc.sample),
+        ref=REF,
+        script=LOCAL_SCRIPTS + "/run_samplot_candidates.py"
+    output:
+        manifest=PATH + "{sample}/diagnostic_review/{sample}.samplot_manifest.tsv"
+    params:
+        outdir=PATH + "{sample}/diagnostic_review/samplot"
+    conda:
+        LOCAL_ENVS + "/samplot.yaml"
+    shell:
+        """
+        python {input.script:q} --input {input.candidates:q} --bam {input.bam:q} --reference {input.ref:q} \
+          --sample {wildcards.sample:q} --out-dir {params.outdir:q} --top-n {SAMPLOT_TOP_N} \
+          --min-mapq {SAMPLOT_MIN_MAPQ} --manifest {output.manifest:q}
+        """
+
+
+rule benchmark_diagnostic_candidates:
+    input:
+        candidates=rules.build_diagnostic_candidates.output.tsv,
+        truth=lambda wc: CANDIDATE_TRUTH,
+        script=LOCAL_SCRIPTS + "/benchmark_candidates.py"
+    output:
+        tsv=PATH + "{sample}/benchmark/{sample}.candidate_benchmark.tsv",
+        json=PATH + "{sample}/benchmark/{sample}.candidate_benchmark.json"
+    conda:
+        LOCAL_ENVS + "/benchmark.yaml"
+    shell:
+        """
+        python {input.script:q} --candidates {input.candidates:q} --truth {input.truth:q} \
+          --output-tsv {output.tsv:q} --output-json {output.json:q}
+        """
+
+
+rule benchmark_sv_callset:
+    input:
+        calls=rules.combine_sv_and_cnv_calls.output.vcf,
+        truth=lambda wc: SV_TRUTH_VCFS[wc.sample],
+        ref=REF
+    output:
+        directory(PATH + "{sample}/benchmark/truari")
+    conda:
+        LOCAL_ENVS + "/benchmark.yaml"
+    shell:
+        """
+        mkdir -p $(dirname {output:q})
+        truvari bench -b {input.truth:q} -c {input.calls:q} -f {input.ref:q} -o {output:q}
+        test -s {output:q}/summary.json
         """
 
 

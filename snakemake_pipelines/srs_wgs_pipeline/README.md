@@ -83,7 +83,13 @@ Illumina WGS BAM
       │     ├── MELT → mobile-element insertions
       │     └── Mutserve2 → mtDNA SNV / heteroplasmy
       │
-      └── Final integrated SV/gene table
+      └── Diagnostic-support review
+            ├── nuclear mitochondrial/bioenergetic candidates first
+            ├── known disease genes
+            ├── genome-wide candidates
+            ├── secondary mtDNA branch
+            ├── Samplot images/manifest
+            └── optional candidate and Truvari benchmarks
 ```
 
 ---
@@ -139,6 +145,13 @@ The DeepVariant VCF is also used for:
 
 - local WhatsHap phasing;
 - SNP/allelic information used by CNVpytor.
+
+The complete genome-wide VCF is preserved. A second PASS-focused VCF and VEP
+table are generated for loci in `nuclear_mito_candidate_bed`, so SNV/indel
+candidates in the main nuclear mitochondrial/bioenergetic hypothesis are easy
+to review without pretending that the rest of the WGS callset was never made.
+The repository default is the curated optic-neuropathy mitochondrial-gene BED;
+replace it with a broader validated nuclear-mitochondrial BED when appropriate.
 
 ### CNVpytor
 
@@ -289,6 +302,7 @@ samples:
 path:
 ref:
 candidate_genes_list:
+nuclear_mito_candidate_bed:
 exclude_bed:
 expansionhunter_catalog:
 vep_cache_dir:
@@ -299,6 +313,62 @@ monarch_edges:
 
 Optional tools/resources such as MELT and MitoCarta can remain disabled until
 their local files are ready.
+
+For the intended mitochondrial-biology analysis, install the MitoCarta 3.0
+inventory and pathway GMX, set their paths, and change `mitocarta_enabled` to
+`true`. This promotes nuclear-encoded mitochondrial genes and preserves their
+pathway/subcompartment context. Mutserve remains a separate secondary mtDNA
+branch.
+
+## Install and validate the environments
+
+Create the small runner environment once:
+
+```bash
+mamba env create -f environment.yaml
+mamba activate srs-wgs-runner
+```
+
+After editing `config_srs_wgs.yaml`, resolve and create every environment used
+by the selected DAG without running an analysis:
+
+```bash
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-create-envs-only --cores 1
+```
+
+Then validate paths, indexes, optional-resource switches, and the DAG:
+
+```bash
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --cores 1 reference_checks/srs_preflight.tsv
+
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --cores 32 --dry-run
+```
+
+Preflight stops before expensive callers if a BAM/index, FASTA index, GRIDSS
+BWA index, annotation bundle, HPO/Monarch resource, or enabled optional resource
+is missing. Each sample also receives `qc/*.wgs_qc_summary.tsv`; threshold
+failures are marked `REVIEW` instead of silently discarding calls.
+
+## Candidate review and benchmarking
+
+The principal review output is:
+
+```text
+<sample>/diagnostic_review/<sample>.diagnostic_candidates.tsv
+```
+
+It is an ordered research/diagnostic-support table, not a pathogenicity
+classification. Samplot writes a manifest beside it. Interchromosomal BNDs are
+explicitly retained for manual two-breakpoint review instead of being drawn as
+false same-chromosome intervals.
+
+To benchmark prioritization, copy `validation/candidate_truth.template.tsv`,
+enter known positive-control genes/IDs, and set `candidate_truth_tsv`. To
+benchmark SV detection against a sample truth VCF, add that sample under
+`sv_truth_vcfs`; Truvari output is written under `<sample>/benchmark/truari/`.
 
 ---
 

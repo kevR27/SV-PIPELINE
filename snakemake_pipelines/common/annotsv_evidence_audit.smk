@@ -9,7 +9,7 @@ from audit_annotsv_evidence import fingerprint as audit_fingerprint
 
 rule annotsv_output_reconciliation:
     input:
-        vcf=PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz",
+        vcf=globals().get("ANNOTSV_AUDIT_VCF", PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"),
         annotsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",
         unannotated=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.unannotated.tsv",
         script=SCRIPTS + "/audit_sv_outputs.py",

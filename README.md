@@ -1007,6 +1007,7 @@ The repository also contains a parallel short-read WGS workflow:
 Illumina BAM
 │
 ├── mosdepth
+├── preflight + QC gate
 ├── DeepVariant -> WhatsHap
 │
 ├── Manta ─┐
@@ -1016,10 +1017,11 @@ Illumina BAM
                                                    ├── AnnotSV
                                                    ├── VEP
                                                    ├── Monarch/HPO
-                                                   └── integrated SV/gene table
+                                                   └── diagnostic-support candidate table
 
 BAM -> ExpansionHunter
 BAM -> MELTv2
+BAM -> Mutserve2 (secondary mtDNA branch)
 ```
 
 The same general rules are used:
@@ -1030,6 +1032,11 @@ The same general rules are used:
 - ExpansionHunter and MELT remain independent evidence branches;
 - needLR is not used for SRS;
 - the integrated-table structure remains as similar as possible between LRS and SRS.
+- nuclear genes involved in mitochondrial biology and bioenergetic pathways are
+  the primary review focus when MitoCarta is enabled;
+- mtDNA calls are retained as a separate, secondary analysis;
+- Samplot review and optional positive-control/Truvari benchmarking provide
+  validation layers without converting research evidence into a diagnosis.
 
 The SRS workflow can later be compared with the LRS results to evaluate which types of SVs and genomic regions benefit most from long-read sequencing.
 
@@ -1050,7 +1057,13 @@ SV-PIPELINE/
     │   ├── Snakefile_LRS_postprocess
     │   ├── config_lrs.yaml
     │   └── PIPELINE_LOGIC.md
-    └── srs/
+    └── srs_wgs_pipeline/
+        ├── Snakefile_SRS_WGS
+        ├── config_srs_wgs.yaml
+        ├── environment.yaml
+        ├── envs/
+        ├── scripts/
+        └── validation/
 ```
 
 ---
