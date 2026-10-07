@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRS = ROOT / "snakemake_pipelines" / "srs_wgs_pipeline"
+SCRIPTS = ROOT / "scripts"
 
 
 def module(name, path):
@@ -32,7 +33,7 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("{CANONICAL_FLAG}", snake)
 
     def test_missing_cnvpytor_qc_never_passes(self):
-        script = module("combine_srs", SRS / "scripts" / "combine_sv_cnv_evidence.py")
+        script = module("combine_srs", SCRIPTS / "combine_sv_cnv_evidence.py")
         with tempfile.TemporaryDirectory() as tmp:
             calls = Path(tmp) / "calls.tsv"
             calls.write_text("deletion\tchr1:100-200\t101\t0.5\t.\t.\t.\t.\t.\t.\t1000\n", encoding="utf-8")
@@ -43,7 +44,7 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("MISSING_EVAL1", rows[0]["flags"])
 
     def test_gridss_rejects_failed_filter_and_low_qual(self):
-        script = module("support_srs", SRS / "scripts" / "add_supporting_evidence.py")
+        script = module("support_srs", SCRIPTS / "add_supporting_evidence.py")
         with tempfile.TemporaryDirectory() as tmp:
             vcf = Path(tmp) / "gridss.vcf"
             vcf.write_text(
@@ -66,7 +67,7 @@ class SrsWgsPipelineTests(unittest.TestCase):
                 "sv3\tMT-ND1\tMTDNA_ENCODED_GENE\tNON_PANEL\t100\n",
                 encoding="utf-8",
             )
-            subprocess.run([sys.executable, str(SRS / "scripts" / "build_diagnostic_candidates.py"), "--input", str(source), "--output", str(output)], check=True)
+            subprocess.run([sys.executable, str(SCRIPTS / "build_diagnostic_candidates.py"), "--input", str(source), "--output", str(output)], check=True)
             lines = output.read_text(encoding="utf-8").splitlines()
         self.assertIn("NUCLEAR_MITOCHONDRIAL_PRIMARY", lines[1])
         self.assertIn("MTDNA_SECONDARY", lines[-1])

@@ -15,7 +15,7 @@ path: "/DATA/srs_results"
 ref: "/DATA/Reference/hg38.fa"
 threads: 32
 
-# Existing repository resources (read-only from this workflow).
+# Central environment, panel and reference folders shared with the LRS workflow.
 condaenv: "../../envs/"
 bed: "../../PANEL_OA/optic_neuropathy_panel.bed"
 candidate_genes_list: "../../PANEL_OA/optic_neuropathy_genes.txt"

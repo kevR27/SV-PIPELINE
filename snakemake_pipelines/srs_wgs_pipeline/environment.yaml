@@ -1,8 +1,0 @@
-name: srs-wgs-runner
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  - python>=3.11,<3.13
-  - snakemake-minimal>=9,<10
-  - mamba>=2,<3

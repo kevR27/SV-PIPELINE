@@ -40,10 +40,11 @@ GENE_BED = config["gene_bed"]
 EXCLUDE_BED = config["exclude_bed"]
 EH_CATALOG = config["expansionhunter_catalog"]
 
-CONDAENV = config["condaenv"]
+ENV_DIR = os.path.abspath(os.path.join(workflow.basedir, config["condaenv"]))
+CONDAENV = ENV_DIR + "/"
 SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
-LOCAL_SCRIPTS = os.path.join(workflow.basedir, "scripts")
-LOCAL_ENVS = os.path.join(workflow.basedir, "envs")
+# LRS and SRS use the same central folders. The Snakefiles remain separated,
+# while all helper scripts and environment definitions are easy to find.
 
 ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
 HPO_TERMS = config.get("hpo_terms")
@@ -261,7 +262,7 @@ rule all:
 
 rule srs_preflight:
     input:
-        script=LOCAL_SCRIPTS + "/preflight_srs_wgs.py",
+        script=SCRIPTS + "/preflight_srs_wgs.py",
         bams=list(BAMS.values()),
         bais=[bam_index_for(sample) for sample in SAMPLES]
     output:
@@ -272,7 +273,7 @@ rule srs_preflight:
         mito_file=(f"--mitocarta {MITOCARTA_FILE}" if MITOCARTA_FILE else ""),
         pathways=(f"--pathways-gmx {MITOCARTA_PATHWAYS}" if MITOCARTA_PATHWAYS else "")
     conda:
-        LOCAL_ENVS + "/qc.yaml"
+        ENV_DIR + "/qc.yaml"
     shell:
         """
         python {input.script:q} --reference {REF:q} --panel-bed {PANEL_BED:q} --gene-list {GENE_LIST:q} \
@@ -303,7 +304,7 @@ rule mosdepth_coverage:
         prefix=PATH + "{sample}/coverage/{sample}"
     threads: THREADS
     conda:
-        LOCAL_ENVS + "/qc.yaml"
+        ENV_DIR + "/qc.yaml"
     shell:
         """
         set -euo pipefail
@@ -324,7 +325,7 @@ rule alignment_qc:
         stats=PATH + "{sample}/qc/{sample}.samtools.stats.txt"
     threads: THREADS
     conda:
-        LOCAL_ENVS + "/qc.yaml"
+        ENV_DIR + "/qc.yaml"
     shell:
         """
         set -euo pipefail
@@ -340,11 +341,11 @@ rule summarize_wgs_qc:
     input:
         flagstat=rules.alignment_qc.output.flagstat,
         summary=rules.mosdepth_coverage.output.summary,
-        script=LOCAL_SCRIPTS + "/build_qc_summary.py"
+        script=SCRIPTS + "/build_qc_summary.py"
     output:
         tsv=PATH + "{sample}/qc/{sample}.wgs_qc_summary.tsv"
     conda:
-        LOCAL_ENVS + "/qc.yaml"
+        ENV_DIR + "/qc.yaml"
     shell:
         """
         python {input.script:q} --sample {wildcards.sample:q} --flagstat {input.flagstat:q} \
@@ -416,7 +417,7 @@ rule gridss_reference_setup:
     output:
         marker=PATH + "reference_checks/gridss_reference_setup.ok"
     conda:
-        LOCAL_ENVS + "/gridss.yaml"
+        ENV_DIR + "/gridss.yaml"
     shell:
         """
         set -euo pipefail
@@ -447,7 +448,7 @@ rule gridss_sv_calling:
     resources:
         mem_mb=32000
     conda:
-        LOCAL_ENVS + "/gridss.yaml"
+        ENV_DIR + "/gridss.yaml"
     shell:
         """
         set -euo pipefail
@@ -672,7 +673,7 @@ rule vep_nuclear_mito_small_variants:
         tsv=PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vep.tsv"
     threads: THREADS
     conda:
-        LOCAL_ENVS + "/vep.yaml"
+        ENV_DIR + "/srs_vep.yaml"
     shell:
         """
         vep --input_file {input.vcf:q} --format vcf --output_file {output.tsv:q} --tab --force_overwrite \
@@ -699,7 +700,7 @@ rule cnvpytor_cnv_calling:
     params:
         outdir=PATH + "{sample}/cnv/cnvpytor"
     conda:
-        LOCAL_ENVS + "/cnvpytor.yaml"
+        ENV_DIR + "/cnvpytor.yaml"
     shell:
         """
         set -euo pipefail
@@ -735,7 +736,7 @@ rule combine_sv_and_cnv_calls:
         breakpoint=rules.survivor_merge.output.vcf,
         cnv=rules.cnvpytor_cnv_calling.output.primary,
         fai=REF + ".fai",
-        script=LOCAL_SCRIPTS + "/combine_sv_cnv_evidence.py"
+        script=SCRIPTS + "/combine_sv_cnv_evidence.py"
     output:
         raw=PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf",
         vcf=PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz",
@@ -892,7 +893,7 @@ rule vep_sv_annotation:
         txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt"
     threads: THREADS
     conda:
-        LOCAL_ENVS + "/vep.yaml"
+        ENV_DIR + "/srs_vep.yaml"
     shell:
         """
         set -euo pipefail
@@ -910,7 +911,7 @@ rule vep_sv_annotation_panel_only:
     output:
         txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
     conda:
-        LOCAL_ENVS + "/vep.yaml"
+        ENV_DIR + "/srs_vep.yaml"
     shell:
         """
         python {SCRIPTS}/filter_vep_panel.py --vep {input.txt} --genes {input.genes} --output {output.txt}
@@ -920,7 +921,7 @@ rule vep_sv_annotation_panel_only:
 rule summarize_vep_transcripts:
     input:
         txt=rules.vep_sv_annotation.output.txt,
-        script=LOCAL_SCRIPTS + "/summarize_vep_transcripts.py"
+        script=SCRIPTS + "/summarize_vep_transcripts.py"
     output:
         tsv=PATH + "{sample}/sv/vep/{sample}_SV_VEP.summary.tsv"
     conda:
@@ -1055,7 +1056,7 @@ rule prepare_mt_reference:
         fasta=PATH + "reference/mt/{contig}.fa",
         fai=PATH + "reference/mt/{contig}.fa.fai"
     conda:
-        LOCAL_ENVS + "/qc.yaml"
+        ENV_DIR + "/qc.yaml"
     shell:
         """
         mkdir -p $(dirname {output.fasta})
@@ -1077,7 +1078,7 @@ rule mutserve_mtdna_calling:
         tsv=PATH + "{sample}/mtDNA/{sample}.mutserve.tsv"
     threads: min(THREADS, 8)
     conda:
-        LOCAL_ENVS + "/mutserve.yaml"
+        ENV_DIR + "/mutserve.yaml"
     shell:
         """
         set -euo pipefail
@@ -1086,7 +1087,7 @@ rule mutserve_mtdna_calling:
         samtools index -@ {threads} {output.mtbam}
         mutserve call --reference {input.mtref} --output {output.vcf} --threads {threads} \
             --level {MUTSERVE_LEVEL} {output.mtbam}
-        python {LOCAL_SCRIPTS}/summarize_mtdna_variants.py --vcf {output.vcf} --output {output.tsv}
+        python {SCRIPTS}/summarize_mtdna_variants.py --vcf {output.vcf} --output {output.tsv}
         """
 
 
@@ -1128,7 +1129,7 @@ rule add_supporting_evidence:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python {LOCAL_SCRIPTS}/add_supporting_evidence.py --integrated {input.integrated:q} \
+        python {SCRIPTS}/add_supporting_evidence.py --integrated {input.integrated:q} \
             --integrated-vcf {input.integrated_vcf:q} --expansionhunter {input.expansionhunter:q} \
             {params.gridss} {params.gridss_qual} {params.melt} --breakpoint-tolerance {SUPPORTING_BP_TOLERANCE} \
             --output {output.tsv:q}
@@ -1167,7 +1168,7 @@ rule mitocarta_context_srs:
 rule build_diagnostic_candidates:
     input:
         table=diagnostic_source,
-        script=LOCAL_SCRIPTS + "/build_diagnostic_candidates.py"
+        script=SCRIPTS + "/build_diagnostic_candidates.py"
     output:
         tsv=PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv"
     conda:
@@ -1205,13 +1206,13 @@ rule samplot_diagnostic_candidates:
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
-        script=LOCAL_SCRIPTS + "/run_samplot_candidates.py"
+        script=SCRIPTS + "/run_samplot_candidates.py"
     output:
         manifest=PATH + "{sample}/diagnostic_review/{sample}.samplot_manifest.tsv"
     params:
         outdir=PATH + "{sample}/diagnostic_review/samplot"
     conda:
-        LOCAL_ENVS + "/samplot.yaml"
+        ENV_DIR + "/srs_samplot.yaml"
     shell:
         """
         python {input.script:q} --input {input.candidates:q} --bam {input.bam:q} --reference {input.ref:q} \
@@ -1224,12 +1225,12 @@ rule benchmark_diagnostic_candidates:
     input:
         candidates=rules.build_diagnostic_candidates.output.tsv,
         truth=lambda wc: CANDIDATE_TRUTH,
-        script=LOCAL_SCRIPTS + "/benchmark_candidates.py"
+        script=SCRIPTS + "/benchmark_candidates.py"
     output:
         tsv=PATH + "{sample}/benchmark/{sample}.candidate_benchmark.tsv",
         json=PATH + "{sample}/benchmark/{sample}.candidate_benchmark.json"
     conda:
-        LOCAL_ENVS + "/benchmark.yaml"
+        ENV_DIR + "/benchmark.yaml"
     shell:
         """
         python {input.script:q} --candidates {input.candidates:q} --truth {input.truth:q} \
@@ -1245,7 +1246,7 @@ rule benchmark_sv_callset:
     output:
         directory(PATH + "{sample}/benchmark/truari")
     conda:
-        LOCAL_ENVS + "/benchmark.yaml"
+        ENV_DIR + "/benchmark.yaml"
     shell:
         """
         mkdir -p $(dirname {output:q})

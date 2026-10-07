@@ -34,6 +34,40 @@ class PipelineParityTests(unittest.TestCase):
                 self.assertIn(script, self.lrs)
                 self.assertIn(script, self.srs)
 
+    def test_scripts_and_environments_are_centralized(self):
+        self.assertFalse((SRS / "scripts").exists())
+        self.assertFalse((SRS / "envs").exists())
+        self.assertFalse((SRS / "environment.yaml").exists())
+
+        srs_helpers = [
+            "add_supporting_evidence.py",
+            "benchmark_candidates.py",
+            "build_diagnostic_candidates.py",
+            "build_qc_summary.py",
+            "combine_sv_cnv_evidence.py",
+            "preflight_srs_wgs.py",
+            "run_samplot_candidates.py",
+            "summarize_mtdna_variants.py",
+            "summarize_vep_transcripts.py",
+        ]
+        srs_environments = [
+            "benchmark.yaml",
+            "cnvpytor.yaml",
+            "gridss.yaml",
+            "mutserve.yaml",
+            "qc.yaml",
+            "srs_samplot.yaml",
+            "srs_vep.yaml",
+        ]
+        for filename in srs_helpers:
+            self.assertTrue((ROOT / "scripts" / filename).exists(), filename)
+        for filename in srs_environments:
+            self.assertTrue((ROOT / "envs" / filename).exists(), filename)
+
+        self.assertIn('../../envs/', (SRS / "config_srs_wgs.yaml").read_text())
+        self.assertIn('ENV_DIR + "/srs_vep.yaml"', self.srs)
+        self.assertIn('ENV_DIR + "/srs_samplot.yaml"', self.srs)
+
     def test_shared_assessment_and_audit_layers_are_included(self):
         for include in ["allele_assessment.smk", "annotsv_evidence_audit.smk"]:
             with self.subTest(include=include):

@@ -1066,11 +1066,12 @@ SV-PIPELINE/
     └── srs_wgs_pipeline/
         ├── Snakefile_SRS_WGS
         ├── config_srs_wgs.yaml
-        ├── environment.yaml
-        ├── envs/
-        ├── scripts/
         └── validation/
 ```
+
+Both workflows use the central `scripts/` and `envs/` folders. The installed
+Conda environments on the Bologna server remain under
+`/home/casadei7/snakemake_envs/envs/` and are reused with `--conda-prefix`.
 
 ---
 

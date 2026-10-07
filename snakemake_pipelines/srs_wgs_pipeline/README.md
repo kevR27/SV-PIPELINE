@@ -6,13 +6,16 @@ Illumina data.
 The pipeline is kept separate from the LRS workflow. Nothing in the LRS folder
 needs to be changed to run this SRS analysis.
 
-The two files you normally need are:
+The two files kept in this pipeline folder are:
 
 - `Snakefile_SRS_WGS`
 - `config_srs_wgs.yaml`
 
-The `scripts/` folder contains only helper scripts used by this SRS workflow.
-The `envs/` folder contains only the additional environments needed here.
+As in the LRS workflow, helper programs are stored in the repository-level
+`scripts/` folder and Conda definitions are stored in the repository-level
+`envs/` folder. Only the Snakefile, configuration and workflow documentation
+remain separated here. This keeps installation simple without mixing the LRS
+and SRS workflow logic.
 
 ---
 
@@ -196,7 +199,7 @@ supporting information.
 
 The script:
 
-`scripts/combine_sv_cnv_evidence.py`
+`../../scripts/combine_sv_cnv_evidence.py`
 
 does three simple things:
 
@@ -219,7 +222,7 @@ VEP is run with `--flag_pick`, not `--pick`.
 
 Therefore all transcript consequences are retained. The script:
 
-`scripts/summarize_vep_transcripts.py`
+`../../scripts/summarize_vep_transcripts.py`
 
 creates a readable per-SV/per-gene summary without deleting the other
 transcripts.
@@ -247,7 +250,7 @@ mitochondrial-genome variants.
 
 The output is summarized by:
 
-`scripts/summarize_mtdna_variants.py`
+`../../scripts/summarize_mtdna_variants.py`
 
 The current branch is deliberately described as **mtDNA SNV/heteroplasmy
 analysis**, not complete mtDNA variant detection, because Mutserve2 VCF output
@@ -321,31 +324,36 @@ Install the MitoCarta 3.0 inventory and pathway GMX at the configured paths.
 This promotes nuclear-encoded mitochondrial genes and preserves their pathway
 and subcompartment context. Mutserve remains a separate secondary mtDNA branch.
 
-## Install and validate the environments
+## Validate and reuse the environments
 
-Create the small runner environment once:
+There is no separate `environment.yaml`. It duplicated the Snakemake runner
+already installed on the Bologna server and was not used by the analysis rules.
+Activate the existing Snakemake environment, then let `--conda-prefix` reuse
+the environments already stored in `/home/casadei7/snakemake_envs/envs/`.
 
-```bash
-mamba env create -f environment.yaml
-mamba activate srs-wgs-runner
-```
-
-After editing `config_srs_wgs.yaml`, resolve and create every environment used
-by the selected DAG without running an analysis:
+After editing `config_srs_wgs.yaml`, check whether every environment required
+by the selected DAG is already available. Snakemake creates only a missing
+environment; it does not reinstall environments that it can reuse:
 
 ```bash
 snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
-  --use-conda --conda-create-envs-only --cores 1
+  --use-conda \
+  --conda-prefix "/home/casadei7/snakemake_envs/envs/" \
+  --conda-create-envs-only --cores 1
 ```
 
 Then validate paths, indexes, optional-resource switches, and the DAG:
 
 ```bash
 snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
-  --use-conda --cores 1 reference_checks/srs_preflight.tsv
+  --use-conda \
+  --conda-prefix "/home/casadei7/snakemake_envs/envs/" \
+  --cores 1 reference_checks/srs_preflight.tsv
 
 snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
-  --use-conda --cores 32 --dry-run
+  --use-conda \
+  --conda-prefix "/home/casadei7/snakemake_envs/envs/" \
+  --cores 32 --dry-run
 ```
 
 Preflight stops before expensive callers if a BAM/index, FASTA index, GRIDSS
