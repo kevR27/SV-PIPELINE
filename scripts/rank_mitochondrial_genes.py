@@ -552,11 +552,25 @@ def main():
         rows.append(row)
 
     out = pd.DataFrame(rows)
-    # Overall encoding rank is panel-neutral. Panel membership only defines
-    # the separate within-panel/non-panel rank below.
+    # Nuclear-encoded mitochondrial genes are the primary study focus. mtDNA
+    # genes remain visible, but they form a clearly labelled secondary section
+    # that requires dedicated mtDNA/heteroplasmy interpretation.
+    encoding_priority = {"NUCLEAR": 0, "MTDNA": 1}
+    out["_ENCODING_PRIORITY"] = (
+        out["ENCODING_GENOME"].map(encoding_priority).fillna(9)
+    )
+    out["MITO_ANALYSIS_ROLE"] = out["ENCODING_GENOME"].map(
+        {
+            "NUCLEAR": "PRIMARY_NUCLEAR_MITOCHONDRIAL",
+            "MTDNA": "SECONDARY_MTDNA",
+        }
+    ).fillna("SECONDARY_OTHER")
+
+    # Panel membership is descriptive and does not change the biological
+    # priority or the evidence score.
     out = out.sort_values(
         [
-            "ENCODING_GENOME",
+            "_ENCODING_PRIORITY",
             "_GENE_TIER_RANK",
             "_MECHANISM_RANK",
             "_TECHNICAL_RANK",
@@ -569,6 +583,8 @@ def main():
             True, False, False, False, False, False, False, True
         ],
     )
+
+    out["MITO_REVIEW_ORDER"] = range(1, len(out) + 1)
 
     out["MITO_RANK_WITHIN_ENCODING"] = (
         out.groupby("ENCODING_GENOME").cumcount() + 1
@@ -594,10 +610,13 @@ def main():
             "_MECHANISM_RANK",
             "_TECHNICAL_RANK",
             "_POPULATION_RANK",
+            "_ENCODING_PRIORITY",
         ],
         errors="ignore",
     )
     ordered = [
+        "MITO_REVIEW_ORDER",
+        "MITO_ANALYSIS_ROLE",
         "MITO_RANK_WITHIN_ENCODING",
         "MITO_RANK_WITHIN_ENCODING_PANEL_STATUS",
         "GENE", "ENCODING_GENOME", "GENE_CLASS", "MTDNA_FUNCTION",

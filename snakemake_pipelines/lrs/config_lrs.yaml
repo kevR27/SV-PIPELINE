@@ -139,6 +139,18 @@ thesis_methylation_region: null
 # MITOCARTA / MITOCHONDRIAL CONTEXT
 # ============================================================
 
+# Main biological focus of the LRS interpretation:
+#   PRIMARY   = nuclear genes encoding mitochondrial proteins/pathways
+#   SECONDARY = variants physically located in the mitochondrial genome
+#
+# The secondary chrM output below is extracted from the existing Clair3 VCF.
+# It is useful for candidate review, but Clair3 is not a dedicated heteroplasmy
+# caller and this output must not be described as a complete mtDNA diagnosis.
+analysis_primary_focus: "nuclear_mitochondrial_genes"
+mtdna_analysis_role: "secondary"
+lrs_mtdna_secondary_enabled: true
+mt_contig: "chrM"
+
 # Official Human MitoCarta3.0 workbook. Download from the Broad Institute
 # MitoCarta3.0 resource into this local path before running the annotation.
 mitocarta_file: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/mitocarta/Human.MitoCarta3.0.xls"
@@ -312,7 +324,7 @@ r_plot_top_hpo: 20
 # Dorado basecalling. These paths currently point to the WGS BAMs used by the
 # pipeline; if a BAM no longer retains the required Dorado metadata, replace
 # that sample path with its original Dorado basecalled BAM.
-dorado_bin: " /home/casadei7/dorado-1.3.0/bin/dorado"
+dorado_bin: "/home/casadei7/dorado-1.3.0/bin/dorado"
 dorado_summary_bams:
   "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
   "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"

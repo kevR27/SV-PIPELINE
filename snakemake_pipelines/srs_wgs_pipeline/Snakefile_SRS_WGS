@@ -36,6 +36,7 @@ THREADS = int(config.get("threads", 16))
 PANEL_BED = config.get("bed")
 GENE_LIST = config["candidate_genes_list"]
 NUCLEAR_MITO_BED = config["nuclear_mito_candidate_bed"]
+GENE_BED = config["gene_bed"]
 EXCLUDE_BED = config["exclude_bed"]
 EH_CATALOG = config["expansionhunter_catalog"]
 
@@ -246,6 +247,7 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_supporting_evidence.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/diagnostic_review/{sample}.mitochondrial_gene_ranking.tsv", sample=SAMPLES),
         SAMPLOT_TARGETS,
         CANDIDATE_BENCHMARK_TARGETS,
         SV_BENCHMARK_TARGETS,
@@ -274,7 +276,7 @@ rule srs_preflight:
     shell:
         """
         python {input.script:q} --reference {REF:q} --panel-bed {PANEL_BED:q} --gene-list {GENE_LIST:q} \
-          --nuclear-mito-bed {NUCLEAR_MITO_BED:q} \
+          --nuclear-mito-bed {NUCLEAR_MITO_BED:q} --gene-bed {GENE_BED:q} \
           --exclude-bed {EXCLUDE_BED:q} --repeat-catalog {EH_CATALOG:q} --hpo-seeds {DISCOVERY_HPO_FILE:q} \
           --monarch-nodes {MONARCH_NODES:q} --monarch-edges {MONARCH_EDGES:q} \
           --annotsv-dir {ANNOTSV_ANNOTATIONS_DIR:q} --vep-cache-dir {VEP_CACHE_DIR:q} \
@@ -1134,7 +1136,7 @@ rule add_supporting_evidence:
 
 
 ##############################################
-# Optional MitoCarta nuclear-mitochondrial context
+# Primary MitoCarta nuclear-mitochondrial context
 ##############################################
 
 rule mitocarta_context_srs:
@@ -1173,6 +1175,27 @@ rule build_diagnostic_candidates:
     shell:
         """
         python {input.script:q} --input {input.table:q} --top-n {DIAGNOSTIC_TOP_N} --output {output.tsv:q}
+        """
+
+
+rule rank_mitochondrial_genes_srs:
+    input:
+        integrated=diagnostic_source,
+        gene_bed=GENE_BED,
+        panel=GENE_LIST,
+        script=SCRIPTS + "/rank_mitochondrial_genes.py",
+        ranking_common=SCRIPTS + "/ranking_common.py"
+    output:
+        tsv=PATH + "{sample}/diagnostic_review/{sample}.mitochondrial_gene_ranking.tsv"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        python {input.script:q} \
+            --input {input.integrated:q} \
+            --gene-bed {input.gene_bed:q} \
+            --panel {input.panel:q} \
+            --output {output.tsv:q}
         """
 
 

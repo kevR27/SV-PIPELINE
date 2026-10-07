@@ -25,7 +25,21 @@ ONT BAM -> Straglr -> repeat-expansion evidence
 ONT BAM -> modkit extract -> per-read modification evidence
 ONT BAM -> TLDR -> mobile-element insertion evidence
 Clair3 + same-patient Sniffles SV VCF + BAM -> LongPhase
+Clair3 chrM calls -> separate secondary mtDNA candidate review
 ```
+
+## Main mitochondrial focus
+
+The primary mitochondrial analysis concerns nuclear genes encoding
+mitochondrial proteins and bioenergetic pathways. MitoCarta annotations and the
+mitochondrial gene ranking place this nuclear-encoded group first. mtDNA is
+retained as a separate secondary section rather than mixed into the main
+nuclear-gene ranking.
+
+The secondary LRS chrM table is extracted from the existing Clair3 VCF. It is
+a candidate-review output, not a validated heteroplasmy measurement and not a
+complete mtDNA diagnostic workflow. This limitation is written directly into
+the output table.
 
 ## Jasmine
 

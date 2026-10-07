@@ -76,7 +76,7 @@ Illumina WGS BAM
       │     ├── optic-neuropathy panel genes
       │     ├── non-panel genes
       │     ├── Monarch/HPO context
-      │     └── optional MitoCarta context
+      │     └── MitoCarta nuclear mitochondrial context
       │
       ├── Other variant classes
       │     ├── ExpansionHunter → repeat expansions
@@ -303,6 +303,7 @@ path:
 ref:
 candidate_genes_list:
 nuclear_mito_candidate_bed:
+gene_bed:
 exclude_bed:
 expansionhunter_catalog:
 vep_cache_dir:
@@ -311,14 +312,14 @@ monarch_nodes:
 monarch_edges:
 ```
 
-Optional tools/resources such as MELT and MitoCarta can remain disabled until
-their local files are ready.
+MELT can remain disabled until its local files are ready. MitoCarta is enabled
+because nuclear mitochondrial genes and bioenergetic pathways are the main
+biological focus. The preflight check will stop with a clear missing-resource
+message until the MitoCarta inventory and pathway files are installed.
 
-For the intended mitochondrial-biology analysis, install the MitoCarta 3.0
-inventory and pathway GMX, set their paths, and change `mitocarta_enabled` to
-`true`. This promotes nuclear-encoded mitochondrial genes and preserves their
-pathway/subcompartment context. Mutserve remains a separate secondary mtDNA
-branch.
+Install the MitoCarta 3.0 inventory and pathway GMX at the configured paths.
+This promotes nuclear-encoded mitochondrial genes and preserves their pathway
+and subcompartment context. Mutserve remains a separate secondary mtDNA branch.
 
 ## Install and validate the environments
 
@@ -358,10 +359,13 @@ The principal review output is:
 
 ```text
 <sample>/diagnostic_review/<sample>.diagnostic_candidates.tsv
+<sample>/diagnostic_review/<sample>.mitochondrial_gene_ranking.tsv
 ```
 
 It is an ordered research/diagnostic-support table, not a pathogenicity
-classification. Samplot writes a manifest beside it. Interchromosomal BNDs are
+classification. The mitochondrial table uses the same ranking script as LRS
+and places nuclear-encoded mitochondrial genes before the secondary mtDNA
+section. Samplot writes a manifest beside it. Interchromosomal BNDs are
 explicitly retained for manual two-breakpoint review instead of being drawn as
 false same-chromosome intervals.
 

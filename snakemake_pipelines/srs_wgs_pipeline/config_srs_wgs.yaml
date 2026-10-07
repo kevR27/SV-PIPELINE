@@ -20,6 +20,7 @@ condaenv: "../../envs/"
 bed: "../../PANEL_OA/optic_neuropathy_panel.bed"
 candidate_genes_list: "../../PANEL_OA/optic_neuropathy_genes.txt"
 nuclear_mito_candidate_bed: "../../PANEL_OA/optic_neuropathy_mito_panel_annotated.tsv"
+gene_bed: "../../reference/gencode.genes.hg38.sorted.bed"
 exclude_bed: "../../reference/delly_hg38_exclude.bed"
 expansionhunter_catalog: "../../reference/variant_catalog_hg38_repeats.json"
 
@@ -138,6 +139,8 @@ cnvpytor_min_reciprocal_overlap: 0.5
 # ============================================================
 # mtDNA — Mutserve2
 # ============================================================
+# Secondary analysis. Nuclear mitochondrial/bioenergetic genes remain the
+# primary biological focus of the diagnostic-support candidate table.
 mtdna_enabled: true
 mt_contig: "chrM"
 # Mutserve2 default minimum heteroplasmy level is 0.01.
@@ -167,10 +170,11 @@ supporting_evidence_breakpoint_tolerance: 500
 # ============================================================
 # MITOCHONDRIAL-NUCLEAR GENE CONTEXT
 # ============================================================
-# Keep false until the local MitoCarta files are configured.
-mitocarta_enabled: false
-mitocarta_file: "/DATA/Reference/mitocarta/Human.MitoCarta3.0.xls"
-mitocarta_pathways_gmx: "/DATA/Reference/mitocarta/Human.MitoPathways3.0.gmx"
+# MitoCarta is part of the main biological analysis. Preflight stops clearly
+# if these files have not yet been installed in reference/mitocarta/.
+mitocarta_enabled: true
+mitocarta_file: "../../reference/mitocarta/Human.MitoCarta3.0.xls"
+mitocarta_pathways_gmx: "../../reference/mitocarta/Human.MitoPathways3.0.gmx"
 
 # The diagnostic-support table is produced even when MitoCarta is disabled.
 # With MitoCarta enabled, nuclear-encoded mitochondrial genes and their

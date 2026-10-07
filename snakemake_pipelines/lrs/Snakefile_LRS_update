@@ -76,6 +76,11 @@ CPG_REGION_FLAG = f"--region {CPG_REGION}" if CPG_REGION else ""
 VEP_CACHE_DIR = config["vep_cache_dir"]
 VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 
+# Secondary mtDNA candidate review. The main biological interpretation remains
+# focused on nuclear-encoded mitochondrial genes in the post-processing stage.
+MTDNA_SECONDARY_ENABLED = config.get("lrs_mtdna_secondary_enabled", True)
+MT_CONTIG = config.get("mt_contig", "chrM")
+
 # Pre-Jasmine caller evidence filter.
 FILTER_SV_EVIDENCE_SCRIPT = os.path.join(SCRIPTS, "filter_sv_evidence.py")
 EVIDENCE_MIN_SUPPORT = config.get("evidence_min_support", 2)
@@ -106,6 +111,14 @@ if MISSING_DORADO_QC_SAMPLES:
         + ", ".join(MISSING_DORADO_QC_SAMPLES)
     )
 
+MTDNA_SECONDARY_TARGETS = []
+if MTDNA_SECONDARY_ENABLED:
+    MTDNA_SECONDARY_TARGETS = (
+        expand(PATH + "{sample}/mtDNA/{sample}.clair3.secondary.vcf.gz", sample=SAMPLES)
+        + expand(PATH + "{sample}/mtDNA/{sample}.clair3.secondary.vcf.gz.tbi", sample=SAMPLES)
+        + expand(PATH + "{sample}/mtDNA/{sample}.clair3.secondary.tsv", sample=SAMPLES)
+    )
+
 rule all:
     input:
         # QC
@@ -117,6 +130,7 @@ rule all:
 
         # Complementary small variants + phasing
         expand(PATH + "{sample}/snp_clair3/{sample}.vcf.gz", sample=SAMPLES),
+        MTDNA_SECONDARY_TARGETS,
         expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
         expand(PATH + "{sample}/phasing/{sample}.phased.bam", sample=SAMPLES),
 
@@ -274,7 +288,8 @@ rule clair3_snp_calling:
         bam=lambda wc: BAMS[wc.sample],
         ref=REF
     output:
-        vcf=PATH + "{sample}/snp_clair3/{sample}.vcf.gz"
+        vcf=PATH + "{sample}/snp_clair3/{sample}.vcf.gz",
+        tbi=PATH + "{sample}/snp_clair3/{sample}.vcf.gz.tbi"
     threads: THREADS
     conda:
         CONDAENV + "clair3.yaml"
@@ -294,6 +309,35 @@ rule clair3_snp_calling:
         cp {PATH}{wildcards.sample}/snp_clair3/merge_output.vcf.gz {output.vcf}
         tabix -f -p vcf {output.vcf}
         test -s {output.vcf}
+        test -s {output.tbi}
+        """
+
+
+rule secondary_mtdna_candidate_review:
+    input:
+        vcf=rules.clair3_snp_calling.output.vcf,
+        tbi=rules.clair3_snp_calling.output.tbi,
+        script=SCRIPTS + "/summarize_secondary_mtdna_vcf.py"
+    output:
+        vcf=PATH + "{sample}/mtDNA/{sample}.clair3.secondary.vcf.gz",
+        tbi=PATH + "{sample}/mtDNA/{sample}.clair3.secondary.vcf.gz.tbi",
+        tsv=PATH + "{sample}/mtDNA/{sample}.clair3.secondary.tsv"
+    conda:
+        CONDAENV + "mtdna_review.yaml"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output.vcf})
+
+        # Keep this as a separate secondary review file. The complete Clair3
+        # VCF remains unchanged and continues into the normal LRS workflow.
+        bcftools view -r {MT_CONTIG:q} -f 'PASS,.' -Oz -o {output.vcf:q} {input.vcf:q}
+        tabix -f -p vcf {output.vcf:q}
+
+        python {input.script:q} \
+            --vcf {output.vcf:q} \
+            --source "Clair3 long-read candidate review" \
+            --output {output.tsv:q}
         """
 
 

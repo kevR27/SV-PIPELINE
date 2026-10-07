@@ -2,6 +2,12 @@
 
 This repository contains long- and short-read whole-genome sequencing workflows for studying structural variants (SVs) in patients with clinically assessed optic neuropathy.
 
+The shared and technology-specific parts of the two workflows are mapped in
+[`snakemake_pipelines/PIPELINE_PARITY.md`](snakemake_pipelines/PIPELINE_PARITY.md).
+Both workflows prioritize nuclear genes involved in mitochondrial biology and
+bioenergetic pathways. mtDNA remains available as a separate secondary
+analysis and is not mixed into the main nuclear-gene ranking.
+
 The main question behind the pipeline is:
 
 > **Do these patients carry SVs that could contribute to optic neuropathy, either through known panel genes or through other candidate genes? What do the breakpoints and gene annotations suggest about their functional effects?**
@@ -1033,7 +1039,7 @@ The same general rules are used:
 - needLR is not used for SRS;
 - the integrated-table structure remains as similar as possible between LRS and SRS.
 - nuclear genes involved in mitochondrial biology and bioenergetic pathways are
-  the primary review focus when MitoCarta is enabled;
+  the primary review focus through the configured MitoCarta analysis;
 - mtDNA calls are retained as a separate, secondary analysis;
 - Samplot review and optional positive-control/Truvari benchmarking provide
   validation layers without converting research evidence into a diagnosis.
