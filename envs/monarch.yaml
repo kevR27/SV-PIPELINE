@@ -4,3 +4,4 @@ channels:
 dependencies:
   - python=3.11
   - requests
+  - pandas>=2.0
