@@ -721,7 +721,11 @@ rule all_thesis_plots:
             sample=POSTPROCESS_SAMPLES,
         ),
         COHORT_PLOT_OUTPUTS,
-        XCI_PLOT_DONE
+        XCI_PLOT_DONE,
+        expand(
+            PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
+            sample=POSTPROCESS_SAMPLES,
+        )
 
 
 include: "../common/allele_assessment.smk"
