@@ -1,9 +1,5 @@
-# GRCh38/hg38 core regions excluded from XCI inference.
+# GRCh38/hg38 regions excluded from canonical XCI inference.
 # BED coordinates are 0-based, half-open.
-# PAR1/PAR2 are excluded because they are pseudoautosomal rather than subject
-# to canonical XCI. XIST is excluded from the default inference because its
-# promoter methylation relationship is reversed relative to standard X-linked
-# CpG islands.
+# PAR1/PAR2 are pseudoautosomal and are not subject to canonical XCI.
 chrX	10000	2781479	PAR1
 chrX	155701382	156030895	PAR2
-chrX	73820655	73852714	XIST
