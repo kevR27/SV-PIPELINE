@@ -147,18 +147,12 @@ rule xci_modkit_phased_chrX:
         # Check that WhatsHap produced usable chrX haplotags before asking
         # modkit for phased methylation. XCI needs reads from both haplotypes
         # and phase-set information; otherwise hp1/hp2 output will be empty.
-        hp1_reads=$(awk -F'\\t' '
-            NR==1 {for(i=1;i<=NF;i++) if($i=="HP1_reads") c=i; next}
-            NR==2 && c {print $c}
-        ' {input.haplotag_summary})
-        hp2_reads=$(awk -F'\\t' '
-            NR==1 {for(i=1;i<=NF;i++) if($i=="HP2_reads") c=i; next}
-            NR==2 && c {print $c}
-        ' {input.haplotag_summary})
-        ps_reads=$(awk -F'\\t' '
-            NR==1 {for(i=1;i<=NF;i++) if($i=="reads_with_PS") c=i; next}
-            NR==2 && c {print $c}
-        ' {input.haplotag_summary})
+        # extract_xci_haplotags.py writes one data row with the fixed columns:
+        # chrom, primary_mapped_reads, HP1_reads, HP2_reads,
+        # haplotagged_reads, reads_with_PS, haplotag_fraction.
+        hp1_reads=$(sed -n '2p' {input.haplotag_summary} | cut -f3)
+        hp2_reads=$(sed -n '2p' {input.haplotag_summary} | cut -f4)
+        ps_reads=$(sed -n '2p' {input.haplotag_summary} | cut -f6)
 
         if [[ -z "$hp1_reads" || -z "$hp2_reads" || -z "$ps_reads" ]]; then
             echo "[ERROR] Could not read HP1_reads, HP2_reads or reads_with_PS from {input.haplotag_summary}" >&2
