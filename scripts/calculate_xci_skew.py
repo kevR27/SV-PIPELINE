@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Estimate X-chromosome inactivation skew with uncertainty and phase QC.
+"""Estimate global X-chromosome inactivation skew from phased methylation blocks.
 
-The primary estimator remains the folded-binomial maximum-likelihood model
-used by Gocuk et al. / SkewX. Folding is necessary because HP1/HP2 labels can
-flip between independent phase blocks. This implementation adds:
+The primary estimate follows the folded-binomial likelihood used by SkewX:
+HP1/HP2 orientation may flip between phase blocks, so the likelihood is
+symmetric around 0.5 and estimates the minor-X fraction P in [0, 0.5].
 
-* WhatsHap-LongPhase block concordance filtering;
-* block-bootstrap 95% confidence intervals;
-* sensitivity estimates across minimum-read cutoffs;
-* explicit major:minor classification thresholds;
-* chrX/autosomal coverage and chrX heterozygosity QC;
-* an explicit per-block log10 likelihood ratio for Xa orientation.
+This implementation keeps that estimator unchanged and adds:
+  * 95% profile-likelihood confidence interval for P;
+  * likelihood-ratio evidence against balanced XCI (P=0.5);
+  * minimum-read sensitivity analysis;
+  * WhatsHap/LongPhase concordance as a QC/sensitivity filter;
+  * explicit per-block Xa-orientation log10 likelihood ratios;
+  * chrX depth/heterozygosity QC for XX compatibility review.
 
-The output is a research XCI estimate, not a pathogenicity classification.
+The result is a research XCI estimate, not a pathogenicity classification.
 """
 
 from __future__ import annotations
@@ -23,8 +24,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize_scalar
+from scipy.optimize import brentq, minimize_scalar
 from scipy.special import gammaln, logsumexp
+from scipy.stats import chi2
 
 
 def read_coverage_qc(path: str, chrom: str):
@@ -41,8 +43,8 @@ def read_coverage_qc(path: str, chrom: str):
 
     work = df[[chrom_col, mean_col]].copy()
     work[mean_col] = pd.to_numeric(work[mean_col], errors="coerce")
-    hit = work[work[chrom_col].astype(str).eq(chrom)]
 
+    hit = work[work[chrom_col].astype(str).eq(chrom)]
     x_cov = None
     if not hit.empty:
         value = hit.iloc[0][mean_col]
@@ -50,7 +52,9 @@ def read_coverage_qc(path: str, chrom: str):
             x_cov = float(value)
 
     autosomes = work[
-        work[chrom_col].astype(str).str.match(r"^(chr)?([1-9]|1[0-9]|2[0-2])$")
+        work[chrom_col].astype(str).str.match(
+            r"^(chr)?([1-9]|1[0-9]|2[0-2])$"
+        )
     ][mean_col].dropna()
     auto_median = float(autosomes.median()) if not autosomes.empty else None
     ratio = (
@@ -78,7 +82,12 @@ def folded_logpmf(x: int, n: int, p_minor: float) -> float:
     a = x * math.log(p) + (n - x) * math.log(q)
     b = (n - x) * math.log(p) + x * math.log(q)
     delta = 1 if x == n - x else 0
-    return math.log(1.0 - 0.5 * delta) + log_choose + logsumexp([a, b])
+
+    return (
+        math.log(1.0 - 0.5 * delta)
+        + log_choose
+        + logsumexp([a, b])
+    )
 
 
 def negative_log_likelihood(p_minor: float, xs, ns) -> float:
@@ -100,44 +109,77 @@ def fit_folded_mle(df: pd.DataFrame) -> float:
         bounds=(1e-6, 0.5),
         method="bounded",
         args=(xs, ns),
-        options={"xatol": 1e-8},
+        options={"xatol": 1e-10},
     )
     return float(result.x) if result.success else np.nan
 
 
-def bootstrap_ci(
+def profile_likelihood_ci(
     df: pd.DataFrame,
-    replicates: int,
-    seed: int,
-) -> tuple[float, float, int]:
-    if df.empty or replicates <= 0:
-        return np.nan, np.nan, 0
+    mle: float,
+    level: float = 0.95,
+) -> tuple[float, float]:
+    """Profile-likelihood CI using 2*DeltaNLL <= chi2_1(level)."""
+    if df.empty or not np.isfinite(mle):
+        return np.nan, np.nan
 
-    rng = np.random.default_rng(seed)
-    values = []
-    n = len(df)
+    xs = df["SUCCESS_FOLDED"].astype(int).to_numpy()
+    ns = df["TRIALS"].astype(int).to_numpy()
+    nll_min = negative_log_likelihood(mle, xs, ns)
+    target = nll_min + 0.5 * chi2.ppf(level, df=1)
+    eps = 1e-8
 
-    for _ in range(replicates):
-        sampled = df.iloc[rng.integers(0, n, size=n)]
-        value = fit_folded_mle(sampled)
-        if np.isfinite(value):
-            values.append(value)
+    def f(value):
+        return negative_log_likelihood(value, xs, ns) - target
 
-    if not values:
-        return np.nan, np.nan, 0
+    if mle <= eps:
+        low = eps
+    elif f(eps) <= 0:
+        low = eps
+    else:
+        low = brentq(f, eps, mle)
 
-    low, high = np.quantile(values, [0.025, 0.975])
-    return float(low), float(high), len(values)
+    upper_bound = 0.5
+    if mle >= upper_bound - eps:
+        high = upper_bound
+    elif f(upper_bound) <= 0:
+        high = upper_bound
+    else:
+        high = brentq(f, mle, upper_bound)
+
+    return float(low), float(high)
+
+
+def balanced_lrt(df: pd.DataFrame, mle: float):
+    """LR test of balanced XCI P=0.5 versus P<0.5.
+
+    Because P=0.5 is the boundary of the folded parameter space, the
+    asymptotic null is the 50:50 chi-square(0)/chi-square(1) mixture.
+    """
+    if df.empty or not np.isfinite(mle):
+        return np.nan, np.nan
+
+    xs = df["SUCCESS_FOLDED"].astype(int).to_numpy()
+    ns = df["TRIALS"].astype(int).to_numpy()
+    nll_mle = negative_log_likelihood(mle, xs, ns)
+    nll_balanced = negative_log_likelihood(0.5, xs, ns)
+    statistic = max(0.0, 2.0 * (nll_balanced - nll_mle))
+
+    if statistic <= 0:
+        p_value = 1.0
+    else:
+        p_value = 0.5 * chi2.sf(statistic, df=1)
+
+    return float(statistic), float(p_value)
 
 
 def parse_cutoffs(text: str) -> list[int]:
-    values = []
+    out = []
     for token in str(text).split(","):
         token = token.strip()
-        if not token:
-            continue
-        values.append(int(token))
-    return sorted(set(values))
+        if token:
+            out.append(int(token))
+    return sorted(set(out))
 
 
 def ratio_text(p_minor: float) -> str:
@@ -146,46 +188,77 @@ def ratio_text(p_minor: float) -> str:
     return f"{100.0 * (1.0 - p_minor):.1f}:{100.0 * p_minor:.1f}"
 
 
-def classify_xci(
+def p_range_label(
     p_minor: float,
-    random_minor: float,
-    high_minor: float,
-    extreme_minor: float,
+    threshold_70_30: float,
+    threshold_80_20: float,
+    threshold_90_10: float,
 ) -> str:
     if not np.isfinite(p_minor):
         return "NOT_ESTIMATED"
-    if p_minor >= random_minor:
-        return "RANDOM_RANGE_MAJOR_LE_70_PERCENT"
-    if p_minor >= high_minor:
-        return "MODERATE_IMBALANCE_70_TO_80_PERCENT"
-    if p_minor >= extreme_minor:
-        return "HIGH_SKEW_80_TO_90_PERCENT"
-    return "EXTREME_SKEW_MAJOR_GT_90_PERCENT"
+    if p_minor >= threshold_70_30:
+        return "P_GE_0.30"
+    if p_minor >= threshold_80_20:
+        return "P_0.20_TO_0.30"
+    if p_minor >= threshold_90_10:
+        return "P_0.10_TO_0.20"
+    return "P_LT_0.10"
+
+
+def conventional_context(
+    p_minor: float,
+    threshold_70_30: float,
+    threshold_80_20: float,
+    threshold_90_10: float,
+) -> str:
+    if not np.isfinite(p_minor):
+        return "NOT_ESTIMATED"
+    if p_minor >= threshold_70_30:
+        return "BELOW_70_30_SKEW_THRESHOLD"
+    if p_minor >= threshold_80_20:
+        return "AT_OR_BEYOND_70_30_BUT_BELOW_80_20"
+    if p_minor >= threshold_90_10:
+        return "AT_OR_BEYOND_80_20_BUT_BELOW_90_10"
+    return "AT_OR_BEYOND_90_10"
 
 
 def load_phase_qc(path: str) -> pd.DataFrame:
     phase = pd.read_csv(path, sep="\t", dtype=str)
-    if phase.empty or "WHATSHAP_PS" not in phase.columns:
+    required = {"WHATSHAP_PS", "SHARED_PHASED_SNVS"}
+    if phase.empty or not required.issubset(phase.columns):
         return pd.DataFrame(
             columns=[
                 "PS",
                 "PHASE_QC_SHARED_SNVS",
                 "PHASE_QC_CONCORDANT_SNVS",
                 "PHASE_QC_CONCORDANCE",
+                "PHASE_QC_PAIR_COUNT",
             ]
         )
 
-    for col in ["SHARED_PHASED_SNVS", "BEST_CONCORDANT_SNVS"]:
-        if col in phase.columns:
-            phase[col] = pd.to_numeric(phase[col], errors="coerce").fillna(0)
-        else:
-            phase[col] = 0
+    phase["SHARED_PHASED_SNVS"] = pd.to_numeric(
+        phase["SHARED_PHASED_SNVS"], errors="coerce"
+    ).fillna(0)
+
+    if "BEST_CONCORDANT_SNVS" in phase.columns:
+        phase["BEST_CONCORDANT_SNVS"] = pd.to_numeric(
+            phase["BEST_CONCORDANT_SNVS"], errors="coerce"
+        ).fillna(0)
+    else:
+        phase["BEST_CONCORDANT_SNVS"] = (
+            pd.to_numeric(
+                phase.get("ORIENTATION_CONCORDANCE"),
+                errors="coerce",
+            ).fillna(0)
+            * phase["SHARED_PHASED_SNVS"]
+        )
 
     grouped = (
         phase.groupby("WHATSHAP_PS", as_index=False)
         .agg(
             PHASE_QC_SHARED_SNVS=("SHARED_PHASED_SNVS", "sum"),
             PHASE_QC_CONCORDANT_SNVS=("BEST_CONCORDANT_SNVS", "sum"),
+            PHASE_QC_PAIR_COUNT=("WHATSHAP_PS", "size"),
         )
         .rename(columns={"WHATSHAP_PS": "PS"})
     )
@@ -211,31 +284,19 @@ def main():
     p.add_argument("--min-block-reads", type=int, default=5)
     p.add_argument("--phase-concordance-threshold", type=float, default=0.90)
     p.add_argument("--phase-min-shared-snvs", type=int, default=3)
-    p.add_argument("--min-primary-blocks", type=int, default=3)
     p.add_argument("--min-chrx-het-snvs", type=int, default=50)
-    p.add_argument("--random-minor-threshold", type=float, default=0.30)
-    p.add_argument("--high-skew-minor-threshold", type=float, default=0.20)
-    p.add_argument("--extreme-skew-minor-threshold", type=float, default=0.10)
+    p.add_argument("--threshold-70-30-minor", type=float, default=0.30)
+    p.add_argument("--threshold-80-20-minor", type=float, default=0.20)
+    p.add_argument("--threshold-90-10-minor", type=float, default=0.10)
     p.add_argument("--orientation-min-log10-odds", type=float, default=1.0)
-    p.add_argument("--bootstrap-replicates", type=int, default=2000)
-    p.add_argument("--bootstrap-seed", type=int, default=27)
     p.add_argument("--sensitivity-min-reads", default="5,8,10,15")
     p.add_argument("--blocks-output", required=True)
     p.add_argument("--summary-output", required=True)
     p.add_argument("--sensitivity-output", required=True)
     args = p.parse_args()
 
-    if not (
-        0 < args.extreme_skew_minor_threshold
-        <= args.high_skew_minor_threshold
-        <= args.random_minor_threshold
-        <= 0.5
-    ):
-        raise ValueError(
-            "Require 0 < extreme <= high <= random <= 0.5 for minor-X thresholds."
-        )
-
     blocks = pd.read_csv(args.block_skew, sep="\t", dtype=str)
+
     numeric_cols = [
         "H1_Xa",
         "H1_Xi",
@@ -246,6 +307,9 @@ def main():
         "BLOCK_END",
         "INFORMATIVE_CPG_ISLANDS",
         "UNIQUE_READS",
+        "MULTI_CGI_READS",
+        "DISCORDANT_MULTI_CGI_READS",
+        "CONSENSUS_READS",
     ]
     for col in numeric_cols:
         if col in blocks.columns:
@@ -266,7 +330,6 @@ def main():
         + blocks["H2_Xi"].fillna(0)
     ).astype(int)
 
-    # "Success" means support for the local orientation H1=major Xa.
     blocks["SUCCESS_H1_XA"] = (
         blocks["H1_Xa"].fillna(0)
         + blocks["H2_Xi"].fillna(0)
@@ -275,13 +338,11 @@ def main():
         blocks["SUCCESS_H1_XA"],
         blocks["TRIALS"] - blocks["SUCCESS_H1_XA"],
     )
-    blocks["FOLDED_MINOR_PROPORTION"] = np.where(
+    blocks["FOLDED_BLOCK_SKEW"] = np.where(
         blocks["TRIALS"] > 0,
         blocks["SUCCESS_FOLDED"] / blocks["TRIALS"],
         np.nan,
     )
-    # Backward-compatible column name for older plotting/report code.
-    blocks["FOLDED_BLOCK_SKEW"] = blocks["FOLDED_MINOR_PROPORTION"]
     blocks["H1_XA_PROPORTION_RAW"] = np.where(
         blocks["TRIALS"] > 0,
         blocks["SUCCESS_H1_XA"] / blocks["TRIALS"],
@@ -290,6 +351,7 @@ def main():
 
     phase_qc = load_phase_qc(args.phase_blocks)
     blocks = blocks.merge(phase_qc, on="PS", how="left")
+
     blocks["PHASE_QC_SHARED_SNVS"] = pd.to_numeric(
         blocks.get("PHASE_QC_SHARED_SNVS"), errors="coerce"
     ).fillna(0)
@@ -298,31 +360,23 @@ def main():
     )
     blocks["PHASE_QC_PASS"] = np.where(
         (blocks["PHASE_QC_SHARED_SNVS"] >= args.phase_min_shared_snvs)
-        & (blocks["PHASE_QC_CONCORDANCE"] >= args.phase_concordance_threshold),
+        & (
+            blocks["PHASE_QC_CONCORDANCE"]
+            >= args.phase_concordance_threshold
+        ),
         "YES",
         "NO",
     )
 
-    read_filtered = blocks[blocks["TRIALS"].ge(args.min_block_reads)].copy()
-    phase_filtered = read_filtered[read_filtered["PHASE_QC_PASS"].eq("YES")].copy()
+    # Primary estimator: preserve the SkewX-style folded-binomial fit across
+    # all blocks meeting the read threshold. Phase concordance is QC only.
+    primary = blocks[blocks["TRIALS"].ge(args.min_block_reads)].copy()
+    phase_filtered = primary[primary["PHASE_QC_PASS"].eq("YES")].copy()
 
-    all_mle = fit_folded_mle(read_filtered)
-    phase_mle = fit_folded_mle(phase_filtered)
-
-    if len(phase_filtered) >= args.min_primary_blocks and np.isfinite(phase_mle):
-        primary = phase_filtered.copy()
-        mle = phase_mle
-        estimate_basis = "PHASE_QC_FILTERED_BLOCKS"
-    else:
-        primary = read_filtered.copy()
-        mle = all_mle
-        estimate_basis = "READ_FILTERED_FALLBACK_PHASE_QC_INSUFFICIENT"
-
-    ci_low, ci_high, bootstrap_success = bootstrap_ci(
-        primary,
-        args.bootstrap_replicates,
-        args.bootstrap_seed,
-    )
+    mle = fit_folded_mle(primary)
+    phase_filtered_mle = fit_folded_mle(phase_filtered)
+    ci_low, ci_high = profile_likelihood_ci(primary, mle)
+    lrt_stat, lrt_p = balanced_lrt(primary, mle)
 
     x_cov, auto_median, x_auto_ratio = read_coverage_qc(
         args.mosdepth_summary,
@@ -333,10 +387,12 @@ def main():
     haplotagged_reads = (
         int(
             pd.to_numeric(
-                hap_summary.get("haplotagged_reads"), errors="coerce"
+                hap_summary.get("haplotagged_reads"),
+                errors="coerce",
             ).fillna(0).iloc[0]
         )
-        if not hap_summary.empty and "haplotagged_reads" in hap_summary.columns
+        if not hap_summary.empty
+        and "haplotagged_reads" in hap_summary.columns
         else 0
     )
 
@@ -349,31 +405,33 @@ def main():
     if not phase_summary.empty:
         row = phase_summary.iloc[0]
         if "FLIP_TOLERANT_PHASE_CONCORDANCE" in phase_summary.columns:
-            phase_concordance = row["FLIP_TOLERANT_PHASE_CONCORDANCE"]
-        for key, target in [
-            ("SHARED_PHASED_SNVS", "shared"),
-            ("WHATSHAP_CHRX_HET_SNVS", "hets"),
-            ("WHATSHAP_CHRX_PHASED_HET_SNVS", "phased"),
-        ]:
-            if key in phase_summary.columns:
-                try:
-                    value = int(float(row[key]))
-                except Exception:
-                    value = 0
-                if target == "shared":
-                    shared_phased = value
-                elif target == "hets":
-                    whatshap_chrX_hets = value
-                else:
-                    whatshap_chrX_phased_hets = value
+            phase_concordance = row[
+                "FLIP_TOLERANT_PHASE_CONCORDANCE"
+            ]
 
-    coverage_ok = x_cov is not None and x_cov >= args.min_chrx_coverage
-    blocks_ok = len(primary) > 0
+        def get_int(name):
+            if name not in phase_summary.columns:
+                return 0
+            try:
+                return int(float(row[name]))
+            except Exception:
+                return 0
+
+        shared_phased = get_int("SHARED_PHASED_SNVS")
+        whatshap_chrX_hets = get_int("WHATSHAP_CHRX_HET_SNVS")
+        whatshap_chrX_phased_hets = get_int(
+            "WHATSHAP_CHRX_PHASED_HET_SNVS"
+        )
+
+    coverage_ok = (
+        x_cov is not None
+        and x_cov >= args.min_chrx_coverage
+    )
     estimate_ok = np.isfinite(mle)
 
     if not coverage_ok:
         eligibility = "LOW_CHRX_COVERAGE_REVIEW"
-    elif not blocks_ok:
+    elif primary.empty:
         eligibility = "NO_INFORMATIVE_PHASED_XCI_BLOCKS"
     elif not estimate_ok:
         eligibility = "MLE_FAILED"
@@ -389,50 +447,54 @@ def main():
     else:
         xx_qc = "REVIEW_XX_COMPATIBILITY"
 
-    status = classify_xci(
-        mle,
-        args.random_minor_threshold,
-        args.high_skew_minor_threshold,
-        args.extreme_skew_minor_threshold,
-    )
     ratio = ratio_text(mle)
     major = 100.0 * (1.0 - mle) if estimate_ok else np.nan
     minor = 100.0 * mle if estimate_ok else np.nan
+    range_label = p_range_label(
+        mle,
+        args.threshold_70_30_minor,
+        args.threshold_80_20_minor,
+        args.threshold_90_10_minor,
+    )
+    context_label = conventional_context(
+        mle,
+        args.threshold_70_30_minor,
+        args.threshold_80_20_minor,
+        args.threshold_90_10_minor,
+    )
 
-    # Explicit orientation likelihood ratio:
-    # H1-major-Xa hypothesis: successes ~ q=1-p, failures ~ p
-    # H2-major-Xa hypothesis: successes ~ p, failures ~ q
-    # log10 LR = (2*successes - n) * log10(q/p).
-    if estimate_ok and not read_filtered.empty:
+    # Per-block Xa orientation likelihood.
+    if estimate_ok and not primary.empty:
         eps = 1e-12
         p_minor = min(max(float(mle), eps), 0.5 - eps)
         q_major = 1.0 - p_minor
+        successes = primary["SUCCESS_H1_XA"].astype(float)
+        trials = primary["TRIALS"].astype(float)
 
-        successes = read_filtered["SUCCESS_H1_XA"].astype(float)
-        trials = read_filtered["TRIALS"].astype(float)
+        # log10 LR(H1 major Xa vs H2 major Xa)
         log10_odds = (
             (2.0 * successes - trials)
             * math.log10(q_major / p_minor)
         )
 
-        read_filtered["LOG10_ODDS_H1_XA_VS_H2_XA"] = log10_odds
-        read_filtered["PREFERRED_XA_HAPLOTYPE"] = np.where(
+        primary["LOG10_ODDS_H1_XA_VS_H2_XA"] = log10_odds
+        primary["PREFERRED_XA_HAPLOTYPE"] = np.where(
             log10_odds > 0,
             "H1",
             np.where(log10_odds < 0, "H2", "UNRESOLVED"),
         )
-        read_filtered["PREFERRED_XI_HAPLOTYPE"] = np.where(
+        primary["PREFERRED_XI_HAPLOTYPE"] = np.where(
             log10_odds > 0,
             "H2",
             np.where(log10_odds < 0, "H1", "UNRESOLVED"),
         )
-        read_filtered["ORIENTED_MAJOR_XA_PROPORTION"] = np.maximum(
-            read_filtered["H1_XA_PROPORTION_RAW"],
-            1.0 - read_filtered["H1_XA_PROPORTION_RAW"],
-        )
         abs_lod = np.abs(log10_odds)
-        read_filtered["ORIENTATION_EVIDENCE"] = np.select(
-            [abs_lod >= 2.0, abs_lod >= 1.0, abs_lod >= 0.5],
+        primary["ORIENTATION_EVIDENCE"] = np.select(
+            [
+                abs_lod >= 2.0,
+                abs_lod >= 1.0,
+                abs_lod >= 0.5,
+            ],
             [
                 "VERY_STRONG_GE_100_TO_1",
                 "STRONG_GE_10_TO_1",
@@ -440,74 +502,48 @@ def main():
             ],
             default="WEAK_LT_3_TO_1",
         )
-        read_filtered["ORIENTATION_USABLE"] = np.where(
+        primary["ORIENTATION_USABLE"] = np.where(
             (abs_lod >= args.orientation_min_log10_odds)
-            & read_filtered["PHASE_QC_PASS"].eq("YES"),
+            & primary["PHASE_QC_PASS"].eq("YES"),
             "YES",
             "NO",
         )
     else:
-        read_filtered["LOG10_ODDS_H1_XA_VS_H2_XA"] = np.nan
-        read_filtered["PREFERRED_XA_HAPLOTYPE"] = "."
-        read_filtered["PREFERRED_XI_HAPLOTYPE"] = "."
-        read_filtered["ORIENTED_MAJOR_XA_PROPORTION"] = np.nan
-        read_filtered["ORIENTATION_EVIDENCE"] = "NOT_ESTIMATED"
-        read_filtered["ORIENTATION_USABLE"] = "NO"
+        primary["LOG10_ODDS_H1_XA_VS_H2_XA"] = np.nan
+        primary["PREFERRED_XA_HAPLOTYPE"] = "."
+        primary["PREFERRED_XI_HAPLOTYPE"] = "."
+        primary["ORIENTATION_EVIDENCE"] = "NOT_ESTIMATED"
+        primary["ORIENTATION_USABLE"] = "NO"
 
-    read_filtered["GLOBAL_FOLDED_MINOR_X_P"] = (
+    primary["GLOBAL_FOLDED_SKEW_P"] = (
         round(mle, 6) if estimate_ok else np.nan
     )
-    read_filtered["GLOBAL_ESTIMATE_BASIS"] = estimate_basis
 
     out_blocks = Path(args.blocks_output)
     out_blocks.parent.mkdir(parents=True, exist_ok=True)
-    read_filtered.to_csv(out_blocks, sep="\t", index=False)
+    primary.to_csv(out_blocks, sep="\t", index=False)
 
+    # Sensitivity: do not replace the primary estimate. Show how P changes
+    # with stricter read cutoffs, and separately after phase-QC filtering.
     sensitivity_rows = []
-    for i, cutoff in enumerate(parse_cutoffs(args.sensitivity_min_reads)):
-        subset_all = blocks[blocks["TRIALS"].ge(cutoff)].copy()
-        subset_phase = subset_all[subset_all["PHASE_QC_PASS"].eq("YES")].copy()
+    for cutoff in parse_cutoffs(args.sensitivity_min_reads):
+        subset = blocks[blocks["TRIALS"].ge(cutoff)].copy()
+        subset_phase = subset[
+            subset["PHASE_QC_PASS"].eq("YES")
+        ].copy()
 
-        if len(subset_phase) >= args.min_primary_blocks:
-            chosen = subset_phase
-            basis = "PHASE_QC_FILTERED_BLOCKS"
-        else:
-            chosen = subset_all
-            basis = "READ_FILTERED_FALLBACK_PHASE_QC_INSUFFICIENT"
+        all_est = fit_folded_mle(subset)
+        phase_est = fit_folded_mle(subset_phase)
 
-        estimate = fit_folded_mle(chosen)
-        low, high, boot_n = bootstrap_ci(
-            chosen,
-            args.bootstrap_replicates,
-            args.bootstrap_seed + i + 1,
-        )
         sensitivity_rows.append(
             {
                 "MIN_READS_PER_BLOCK": cutoff,
-                "ALL_READ_QUALIFIED_BLOCKS": len(subset_all),
-                "PHASE_QC_PASS_BLOCKS": len(subset_phase),
-                "ESTIMATE_BASIS": basis,
-                "FOLDED_MINOR_X_P": estimate,
-                "MAJOR_X_PERCENT": (
-                    100.0 * (1.0 - estimate)
-                    if np.isfinite(estimate)
-                    else np.nan
-                ),
-                "MINOR_X_PERCENT": (
-                    100.0 * estimate
-                    if np.isfinite(estimate)
-                    else np.nan
-                ),
-                "XCI_MAJOR_MINOR_RATIO": ratio_text(estimate),
-                "BOOTSTRAP_CI95_MINOR_LOW": low,
-                "BOOTSTRAP_CI95_MINOR_HIGH": high,
-                "BOOTSTRAP_SUCCESSFUL_REPLICATES": boot_n,
-                "XCI_SKEW_STATUS": classify_xci(
-                    estimate,
-                    args.random_minor_threshold,
-                    args.high_skew_minor_threshold,
-                    args.extreme_skew_minor_threshold,
-                ),
+                "ALL_BLOCKS_N": len(subset),
+                "ALL_BLOCKS_FOLDED_MINOR_X_P": all_est,
+                "ALL_BLOCKS_RATIO": ratio_text(all_est),
+                "PHASE_QC_PASS_BLOCKS_N": len(subset_phase),
+                "PHASE_QC_FOLDED_MINOR_X_P": phase_est,
+                "PHASE_QC_RATIO": ratio_text(phase_est),
             }
         )
 
@@ -517,102 +553,171 @@ def main():
     sensitivity.to_csv(sensitivity_path, sep="\t", index=False)
 
     informative_cgis = (
-        int(read_filtered["INFORMATIVE_CPG_ISLANDS"].fillna(0).sum())
-        if "INFORMATIVE_CPG_ISLANDS" in read_filtered.columns
+        int(primary["INFORMATIVE_CPG_ISLANDS"].fillna(0).sum())
+        if "INFORMATIVE_CPG_ISLANDS" in primary.columns
         else 0
     )
     informative_reads = (
-        int(read_filtered["TRIALS"].sum())
-        if "TRIALS" in read_filtered.columns
+        int(primary["TRIALS"].sum())
+        if "TRIALS" in primary.columns
+        else 0
+    )
+    discordant_reads = (
+        int(
+            primary["DISCORDANT_MULTI_CGI_READS"]
+            .fillna(0)
+            .sum()
+        )
+        if "DISCORDANT_MULTI_CGI_READS" in primary.columns
         else 0
     )
 
     lod = pd.to_numeric(
-        read_filtered.get("LOG10_ODDS_H1_XA_VS_H2_XA"),
+        primary.get("LOG10_ODDS_H1_XA_VS_H2_XA"),
         errors="coerce",
     )
-    strong_orientation_blocks = int((lod.abs() >= 1.0).sum()) if lod.notna().any() else 0
-    very_strong_orientation_blocks = int((lod.abs() >= 2.0).sum()) if lod.notna().any() else 0
+    strong_orientation_blocks = (
+        int((lod.abs() >= 1.0).sum())
+        if lod.notna().any()
+        else 0
+    )
+    very_strong_orientation_blocks = (
+        int((lod.abs() >= 2.0).sum())
+        if lod.notna().any()
+        else 0
+    )
 
     summary = pd.DataFrame(
         [
             {
                 "chrom": args.chrom,
                 "XCI_ANALYSIS_STATUS": eligibility,
-                "PRIMARY_ESTIMATE_BASIS": estimate_basis,
-                "CHRX_MEAN_COVERAGE": round(x_cov, 3) if x_cov is not None else ".",
+                "CHRX_MEAN_COVERAGE": (
+                    round(x_cov, 3)
+                    if x_cov is not None
+                    else "."
+                ),
                 "AUTOSOME_MEDIAN_MEAN_COVERAGE": (
-                    round(auto_median, 3) if auto_median is not None else "."
+                    round(auto_median, 3)
+                    if auto_median is not None
+                    else "."
                 ),
                 "CHRX_AUTOSOME_COVERAGE_RATIO": (
-                    round(x_auto_ratio, 4) if x_auto_ratio is not None else "."
+                    round(x_auto_ratio, 4)
+                    if x_auto_ratio is not None
+                    else "."
                 ),
                 "WHATSHAP_CHRX_HET_SNVS": whatshap_chrX_hets,
-                "WHATSHAP_CHRX_PHASED_HET_SNVS": whatshap_chrX_phased_hets,
+                "WHATSHAP_CHRX_PHASED_HET_SNVS": (
+                    whatshap_chrX_phased_hets
+                ),
                 "XX_COMPATIBILITY_QC": xx_qc,
-                "MIN_CHRX_HET_SNVS_FOR_QC": args.min_chrx_het_snvs,
                 "HAPLOTAGGED_CHRX_READS": haplotagged_reads,
-                "SHARED_WHATSHAP_LONGPHASE_PHASED_SNVS": shared_phased,
-                "FLIP_TOLERANT_WHATSHAP_LONGPHASE_CONCORDANCE": phase_concordance,
-                "READ_QUALIFIED_PHASE_BLOCKS": len(read_filtered),
+                "SHARED_WHATSHAP_LONGPHASE_PHASED_SNVS": (
+                    shared_phased
+                ),
+                "FLIP_TOLERANT_WHATSHAP_LONGPHASE_CONCORDANCE": (
+                    phase_concordance
+                ),
+                "INFORMATIVE_PHASE_BLOCKS": len(primary),
                 "PHASE_QC_PASS_BLOCKS": len(phase_filtered),
-                "PHASE_CONCORDANCE_THRESHOLD": args.phase_concordance_threshold,
-                "PHASE_MIN_SHARED_SNVS": args.phase_min_shared_snvs,
+                "PHASE_CONCORDANCE_THRESHOLD": (
+                    args.phase_concordance_threshold
+                ),
+                "PHASE_MIN_SHARED_SNVS": (
+                    args.phase_min_shared_snvs
+                ),
                 "INFORMATIVE_CPG_ISLAND_SUM": informative_cgis,
                 "INFORMATIVE_READS": informative_reads,
                 "MIN_READS_PER_BLOCK": args.min_block_reads,
-                "STRONG_ORIENTATION_BLOCKS_LOG10_ODDS_GE_1": strong_orientation_blocks,
-                "VERY_STRONG_ORIENTATION_BLOCKS_LOG10_ODDS_GE_2": very_strong_orientation_blocks,
-                "ORIENTATION_MIN_LOG10_ODDS_FOR_XA_XI_PLOT": (
-                    args.orientation_min_log10_odds
+                "DISCORDANT_MULTI_CGI_READS_DROPPED": (
+                    discordant_reads
                 ),
-                "ALL_READ_FILTERED_FOLDED_MINOR_X_P": (
-                    round(all_mle, 6) if np.isfinite(all_mle) else "."
+                "STRONG_ORIENTATION_BLOCKS_LOG10_ODDS_GE_1": (
+                    strong_orientation_blocks
                 ),
-                "PHASE_QC_FOLDED_MINOR_X_P": (
-                    round(phase_mle, 6) if np.isfinite(phase_mle) else "."
+                "VERY_STRONG_ORIENTATION_BLOCKS_LOG10_ODDS_GE_2": (
+                    very_strong_orientation_blocks
                 ),
                 "GLOBAL_FOLDED_SKEW_P": (
-                    round(mle, 6) if estimate_ok else "."
+                    round(mle, 6)
+                    if estimate_ok
+                    else "."
                 ),
-                "FOLDED_MINOR_X_P_CI95_LOW": (
-                    round(ci_low, 6) if np.isfinite(ci_low) else "."
+                "PROFILE_LIKELIHOOD_CI95_P_LOW": (
+                    round(ci_low, 6)
+                    if np.isfinite(ci_low)
+                    else "."
                 ),
-                "FOLDED_MINOR_X_P_CI95_HIGH": (
-                    round(ci_high, 6) if np.isfinite(ci_high) else "."
+                "PROFILE_LIKELIHOOD_CI95_P_HIGH": (
+                    round(ci_high, 6)
+                    if np.isfinite(ci_high)
+                    else "."
                 ),
-                "BOOTSTRAP_REPLICATES": args.bootstrap_replicates,
-                "BOOTSTRAP_SUCCESSFUL_REPLICATES": bootstrap_success,
-                "MAJOR_X_PERCENT": round(major, 2) if estimate_ok else ".",
-                "MINOR_X_PERCENT": round(minor, 2) if estimate_ok else ".",
+                "BALANCED_XCI_LRT_STATISTIC": (
+                    round(lrt_stat, 6)
+                    if np.isfinite(lrt_stat)
+                    else "."
+                ),
+                "BALANCED_XCI_LRT_BOUNDARY_P": (
+                    round(lrt_p, 8)
+                    if np.isfinite(lrt_p)
+                    else "."
+                ),
+                "PHASE_QC_FILTERED_FOLDED_SKEW_P": (
+                    round(phase_filtered_mle, 6)
+                    if np.isfinite(phase_filtered_mle)
+                    else "."
+                ),
+                "MAJOR_X_PERCENT": (
+                    round(major, 2)
+                    if estimate_ok
+                    else "."
+                ),
+                "MINOR_X_PERCENT": (
+                    round(minor, 2)
+                    if estimate_ok
+                    else "."
+                ),
                 "XCI_MAJOR_MINOR_RATIO": ratio,
-                "XCI_SKEW_STATUS": status,
-                "RANDOM_RANGE_MINOR_THRESHOLD": args.random_minor_threshold,
-                "HIGH_SKEW_MINOR_THRESHOLD": args.high_skew_minor_threshold,
-                "EXTREME_SKEW_MINOR_THRESHOLD": args.extreme_skew_minor_threshold,
+                "XCI_P_RANGE": range_label,
+                "COMMON_THRESHOLD_CONTEXT": context_label,
+                "THRESHOLD_70_30_MINOR_P": (
+                    args.threshold_70_30_minor
+                ),
+                "THRESHOLD_80_20_MINOR_P": (
+                    args.threshold_80_20_minor
+                ),
+                "THRESHOLD_90_10_MINOR_P": (
+                    args.threshold_90_10_minor
+                ),
                 "SKEW_METRIC_DEFINITION": (
-                    "GLOBAL_FOLDED_SKEW_P is the minor-X fraction after "
-                    "folded-binomial maximum-likelihood estimation: 0.50 is "
-                    "balanced and values toward 0 indicate stronger skew."
+                    "GLOBAL_FOLDED_SKEW_P is the folded-binomial "
+                    "minor-X fraction: P=0.50 is balanced and values "
+                    "closer to 0 indicate stronger skew."
                 ),
                 "LOG10_ODDS_MODEL": (
-                    "Per block: log10 LR(H1 major Xa vs H2 major Xa) = "
-                    "(2*S-N)*log10((1-P)/P), where S=H1_Xa+H2_Xi, "
-                    "N=TRIALS, and P is the primary folded minor-X MLE."
+                    "Per block log10 LR(H1 major Xa vs H2 major Xa) "
+                    "= (2*S-N)*log10((1-P)/P), where "
+                    "S=H1_Xa+H2_Xi and N=TRIALS."
+                ),
+                "LRT_NOTE": (
+                    "Balanced P=0.5 lies at the boundary of the folded "
+                    "parameter space; the reported asymptotic p-value "
+                    "uses the 50:50 chi-square(0)/chi-square(1) mixture."
                 ),
                 "METHOD": (
-                    "CpG-island Xa/Xi read clustering + WhatsHap HP/PS + "
-                    "folded-binomial MLE; block-bootstrap CI; minimum-read "
-                    "sensitivity; WhatsHap-LongPhase phase-concordance QC; "
-                    "per-block orientation likelihood ratios."
+                    "CpG-island Xa/Xi read clustering + WhatsHap HP/PS "
+                    "+ folded-binomial MLE; profile-likelihood CI; "
+                    "balanced-XCI likelihood-ratio test; read-threshold "
+                    "and WhatsHap/LongPhase phase-QC sensitivity."
                 ),
                 "INTERPRETATION": (
-                    "Classification is descriptive and uses the configured "
-                    "70:30/80:20/90:10 major:minor convention. Published XCI "
-                    "studies use different cutoffs, so this is not a universal "
-                    "clinical threshold. XX compatibility is a sequencing QC "
-                    "based on chrX/autosomal depth and chrX heterozygosity, not "
-                    "a karyotype diagnosis."
+                    "Report the major:minor ratio and CI as the primary "
+                    "result. XCI cutoffs vary among studies; 70:30, "
+                    "75:25, 80:20 and 90:10 conventions are all used. "
+                    "Phase concordance is a QC/sensitivity layer and "
+                    "does not replace the primary folded-binomial fit."
                 ),
             }
         ]
@@ -623,9 +728,10 @@ def main():
     summary.to_csv(summary_path, sep="\t", index=False)
 
     print(
-        f"[OK] status={eligibility} basis={estimate_basis} "
-        f"blocks={len(primary)} P={mle if estimate_ok else 'NA'} "
-        f"ratio={ratio} CI95=({ci_low},{ci_high})"
+        f"[OK] status={eligibility} blocks={len(primary)} "
+        f"P={mle if estimate_ok else 'NA'} ratio={ratio} "
+        f"profile_CI=({ci_low},{ci_high}) "
+        f"LRT_p={lrt_p}"
     )
 
 
