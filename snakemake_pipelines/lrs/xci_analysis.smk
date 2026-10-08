@@ -162,7 +162,6 @@ rule xci_compare_phasing:
 
         test -s {output.blocks}
         test -s {output.summary}
-        test -s {output.sensitivity}
         """
 
 
@@ -385,6 +384,7 @@ rule xci_calculate_skew:
 
         test -s {output.blocks}
         test -s {output.summary}
+        test -s {output.sensitivity}
         """
 
 
