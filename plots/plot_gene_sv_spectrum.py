@@ -97,18 +97,21 @@ def main():
     work = work[~work["_gene"].isin(["", ".", "NA", "N/A", "nan", "None"])].copy()
     work["_score"] = numeric(work[score_col]).fillna(0) if score_col else 0
     work["_size_group"] = work[size_col].map(group_size)
-    if type_col:
+    if type_col is not None:
         svtypes = work[type_col].fillna(".").astype(str).str.strip().str.upper()
         work["_breakpoint"] = svtypes.isin(["INV", "BND", "TRA"])
         # Breakends have no ordinary interval size, even if a span is reported.
         work.loc[svtypes.isin(["BND", "TRA"]), "_size_group"] = "BREAKEND"
-    else:
-        breakpoint_flag = work.get(
-            "BREAKPOINT_DEFINED_EVENT", pd.Series("NO", index=work.index)
-        )
+    elif "BREAKPOINT_DEFINED_EVENT" in work.columns:
+        breakpoint_flag = work["BREAKPOINT_DEFINED_EVENT"]
         work["_breakpoint"] = (
             breakpoint_flag.fillna("NO").astype(str).str.upper().eq("YES")
         )
+    else:
+        # Final candidate tables may omit the intermediate breakpoint flag.
+        # In that case no string fallback is used: assign an aligned boolean
+        # Series so downstream pandas operations remain type-safe.
+        work["_breakpoint"] = pd.Series(False, index=work.index, dtype=bool)
 
     work["_panel_group"] = (
         work[panel_col]
