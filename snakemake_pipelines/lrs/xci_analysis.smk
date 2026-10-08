@@ -188,17 +188,50 @@ rule xci_modkit_phased_chrX:
             --bgzf-threads {XCI_MODKIT_BGZF_THREADS} \
             --log-filepath {log}
 
-        if [[ ! -s "$tmpdir/hp1.bedmethyl.gz" || ! -s "$tmpdir/hp2.bedmethyl.gz" || ! -s "$tmpdir/combined.bedmethyl.gz" ]]; then
+        # modkit versions differ in the compressed phased-output suffix.
+        # Some write *.bedmethyl.gz, while modkit 0.6.4 writes *.bed.gz.
+        # Both contain bgzip-compressed bedMethyl records, so accept either
+        # naming convention and normalize to the pipeline's final filenames.
+        if [[ -s "$tmpdir/hp1.bedmethyl.gz" ]]; then
+            hp1_src="$tmpdir/hp1.bedmethyl.gz"
+        elif [[ -s "$tmpdir/hp1.bed.gz" ]]; then
+            hp1_src="$tmpdir/hp1.bed.gz"
+        else
+            hp1_src=""
+        fi
+
+        if [[ -s "$tmpdir/hp2.bedmethyl.gz" ]]; then
+            hp2_src="$tmpdir/hp2.bedmethyl.gz"
+        elif [[ -s "$tmpdir/hp2.bed.gz" ]]; then
+            hp2_src="$tmpdir/hp2.bed.gz"
+        else
+            hp2_src=""
+        fi
+
+        if [[ -s "$tmpdir/combined.bedmethyl.gz" ]]; then
+            combined_src="$tmpdir/combined.bedmethyl.gz"
+        elif [[ -s "$tmpdir/combined.bed.gz" ]]; then
+            combined_src="$tmpdir/combined.bed.gz"
+        else
+            combined_src=""
+        fi
+
+        if [[ -z "$hp1_src" || -z "$hp2_src" || -z "$combined_src" ]]; then
             echo "[ERROR] modkit finished but one or more phased bedMethyl outputs are missing or empty." >&2
-            echo "        Expected: hp1.bedmethyl.gz, hp2.bedmethyl.gz, combined.bedmethyl.gz" >&2
+            echo "        Accepted names: hp1/hp2/combined.bedmethyl.gz or hp1/hp2/combined.bed.gz" >&2
             ls -lah "$tmpdir" >&2 || true
             echo "        WhatsHap counts before modkit: HP1=$hp1_reads HP2=$hp2_reads PS=$ps_reads" >&2
             exit 1
         fi
 
-        mv "$tmpdir/hp1.bedmethyl.gz" {output.hp1}
-        mv "$tmpdir/hp2.bedmethyl.gz" {output.hp2}
-        mv "$tmpdir/combined.bedmethyl.gz" {output.combined}
+        echo "[XCI] modkit phased outputs:"
+        echo "      HP1: $hp1_src"
+        echo "      HP2: $hp2_src"
+        echo "      combined: $combined_src"
+
+        mv "$hp1_src" {output.hp1}
+        mv "$hp2_src" {output.hp2}
+        mv "$combined_src" {output.combined}
         rm -rf "$tmpdir"
 
         test -s {output.hp1}
