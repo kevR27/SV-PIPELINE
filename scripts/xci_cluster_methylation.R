@@ -350,6 +350,9 @@ if (nrow(informative) == 0) {
     BLOCK_END = integer(),
     INFORMATIVE_CPG_ISLANDS = integer(),
     UNIQUE_READS = integer(),
+    MULTI_CGI_READS = integer(),
+    DISCORDANT_MULTI_CGI_READS = integer(),
+    CONSENSUS_READS = integer(),
     H1_Xa = integer(),
     H1_Xi = integer(),
     H2_Xa = integer(),
@@ -370,11 +373,42 @@ block_meta <- informative %>%
     .groups = "drop"
   )
 
-# Match the published SkewX counting rule: a read spanning more than one
-# informative CpG island is counted only once when estimating block skew.
-informative_once <- informative %>%
-  arrange(read_name, CGI_id) %>%
-  distinct(read_name, .keep_all = TRUE)
+# Match the published SkewX rule that each read contributes once per
+# haplotype block, but do not resolve multi-island conflicts by string order.
+# If the same read is assigned Xa at one informative CGI and Xi at another,
+# its Xa/Xi state is discordant and the read is excluded from the skew count.
+per_read_consensus <- informative %>%
+  group_by(read_name, HP, PS) %>%
+  summarise(
+    N_CGI_ASSIGNMENTS = n_distinct(CGI_id),
+    N_X_STATES = n_distinct(assigned_X),
+    CONSENSUS_X = ifelse(
+      N_X_STATES == 1,
+      first(assigned_X),
+      NA_character_
+    ),
+    .groups = "drop"
+  )
+
+read_qc <- per_read_consensus %>%
+  group_by(PS) %>%
+  summarise(
+    MULTI_CGI_READS = sum(N_CGI_ASSIGNMENTS > 1),
+    DISCORDANT_MULTI_CGI_READS = sum(
+      N_CGI_ASSIGNMENTS > 1 & is.na(CONSENSUS_X)
+    ),
+    CONSENSUS_READS = sum(!is.na(CONSENSUS_X)),
+    .groups = "drop"
+  )
+
+informative_once <- per_read_consensus %>%
+  filter(!is.na(CONSENSUS_X)) %>%
+  transmute(
+    read_name = read_name,
+    HP = HP,
+    PS = PS,
+    assigned_X = CONSENSUS_X
+  )
 
 counts <- informative_once %>%
   count(PS, assigned_X, HP, name = "counts") %>%
@@ -403,6 +437,7 @@ for (field in c("H1_Xa", "H1_Xi", "H2_Xa", "H2_Xi")) {
 
 block_skew <- counts %>%
   left_join(block_meta, by = "PS") %>%
+  left_join(read_qc, by = "PS") %>%
   mutate(
     TRIALS = H1_Xa + H1_Xi + H2_Xa + H2_Xi,
     H1_Xa_SKEW = ifelse(
@@ -417,6 +452,9 @@ block_skew <- counts %>%
     BLOCK_END,
     INFORMATIVE_CPG_ISLANDS,
     UNIQUE_READS,
+    MULTI_CGI_READS,
+    DISCORDANT_MULTI_CGI_READS,
+    CONSENSUS_READS,
     H1_Xa,
     H1_Xi,
     H2_Xa,
@@ -426,3 +464,11 @@ block_skew <- counts %>%
   arrange(BLOCK_START, BLOCK_END)
 
 write_tsv(block_skew, block_out)
+
+message(
+  sprintf(
+    "[XCI] per-read consensus: retained=%d discordant_multi_CGI=%d",
+    sum(block_skew$CONSENSUS_READS, na.rm = TRUE),
+    sum(block_skew$DISCORDANT_MULTI_CGI_READS, na.rm = TRUE)
+  )
+)
