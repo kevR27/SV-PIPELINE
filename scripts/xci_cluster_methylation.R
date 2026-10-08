@@ -8,13 +8,14 @@ suppressPackageStartupMessages({
 })
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 9) {
+if (length(args) < 10) {
   stop(
     paste(
       "Usage: xci_cluster_methylation.R",
       "<sample> <bam> <cpg_bed> <haplotags.tsv.gz>",
       "<clustered.tsv.gz> <block_skew.tsv.gz>",
-      "<min_cluster_reads> <threads> <xist_promoter_bed_or_NONE>"
+      "<min_cluster_reads> <threads> <xist_promoter_bed_or_NONE>",
+      "<comma_separated_exclude_beds_or_NONE>"
     )
   )
 }
@@ -28,6 +29,7 @@ block_out <- args[[6]]
 min_pts <- as.integer(args[[7]])
 nthreads <- as.integer(args[[8]])
 xist_bed_path <- args[[9]]
+exclude_bed_arg <- args[[10]]
 
 cpgs <- read_tsv(
   cpg_bed_path,
@@ -51,6 +53,74 @@ cpgs <- cpgs %>%
 
 if (nrow(cpgs) == 0) {
   stop("No chrX intervals were found in the configured CpG-island BED")
+}
+
+read_exclude_beds <- function(arg) {
+  if (is.na(arg) || arg == "" || arg == "NONE") {
+    return(tibble(chr = character(), start = integer(), end = integer(), label = character()))
+  }
+
+  paths <- strsplit(arg, ",", fixed = TRUE)[[1]]
+  paths <- paths[nzchar(paths)]
+  out <- list()
+
+  for (path in paths) {
+    if (!file.exists(path)) {
+      stop(paste("Configured XCI exclusion BED does not exist:", path))
+    }
+
+    raw <- read_tsv(
+      path,
+      col_names = FALSE,
+      comment = "#",
+      show_col_types = FALSE
+    )
+    if (ncol(raw) < 3) {
+      stop(paste("XCI exclusion BED needs at least 3 columns:", path))
+    }
+
+    label <- if (ncol(raw) >= 4) as.character(raw[[4]]) else basename(path)
+    out[[length(out) + 1]] <- tibble(
+      chr = as.character(raw[[1]]),
+      start = as.integer(raw[[2]]),
+      end = as.integer(raw[[3]]),
+      label = label
+    )
+  }
+
+  bind_rows(out) %>%
+    filter(chr == "chrX", end > start)
+}
+
+exclude_bed <- read_exclude_beds(exclude_bed_arg)
+
+overlaps_excluded <- function(chr, start, end) {
+  if (nrow(exclude_bed) == 0) {
+    return(FALSE)
+  }
+  any(
+    exclude_bed$chr == chr &
+      exclude_bed$end > start &
+      exclude_bed$start < end
+  )
+}
+
+before_exclusion <- nrow(cpgs)
+cpgs <- cpgs %>%
+  rowwise() %>%
+  filter(!overlaps_excluded(chr, start, end)) %>%
+  ungroup()
+
+message(
+  sprintf(
+    "[XCI] CpG islands retained after PAR/XIST/escape masking: %d/%d",
+    nrow(cpgs),
+    before_exclusion
+  )
+)
+
+if (nrow(cpgs) == 0) {
+  stop("All chrX CpG islands were removed by the configured XCI exclusion masks")
 }
 
 xist_bed <- tibble(chr = character(), start = integer(), end = integer())
