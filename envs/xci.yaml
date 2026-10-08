@@ -7,4 +7,4 @@ dependencies:
   - r-tidyverse
   - r-doparallel
   - r-foreach
-  - bioconductor-nanomethviz
+  - bioconductor-nanomethviz=2.8.1
