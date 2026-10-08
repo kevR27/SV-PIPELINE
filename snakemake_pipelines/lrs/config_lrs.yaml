@@ -278,19 +278,41 @@ xci_min_cluster_reads: 5
 xci_min_chrx_coverage: 15
 xci_min_block_reads: 5
 
-# Folded skew P: 0.50 = balanced; values closer to 0 = stronger skew.
-# P < 0.40 corresponds to a major:minor ratio greater than 60:40. This is a
-# descriptive flag, not a clinical pathogenicity threshold.
-xci_neutral_threshold: 0.40
+# The primary XCI estimate remains the SkewX-style folded-binomial MLE using
+# all blocks that pass xci_min_block_reads. WhatsHap/LongPhase concordance is
+# used as QC and as a sensitivity analysis; it does not replace the primary fit.
+xci_phase_concordance_threshold: 0.90
+xci_phase_min_shared_snvs: 3
+xci_min_chrx_het_snvs: 50
 
-# Folded P <= 0.20 corresponds to a major:minor ratio >=80:20 and is reported
-# as high skew for descriptive purposes, following the interpretation used in
-# the SkewX study. This is not a clinical pathogenicity threshold.
-xci_high_skew_threshold: 0.20
+# Descriptive reference cutoffs for the minor-X fraction P.
+# P=0.50 is balanced; P=0.30 corresponds to 70:30, P=0.20 to 80:20 and
+# P=0.10 to 90:10. These are conventions used for interpretation, not
+# universal clinical or pathogenicity thresholds.
+xci_threshold_70_30_minor: 0.30
+xci_threshold_80_20_minor: 0.20
+xci_threshold_90_10_minor: 0.10
 
-# Haplotype-specific modkit tracks are summarized in 5-Mb bins for the
-# chromosome-wide methylation figure. Read-level CpG-island clustering remains
-# the primary estimator of XCI skew.
+# A block must have at least 10:1 orientation support and pass the phasing QC
+# above before HP1/HP2 methylation is re-labelled locally as Xa/Xi.
+xci_orientation_min_log10_odds: 1.0
+
+# Refit the folded-binomial model at stricter read thresholds to show whether
+# the global estimate is stable to xci_min_block_reads.
+xci_sensitivity_min_reads:
+  - 5
+  - 8
+  - 10
+  - 15
+
+# Default masks. PAR1/PAR2 are excluded from canonical XCI inference. XIST is
+# conservatively excluded unless xci_xist_promoter_bed is supplied, in which
+# case the clustering script applies the reversed XIST methylation rule.
+# An optional GRCh38 BED of escape genes can also be supplied.
+xci_escape_genes_bed: null
+
+# The revised methylation plot uses only non-masked CpG islands inside
+# confidently oriented phase blocks, then summarizes Xa and Xi in these bins.
 xci_methylation_bin_bp: 5000000
 xci_threads: 32
 
