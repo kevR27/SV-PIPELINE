@@ -27,22 +27,19 @@ XCI_PHASE_CONCORDANCE_THRESHOLD = float(
     config.get("xci_phase_concordance_threshold", 0.90)
 )
 XCI_PHASE_MIN_SHARED_SNVS = int(config.get("xci_phase_min_shared_snvs", 3))
-XCI_MIN_PRIMARY_BLOCKS = int(config.get("xci_min_primary_blocks", 3))
 XCI_MIN_CHRX_HET_SNVS = int(config.get("xci_min_chrx_het_snvs", 50))
-XCI_RANDOM_MINOR_THRESHOLD = float(
-    config.get("xci_random_minor_threshold", 0.30)
+XCI_THRESHOLD_70_30_MINOR = float(
+    config.get("xci_threshold_70_30_minor", 0.30)
 )
-XCI_HIGH_SKEW_MINOR_THRESHOLD = float(
-    config.get("xci_high_skew_minor_threshold", 0.20)
+XCI_THRESHOLD_80_20_MINOR = float(
+    config.get("xci_threshold_80_20_minor", 0.20)
 )
-XCI_EXTREME_SKEW_MINOR_THRESHOLD = float(
-    config.get("xci_extreme_skew_minor_threshold", 0.10)
+XCI_THRESHOLD_90_10_MINOR = float(
+    config.get("xci_threshold_90_10_minor", 0.10)
 )
 XCI_ORIENTATION_MIN_LOG10_ODDS = float(
     config.get("xci_orientation_min_log10_odds", 1.0)
 )
-XCI_BOOTSTRAP_REPLICATES = int(config.get("xci_bootstrap_replicates", 2000))
-XCI_BOOTSTRAP_SEED = int(config.get("xci_bootstrap_seed", 27))
 XCI_SENSITIVITY_MIN_READS = ",".join(
     str(x) for x in config.get("xci_sensitivity_min_reads", [5, 8, 10, 15])
 )
@@ -54,6 +51,10 @@ XCI_R_PLOTS = os.path.join(REPO_ROOT, "r_plots")
 XCI_CORE_EXCLUDE_BED = config.get(
     "xci_core_exclude_bed",
     os.path.join(REPO_ROOT, "reference", "xci_grch38_core_exclude.bed"),
+)
+XCI_XIST_EXCLUDE_BED = config.get(
+    "xci_xist_exclude_bed",
+    os.path.join(REPO_ROOT, "reference", "xci_grch38_xist_exclude.bed"),
 )
 XCI_ESCAPE_GENES_BED = config.get("xci_escape_genes_bed")
 
@@ -93,6 +94,10 @@ def xci_xist_arg(wc):
 
 def xci_exclude_input(wc):
     paths = [XCI_CORE_EXCLUDE_BED]
+    # If an explicit XIST-promoter BED is supplied, the clustering script
+    # applies the reversed XIST methylation rule. Otherwise mask XIST.
+    if not XCI_XIST_PROMOTER_BED:
+        paths.append(XCI_XIST_EXCLUDE_BED)
     if XCI_ESCAPE_GENES_BED:
         paths.append(XCI_ESCAPE_GENES_BED)
     return paths
@@ -100,6 +105,8 @@ def xci_exclude_input(wc):
 
 def xci_exclude_arg(wc):
     paths = [str(XCI_CORE_EXCLUDE_BED)]
+    if not XCI_XIST_PROMOTER_BED:
+        paths.append(str(XCI_XIST_EXCLUDE_BED))
     if XCI_ESCAPE_GENES_BED:
         paths.append(str(XCI_ESCAPE_GENES_BED))
     return shlex.quote(",".join(paths))
@@ -366,14 +373,11 @@ rule xci_calculate_skew:
             --min-block-reads {XCI_MIN_BLOCK_READS} \
             --phase-concordance-threshold {XCI_PHASE_CONCORDANCE_THRESHOLD} \
             --phase-min-shared-snvs {XCI_PHASE_MIN_SHARED_SNVS} \
-            --min-primary-blocks {XCI_MIN_PRIMARY_BLOCKS} \
             --min-chrx-het-snvs {XCI_MIN_CHRX_HET_SNVS} \
-            --random-minor-threshold {XCI_RANDOM_MINOR_THRESHOLD} \
-            --high-skew-minor-threshold {XCI_HIGH_SKEW_MINOR_THRESHOLD} \
-            --extreme-skew-minor-threshold {XCI_EXTREME_SKEW_MINOR_THRESHOLD} \
+            --threshold-70-30-minor {XCI_THRESHOLD_70_30_MINOR} \
+            --threshold-80-20-minor {XCI_THRESHOLD_80_20_MINOR} \
+            --threshold-90-10-minor {XCI_THRESHOLD_90_10_MINOR} \
             --orientation-min-log10-odds {XCI_ORIENTATION_MIN_LOG10_ODDS} \
-            --bootstrap-replicates {XCI_BOOTSTRAP_REPLICATES} \
-            --bootstrap-seed {XCI_BOOTSTRAP_SEED} \
             --sensitivity-min-reads "{XCI_SENSITIVITY_MIN_READS}" \
             --blocks-output {output.blocks} \
             --summary-output {output.summary} \
