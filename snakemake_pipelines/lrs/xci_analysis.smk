@@ -142,7 +142,8 @@ rule xci_compare_phasing:
         whatshap=PATH + "{sample}/phasing/{sample}.phased.vcf.gz",
         whatshap_index=PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi",
         longphase=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz",
-        longphase_index=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz.tbi"
+        longphase_index=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz.tbi",
+        script=SCRIPTS + "/compare_xci_phasing.py"
     output:
         blocks=PATH + "{sample}/xci/{sample}_whatshap_longphase_phase_blocks.tsv",
         summary=PATH + "{sample}/xci/{sample}_whatshap_longphase_phase_summary.tsv"
@@ -153,7 +154,7 @@ rule xci_compare_phasing:
         set -euo pipefail
         mkdir -p {PATH}{wildcards.sample}/xci
 
-        python {SCRIPTS}/compare_xci_phasing.py \
+        python {input.script} \
             --whatshap-vcf {input.whatshap} \
             --longphase-vcf {input.longphase} \
             --chrom {XCI_CHROM} \
@@ -311,7 +312,8 @@ rule xci_cluster_methylation:
         cpg=lambda wc: XCI_CPG_ISLANDS_BED,
         haplotags=rules.xci_extract_haplotags.output.reads,
         xist=xci_xist_input,
-        exclude=xci_exclude_input
+        exclude=xci_exclude_input,
+        script=SCRIPTS + "/xci_cluster_methylation.R"
     output:
         clustered=PATH + "{sample}/xci/{sample}_chrX_clustered_methylation_reads.tsv.gz",
         raw_blocks=PATH + "{sample}/xci/{sample}_chrX_block_skew.raw.tsv.gz"
@@ -327,7 +329,7 @@ rule xci_cluster_methylation:
         set -euo pipefail
         mkdir -p {PATH}{wildcards.sample}/xci
 
-        Rscript {SCRIPTS}/xci_cluster_methylation.R \
+        Rscript {input.script} \
             {wildcards.sample} \
             {input.bam} \
             {input.cpg} \
@@ -350,7 +352,8 @@ rule xci_calculate_skew:
         coverage=PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt",
         haplotags=rules.xci_extract_haplotags.output.summary,
         phase=rules.xci_compare_phasing.output.summary,
-        phase_blocks=rules.xci_compare_phasing.output.blocks
+        phase_blocks=rules.xci_compare_phasing.output.blocks,
+        script=SCRIPTS + "/calculate_xci_skew.py"
     output:
         blocks=PATH + "{sample}/xci/{sample}_xci_blocks.tsv",
         summary=PATH + "{sample}/xci/{sample}_xci_summary.tsv",
@@ -361,7 +364,7 @@ rule xci_calculate_skew:
         """
         set -euo pipefail
 
-        python {SCRIPTS}/calculate_xci_skew.py \
+        python {input.script} \
             --block-skew {input.blocks} \
             --mosdepth-summary {input.coverage} \
             --haplotag-summary {input.haplotags} \
