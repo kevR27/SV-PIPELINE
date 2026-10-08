@@ -253,13 +253,25 @@ def load_phase_qc(path: str) -> pd.DataFrame:
             * phase["SHARED_PHASED_SNVS"]
         )
 
+    agg_map = {
+        "PHASE_QC_SHARED_SNVS": ("SHARED_PHASED_SNVS", "sum"),
+        "PHASE_QC_CONCORDANT_SNVS": ("BEST_CONCORDANT_SNVS", "sum"),
+        "PHASE_QC_PAIR_COUNT": ("WHATSHAP_PS", "size"),
+    }
+    if "WHATSHAP_BLOCK_START" in phase.columns:
+        phase["WHATSHAP_BLOCK_START"] = pd.to_numeric(
+            phase["WHATSHAP_BLOCK_START"], errors="coerce"
+        )
+        agg_map["PHASE_BLOCK_START"] = ("WHATSHAP_BLOCK_START", "min")
+    if "WHATSHAP_BLOCK_END" in phase.columns:
+        phase["WHATSHAP_BLOCK_END"] = pd.to_numeric(
+            phase["WHATSHAP_BLOCK_END"], errors="coerce"
+        )
+        agg_map["PHASE_BLOCK_END"] = ("WHATSHAP_BLOCK_END", "max")
+
     grouped = (
         phase.groupby("WHATSHAP_PS", as_index=False)
-        .agg(
-            PHASE_QC_SHARED_SNVS=("SHARED_PHASED_SNVS", "sum"),
-            PHASE_QC_CONCORDANT_SNVS=("BEST_CONCORDANT_SNVS", "sum"),
-            PHASE_QC_PAIR_COUNT=("WHATSHAP_PS", "size"),
-        )
+        .agg(**agg_map)
         .rename(columns={"WHATSHAP_PS": "PS"})
     )
     grouped["PS"] = grouped["PS"].astype(str)
