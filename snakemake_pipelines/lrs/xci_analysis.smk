@@ -141,7 +141,6 @@ rule xci_modkit_phased_chrX:
 
         mkdir -p "$outdir"
         mkdir -p $(dirname {log})
-        rm -rf "$tmpdir"
         mkdir -p "$tmpdir"
 
         # Check that WhatsHap produced usable chrX haplotags before asking
@@ -169,24 +168,41 @@ rule xci_modkit_phased_chrX:
 
         echo "[XCI] chrX WhatsHap QC: HP1=$hp1_reads HP2=$hp2_reads reads_with_PS=$ps_reads"
 
-        # Primary XCI methylation analysis uses 5mCG only, matching the
-        # methylation mark used in the published nanopore XCI workflow.
-        # --phased partitions the HP-tagged WhatsHap modBAM into HP1/HP2.
-        {XCI_MODKIT} pileup \
-            {input.bam} \
-            "$tmpdir" \
-            --reference {input.ref} \
-            --region {XCI_CHROM} \
-            --cpg \
-            --modified-bases 5mC \
-            --combine-strands \
-            --phased \
-            --bgzf \
-            --threads {threads} \
-            --io-threads {XCI_MODKIT_IO_THREADS} \
-            --sampling-threads {XCI_MODKIT_SAMPLING_THREADS} \
-            --bgzf-threads {XCI_MODKIT_BGZF_THREADS} \
-            --log-filepath {log}
+        # Reuse a complete temporary phased pileup left by an earlier failed
+        # hand-off. This avoids recomputing modkit when only the expected
+        # filename suffix caused the previous rule to fail.
+        reuse_tmp=0
+        if (
+            [[ -s "$tmpdir/hp1.bedmethyl.gz" && -s "$tmpdir/hp2.bedmethyl.gz" && -s "$tmpdir/combined.bedmethyl.gz" ]] ||
+            [[ -s "$tmpdir/hp1.bed.gz" && -s "$tmpdir/hp2.bed.gz" && -s "$tmpdir/combined.bed.gz" ]]
+        ); then
+            reuse_tmp=1
+            echo "[XCI] Reusing complete phased modkit output already present in $tmpdir"
+        fi
+
+        if (( reuse_tmp == 0 )); then
+            rm -rf "$tmpdir"
+            mkdir -p "$tmpdir"
+
+            # Primary XCI methylation analysis uses 5mCG only, matching the
+            # methylation mark used in the published nanopore XCI workflow.
+            # --phased partitions the HP-tagged WhatsHap modBAM into HP1/HP2.
+            {XCI_MODKIT} pileup \
+                {input.bam} \
+                "$tmpdir" \
+                --reference {input.ref} \
+                --region {XCI_CHROM} \
+                --cpg \
+                --modified-bases 5mC \
+                --combine-strands \
+                --phased \
+                --bgzf \
+                --threads {threads} \
+                --io-threads {XCI_MODKIT_IO_THREADS} \
+                --sampling-threads {XCI_MODKIT_SAMPLING_THREADS} \
+                --bgzf-threads {XCI_MODKIT_BGZF_THREADS} \
+                --log-filepath {log}
+        fi
 
         # modkit versions differ in the compressed phased-output suffix.
         # Some write *.bedmethyl.gz, while modkit 0.6.4 writes *.bed.gz.
