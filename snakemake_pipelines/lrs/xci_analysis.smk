@@ -120,7 +120,8 @@ rule xci_modkit_phased_chrX:
     input:
         bam=PATH + "{sample}/phasing/{sample}.phased.bam",
         bai=PATH + "{sample}/phasing/{sample}.phased.bam.bai",
-        ref=REF
+        ref=REF,
+        haplotag_summary=rules.xci_extract_haplotags.output.summary
     output:
         hp1=PATH + "{sample}/xci/methylation/{sample}.chrX.hp1.5mC.bedmethyl.gz",
         hp2=PATH + "{sample}/xci/methylation/{sample}.chrX.hp2.5mC.bedmethyl.gz",
@@ -143,6 +144,37 @@ rule xci_modkit_phased_chrX:
         rm -rf "$tmpdir"
         mkdir -p "$tmpdir"
 
+        # Check that WhatsHap produced usable chrX haplotags before asking
+        # modkit for phased methylation. XCI needs reads from both haplotypes
+        # and phase-set information; otherwise hp1/hp2 output will be empty.
+        hp1_reads=$(awk -F'\\t' '
+            NR==1 {for(i=1;i<=NF;i++) if($i=="HP1_reads") c=i; next}
+            NR==2 && c {print $c}
+        ' {input.haplotag_summary})
+        hp2_reads=$(awk -F'\\t' '
+            NR==1 {for(i=1;i<=NF;i++) if($i=="HP2_reads") c=i; next}
+            NR==2 && c {print $c}
+        ' {input.haplotag_summary})
+        ps_reads=$(awk -F'\\t' '
+            NR==1 {for(i=1;i<=NF;i++) if($i=="reads_with_PS") c=i; next}
+            NR==2 && c {print $c}
+        ' {input.haplotag_summary})
+
+        if [[ -z "$hp1_reads" || -z "$hp2_reads" || -z "$ps_reads" ]]; then
+            echo "[ERROR] Could not read HP1_reads, HP2_reads or reads_with_PS from {input.haplotag_summary}" >&2
+            cat {input.haplotag_summary} >&2
+            exit 1
+        fi
+
+        if (( hp1_reads == 0 || hp2_reads == 0 || ps_reads == 0 )); then
+            echo "[ERROR] XCI cannot use {wildcards.sample}: chrX WhatsHap haplotags are insufficient." >&2
+            echo "        HP1_reads=$hp1_reads HP2_reads=$hp2_reads reads_with_PS=$ps_reads" >&2
+            echo "        Check that the sample is appropriate for XCI and that chrX has enough heterozygous variants for phasing." >&2
+            exit 1
+        fi
+
+        echo "[XCI] chrX WhatsHap QC: HP1=$hp1_reads HP2=$hp2_reads reads_with_PS=$ps_reads"
+
         # Primary XCI methylation analysis uses 5mCG only, matching the
         # methylation mark used in the published nanopore XCI workflow.
         # --phased partitions the HP-tagged WhatsHap modBAM into HP1/HP2.
@@ -162,9 +194,13 @@ rule xci_modkit_phased_chrX:
             --bgzf-threads {XCI_MODKIT_BGZF_THREADS} \
             --log-filepath {log}
 
-        test -s "$tmpdir/hp1.bedmethyl.gz"
-        test -s "$tmpdir/hp2.bedmethyl.gz"
-        test -s "$tmpdir/combined.bedmethyl.gz"
+        if [[ ! -s "$tmpdir/hp1.bedmethyl.gz" || ! -s "$tmpdir/hp2.bedmethyl.gz" || ! -s "$tmpdir/combined.bedmethyl.gz" ]]; then
+            echo "[ERROR] modkit finished but one or more phased bedMethyl outputs are missing or empty." >&2
+            echo "        Expected: hp1.bedmethyl.gz, hp2.bedmethyl.gz, combined.bedmethyl.gz" >&2
+            ls -lah "$tmpdir" >&2 || true
+            echo "        WhatsHap counts before modkit: HP1=$hp1_reads HP2=$hp2_reads PS=$ps_reads" >&2
+            exit 1
+        fi
 
         mv "$tmpdir/hp1.bedmethyl.gz" {output.hp1}
         mv "$tmpdir/hp2.bedmethyl.gz" {output.hp2}
