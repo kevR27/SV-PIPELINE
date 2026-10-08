@@ -170,6 +170,20 @@ def main():
     blocks.to_csv(blocks_path, sep="\t", index=False)
 
     overall = total_oriented / len(shared) if shared else np.nan
+
+    if not blocks.empty:
+        wh_pair_counts = blocks.groupby("WHATSHAP_PS")["LONGPHASE_PS"].nunique()
+        lp_pair_counts = blocks.groupby("LONGPHASE_PS")["WHATSHAP_PS"].nunique()
+        wh_split_blocks = int((wh_pair_counts > 1).sum())
+        lp_split_blocks = int((lp_pair_counts > 1).sum())
+        max_lp_per_wh = int(wh_pair_counts.max())
+        max_wh_per_lp = int(lp_pair_counts.max())
+    else:
+        wh_split_blocks = 0
+        lp_split_blocks = 0
+        max_lp_per_wh = 0
+        max_wh_per_lp = 0
+
     summary = pd.DataFrame(
         [
             {
@@ -186,6 +200,10 @@ def main():
                 ),
                 "SHARED_PHASED_SNVS": len(shared),
                 "OVERLAPPING_PHASE_BLOCK_PAIRS": len(blocks),
+                "WHATSHAP_BLOCKS_SPLIT_ACROSS_MULTIPLE_LONGPHASE_BLOCKS": wh_split_blocks,
+                "LONGPHASE_BLOCKS_SPLIT_ACROSS_MULTIPLE_WHATSHAP_BLOCKS": lp_split_blocks,
+                "MAX_LONGPHASE_BLOCKS_PER_WHATSHAP_BLOCK": max_lp_per_wh,
+                "MAX_WHATSHAP_BLOCKS_PER_LONGPHASE_BLOCK": max_wh_per_lp,
                 "FLIP_TOLERANT_PHASE_CONCORDANCE": (
                     round(overall, 6) if np.isfinite(overall) else "."
                 ),
@@ -193,8 +211,10 @@ def main():
                     "Concordance uses only shared phased chrX SNVs within "
                     "overlapping WhatsHap/LongPhase block spans and allows a "
                     "SAME/FLIPPED orientation independently for each block pair. "
-                    "This is a phase-consistency QC metric, not an XCI direction "
-                    "or inheritance result."
+                    "Each overlapping block pair is allowed its own SAME/FLIPPED "
+                    "orientation because HP labels are local. Fragmentation counts "
+                    "are reported separately so this local QC metric is not mistaken "
+                    "for chromosome-wide haplotype-label consistency."
                 ),
             }
         ]
