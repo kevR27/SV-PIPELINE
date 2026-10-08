@@ -692,6 +692,9 @@ def main():
                     else "."
                 ),
                 "XCI_MAJOR_MINOR_RATIO": ratio,
+                # Backward-compatible field name, now using a neutral P-range
+                # label rather than implying a clinical skew diagnosis.
+                "XCI_SKEW_STATUS": range_label,
                 "XCI_P_RANGE": range_label,
                 "COMMON_THRESHOLD_CONTEXT": context_label,
                 "THRESHOLD_70_30_MINOR_P": (
