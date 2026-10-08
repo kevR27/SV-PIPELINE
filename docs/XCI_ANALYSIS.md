@@ -98,106 +98,99 @@ xci_cpg_islands_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/xci/hg3
 
 ### XIST promoter BED
 
-The XIST promoter BED is optional because there is no single standalone
-"official XIST promoter BED" distributed with GRCh38. The purpose of this file
-in this workflow is very specific: it marks the XIST promoter CpG island so
-that its methylation interpretation is reversed relative to ordinary promoter
-CpG islands.
+The XIST-specific interval is optional for running the workflow, but it is
+biologically useful because XIST has the opposite methylation relationship from
+ordinary X-linked promoter CpG islands.
 
-For ordinary X-linked promoter CpG islands:
+For ordinary promoter CpG islands:
 
 ```text
 lower methylation cluster  -> Xa
 higher methylation cluster -> Xi
 ```
 
-For the XIST promoter CpG island:
+For the XIST P2 differentially methylated CpG island:
 
 ```text
 lower methylation cluster  -> Xi
 higher methylation cluster -> Xa
 ```
 
-XIST is on the minus strand in GRCh38. The MANE/RefSeq locus is
-approximately chrX:73820651-73852753, so the transcription start is at the
-high-coordinate end. In BED coordinates the one-base MANE TSS can be represented
-as:
+This XIST interval is not present in the standard UCSC `cpgIslandExt` chrX
+subset because the published XIST P2 region is an intermediate-density CpG
+island defined with more relaxed CpG-island criteria.
+
+Chapman et al. (2014) show the human XIST P2 CpG-island boundaries in hg19 as
+approximately chrX:73,070,847-73,071,444 in genomic position coordinates.
+Because BED uses a 0-based start, first represent the published hg19 interval as:
 
 ```text
-chrX    73852752    73852753    XIST_TSS
+chrX    73070846    73071444    XIST_P2_intermediate_CpG_island
 ```
 
-The XIST CpG island used for Xa/Xi methylation interpretation does not have to
-overlap the exact canonical TSS base. Human XIST studies describe a
-differentially methylated CpG island approximately 1.4 kb downstream of the
-major P1 promoter, within the 5-prime part of XIST/exon 1. Therefore, testing
-only whether a CpG island overlaps one TSS coordinate is too strict and can
-legitimately return no result.
-
-Use the UCSC chrX CpG-island BED itself to find CpG islands close to the XIST
-5-prime end. XIST is on the minus strand, so transcription proceeds toward
-lower genomic coordinates. Search a small window around the GRCh38 XIST
-5-prime end and inspect the returned islands:
+Do not guess the GRCh38 coordinates manually for production use. Convert this
+published hg19 interval with UCSC liftOver:
 
 ```bash
-awk 'BEGIN{OFS="\t"} \
-  $1=="chrX" && $3 > 73847700 && $2 < 73855750 \
-  {print $1,$2,$3,$4}' \
-  reference/xci/hg38_chrX_cpg_islands.bed
+mkdir -p reference/xci/liftover
+cd reference/xci/liftover
+
+wget https://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/liftOver
+chmod +x liftOver
+
+wget \
+  https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+
+printf "chrX\t73070846\t73071444\tXIST_P2_intermediate_CpG_island\n" \
+  > XIST_P2.hg19.bed
+
+./liftOver \
+  XIST_P2.hg19.bed \
+  hg19ToHg38.over.chain.gz \
+  XIST_P2.hg38.bed \
+  XIST_P2.unmapped.bed
+
+cat XIST_P2.hg38.bed
+cat XIST_P2.unmapped.bed
 ```
 
-The expected XIST-associated island should be close to, but can be downstream
-of, the canonical promoter rather than directly overlapping the single TSS
-base. Because XIST is on the minus strand, an island about 1.4 kb downstream
-will have lower genomic coordinates than the main TSS.
+The GRCh37 and GRCh38 RefSeq XIST loci differ by an overall +780,165 bp offset
+at both annotated ends, so an unchanged local mapping would be expected near
+GRCh38 chrX:73,851,012-73,851,609 in 1-based genomic coordinates
+(approximately BED chrX:73851011-73851609). The liftOver result is authoritative
+and should be used instead of the expected coordinates.
 
-A convenient way to rank nearby CpG islands by distance from the current RefSeq
-GRCh38 XIST 5-prime end (approximately 73852714) is:
-
-```bash
-awk 'BEGIN{OFS="\t"; tss=73852714}
-  $1=="chrX" && $3 > 73847700 && $2 < 73855750 {
-    if (tss < $2) d=$2-tss;
-    else if (tss > $3) d=tss-$3;
-    else d=0;
-    print $1,$2,$3,$4,d
-  }' reference/xci/hg38_chrX_cpg_islands.bed \
-  | sort -k5,5n
-```
-
-Do not automatically choose the closest interval only because it is nearest.
-Confirm that the selected interval is the CpG island in the 5-prime XIST region
-described in the literature and visible in UCSC/GENCODE. Once confirmed, write
-that CpG-island interval itself to:
+Copy the successful lifted row to:
 
 ```text
-reference/xci/hg38_XIST_promoter_cpg_island.bed
+reference/xci/hg38_XIST_P2_CpG_island.bed
 ```
 
-For example, after identifying the correct row:
+The standard UCSC chrX CpG-island input does not contain this intermediate-density
+P2 island. Therefore the lifted XIST interval must also be appended to the CpG
+clustering input; otherwise `xci_xist_promoter_bed` has nothing to reverse:
 
 ```bash
-echo -e "chrX\tSTART\tEND\tXIST_promoter_CpG_island" \
-  > reference/xci/hg38_XIST_promoter_cpg_island.bed
+cat \
+  reference/xci/hg38_chrX_cpg_islands.bed \
+  reference/xci/hg38_XIST_P2_CpG_island.bed \
+  | sort -k1,1 -k2,2n -k3,3n \
+  | uniq \
+  > reference/xci/hg38_chrX_cpg_islands.with_XIST_P2.bed
 ```
 
-Replace START and END with the coordinates from the confirmed UCSC CpG-island
-row, not with an arbitrary +/-1 kb or +/-2 kb promoter window.
-
-Then configure:
+Configure both files:
 
 ```yaml
-xci_xist_promoter_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/xci/hg38_XIST_promoter_cpg_island.bed"
+xci_cpg_islands_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/xci/hg38_chrX_cpg_islands.with_XIST_P2.bed"
+xci_xist_promoter_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/xci/hg38_XIST_P2_CpG_island.bed"
 ```
 
-If no convincing XIST-associated CpG island is found, keep:
-
-```yaml
-xci_xist_promoter_bed: null
-```
-
-The workflow still runs without this optional file; only the XIST-specific
-methylation reversal is omitted.
+If `xci_xist_promoter_bed` is left null, the global XCI analysis still runs.
+The missing file affects only the XIST-specific reversed methylation assignment;
+it does not disable haplotagging, methylation clustering at the other chrX CpG
+islands, block-wise skew calculation, the folded-binomial global estimate, or
+the other XCI QC outputs.
 
 ## XCI thesis plots
 
