@@ -127,35 +127,77 @@ as:
 chrX    73852752    73852753    XIST_TSS
 ```
 
-After creating the chrX CpG-island BED above, first identify whether a UCSC CpG
-island directly overlaps this TSS:
+The XIST CpG island used for Xa/Xi methylation interpretation does not have to
+overlap the exact canonical TSS base. Human XIST studies describe a
+differentially methylated CpG island approximately 1.4 kb downstream of the
+major P1 promoter, within the 5-prime part of XIST/exon 1. Therefore, testing
+only whether a CpG island overlaps one TSS coordinate is too strict and can
+legitimately return no result.
+
+Use the UCSC chrX CpG-island BED itself to find CpG islands close to the XIST
+5-prime end. XIST is on the minus strand, so transcription proceeds toward
+lower genomic coordinates. Search a small window around the GRCh38 XIST
+5-prime end and inspect the returned islands:
 
 ```bash
 awk 'BEGIN{OFS="\t"} \
-  $1=="chrX" && $2 < 73852753 && $3 > 73852752 \
+  $1=="chrX" && $3 > 73847700 && $2 < 73855750 \
   {print $1,$2,$3,$4}' \
-  reference/xci/hg38_chrX_cpg_islands.bed \
-  > reference/xci/hg38_XIST_promoter_cpg_island.bed
-
-cat reference/xci/hg38_XIST_promoter_cpg_island.bed
+  reference/xci/hg38_chrX_cpg_islands.bed
 ```
 
-If exactly one CpG island is returned, that interval can be used as:
+The expected XIST-associated island should be close to, but can be downstream
+of, the canonical promoter rather than directly overlapping the single TSS
+base. Because XIST is on the minus strand, an island about 1.4 kb downstream
+will have lower genomic coordinates than the main TSS.
+
+A convenient way to rank nearby CpG islands by distance from the current RefSeq
+GRCh38 XIST 5-prime end (approximately 73852714) is:
+
+```bash
+awk 'BEGIN{OFS="\t"; tss=73852714}
+  $1=="chrX" && $3 > 73847700 && $2 < 73855750 {
+    if (tss < $2) d=$2-tss;
+    else if (tss > $3) d=tss-$3;
+    else d=0;
+    print $1,$2,$3,$4,d
+  }' reference/xci/hg38_chrX_cpg_islands.bed \
+  | sort -k5,5n
+```
+
+Do not automatically choose the closest interval only because it is nearest.
+Confirm that the selected interval is the CpG island in the 5-prime XIST region
+described in the literature and visible in UCSC/GENCODE. Once confirmed, write
+that CpG-island interval itself to:
+
+```text
+reference/xci/hg38_XIST_promoter_cpg_island.bed
+```
+
+For example, after identifying the correct row:
+
+```bash
+echo -e "chrX\tSTART\tEND\tXIST_promoter_CpG_island" \
+  > reference/xci/hg38_XIST_promoter_cpg_island.bed
+```
+
+Replace START and END with the coordinates from the confirmed UCSC CpG-island
+row, not with an arbitrary +/-1 kb or +/-2 kb promoter window.
+
+Then configure:
 
 ```yaml
 xci_xist_promoter_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/xci/hg38_XIST_promoter_cpg_island.bed"
 ```
 
-If the command returns no interval or several ambiguous intervals, do not invent
-a broad promoter interval solely to make the workflow run. Leave:
+If no convincing XIST-associated CpG island is found, keep:
 
 ```yaml
 xci_xist_promoter_bed: null
 ```
 
-and inspect the XIST locus in UCSC/GENCODE before defining the promoter interval.
-The workflow will still run without this optional file, but the XIST-specific
-reversal will not be applied.
+The workflow still runs without this optional file; only the XIST-specific
+methylation reversal is omitted.
 
 ## XCI thesis plots
 
