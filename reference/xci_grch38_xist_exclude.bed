@@ -1,0 +1,3 @@
+# GRCh38 XIST locus; used as a conservative exclusion only when no
+# explicit XIST-promoter BED is configured for reversed Xa/Xi assignment.
+chrX	73820655	73852714	XIST
