@@ -135,7 +135,9 @@ if (nrow(blocks) > 0) {
     "H1_Xa_SKEW",
     "LOG10_ODDS_H1_XA_VS_H2_XA",
     "PHASE_QC_CONCORDANCE",
-    "PHASE_QC_SHARED_SNVS"
+    "PHASE_QC_SHARED_SNVS",
+    "PHASE_BLOCK_START",
+    "PHASE_BLOCK_END"
   )
   for (field in intersect(numeric_block_cols, names(blocks))) {
     blocks[, (field) := as.numeric(get(field))]
@@ -432,9 +434,12 @@ read_cpg_bed <- function(path) {
   dt <- fread(
     path,
     header = FALSE,
-    comment.char = "#",
+    fill = TRUE,
     showProgress = FALSE
   )
+  dt <- dt[
+    !grepl("^#", as.character(V1))
+  ]
   if (ncol(dt) < 3) {
     stop("CpG-island BED needs at least 3 columns")
   }
@@ -479,9 +484,12 @@ read_exclusions <- function(csv) {
     dt <- fread(
       path,
       header = FALSE,
-      comment.char = "#",
+      fill = TRUE,
       showProgress = FALSE
     )
+    dt <- dt[
+      !grepl("^#", as.character(V1))
+    ]
     if (ncol(dt) < 3) {
       stop(
         paste(
@@ -594,8 +602,22 @@ if (nrow(orientable) > 0) {
     LOG10_ODDS_H1_XA_VS_H2_XA
   )]
   orientable[, chrom := "chrX"]
-  orientable[, block_start := BLOCK_START]
-  orientable[, block_end := BLOCK_END]
+  orientable[
+    ,
+    block_start := fifelse(
+      is.finite(PHASE_BLOCK_START),
+      PHASE_BLOCK_START,
+      BLOCK_START
+    )
+  ]
+  orientable[
+    ,
+    block_end := fifelse(
+      is.finite(PHASE_BLOCK_END),
+      PHASE_BLOCK_END,
+      BLOCK_END
+    )
+  ]
 }
 
 hp1 <- read_bedmethyl(hp1_file, "HP1")
