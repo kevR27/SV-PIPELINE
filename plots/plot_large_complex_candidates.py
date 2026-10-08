@@ -35,7 +35,12 @@ def parse_args():
 
 
 def size_label(row):
-    span = pd.to_numeric(pd.Series([row.get("SV_EVENT_SPAN_BP")]), errors="coerce").iloc[0]
+    span = pd.to_numeric(
+        pd.Series([
+            row.get("SV_SPAN_BP", row.get("SV_EVENT_SPAN_BP"))
+        ]),
+        errors="coerce",
+    ).iloc[0]
     svtype = str(row.get("SVTYPE", "."))
     if pd.isna(span):
         return svtype
@@ -58,7 +63,7 @@ def compact_population(value):
     return mapping.get(str(value), str(value))
 
 
-def choose(df, buckets, n):
+def choose(df, buckets, n, score_col):
     parts = []
     final_rank_col = first_existing(
         df,
@@ -75,9 +80,7 @@ def choose(df, buckets, n):
         if sub.empty:
             continue
 
-        sub["_score"] = numeric(
-            sub["EVENT_GENE_RELEVANCE_SCORE"]
-        ).fillna(0)
+        sub["_score"] = numeric(sub[score_col]).fillna(0)
         sub["_rank"] = (
             numeric(sub[final_rank_col]).fillna(np.inf)
             if final_rank_col
@@ -159,7 +162,7 @@ def compact_relationship(value):
     return mapping.get(text, text.replace("_", " ").lower()[:30])
 
 
-def plot_panel(ax, data, title):
+def plot_panel(ax, data, title, score_col, gene_col):
     if data.empty:
         ax.axis("off")
         ax.text(0.5, 0.5, "No candidates in this class", transform=ax.transAxes, ha="center")
@@ -167,7 +170,7 @@ def plot_panel(ax, data, title):
         return
 
     data = data.copy()
-    data["_score"] = numeric(data["EVENT_GENE_RELEVANCE_SCORE"]).fillna(0)
+    data["_score"] = numeric(data[score_col]).fillna(0)
     final_rank_col = first_existing(
         data,
         [
@@ -192,7 +195,7 @@ def plot_panel(ax, data, title):
 
     labels = []
     for _, row in data.iterrows():
-        gene = compact_gene(row.get("GENES", "."))
+        gene = compact_gene(row.get(gene_col, "."))
         relation = compact_relationship(row.get("SV_GENE_RELATIONSHIP", "."))
         labels.append(f"{gene} | {size_label(row)}\n{relation}")
 
@@ -205,8 +208,13 @@ def plot_panel(ax, data, title):
     xmax = max(float(data["_score"].max()), 1.0)
     for bar, (_, row) in zip(bars, data.iterrows()):
         callers = str(row.get("CALLER_COUNT", "."))
-        pop = compact_population(row.get("EVENT_POPULATION_TIER", "."))
-        genes = str(row.get("SV_GENE_COUNT", "."))
+        pop = compact_population(
+            row.get(
+                "EVENT_POPULATION_TIER_V2",
+                row.get("EVENT_POPULATION_TIER", row.get("POPULATION_STATUS", ".")),
+            )
+        )
+        genes = str(row.get("GENES_AFFECTED", row.get("SV_GENE_COUNT", ".")))
         panel = "panel" if str(row.get("PANEL_STATUS", "")).upper() == "PANEL_GENE" else "non-panel"
         final_rank = (
             int(row["_final_rank"])
@@ -229,16 +237,34 @@ def main():
     set_thesis_style()
     df = read_tsv(args.input)
 
-    required = {"EVENT_REVIEW_BUCKET", "EVENT_GENE_RELEVANCE_SCORE"}
-    missing = required - set(df.columns)
-    if missing:
+    if "EVENT_REVIEW_BUCKET" not in df.columns:
         raise ValueError(
-            "Input is not the mechanism-aware SV-gene event ranking; missing: "
-            + ", ".join(sorted(missing))
+            "Input is missing EVENT_REVIEW_BUCKET, which is required to group "
+            "large and breakpoint-defined SV candidates."
         )
 
-    direct = choose(df, DIRECT_BUCKETS, args.top_per_bucket)
-    context = choose(df, CONTEXT_BUCKETS, args.top_per_bucket)
+    score_col = first_existing(
+        df,
+        [
+            "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
+            "GENE_RELEVANCE_DISPLAY_SCORE",
+            "GENE_RELEVANCE_SCORE",
+            "EVENT_GENE_RELEVANCE_SCORE",
+        ],
+    )
+    if score_col is None:
+        raise ValueError(
+            "Input is missing a gene relevance score. Expected one of: "
+            "FINAL_GENE_RELEVANCE_DISPLAY_SCORE, GENE_RELEVANCE_DISPLAY_SCORE, "
+            "GENE_RELEVANCE_SCORE, EVENT_GENE_RELEVANCE_SCORE."
+        )
+
+    gene_col = first_existing(df, ["GENE", "GENES", "Gene"])
+    if gene_col is None:
+        raise ValueError("Input is missing a gene column.")
+
+    direct = choose(df, DIRECT_BUCKETS, args.top_per_bucket, score_col)
+    context = choose(df, CONTEXT_BUCKETS, args.top_per_bucket, score_col)
 
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -267,11 +293,15 @@ def main():
         axes[0],
         direct,
         "Large CNV and breakpoint-gene candidates",
+        score_col,
+        gene_col,
     )
     plot_panel(
         axes[1],
         context,
         "Inversion-spanned and rearrangement context",
+        score_col,
+        gene_col,
     )
 
     fig.suptitle(
