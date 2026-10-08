@@ -23,12 +23,40 @@ XCI_XIST_PROMOTER_BED = config.get("xci_xist_promoter_bed")
 XCI_MIN_CLUSTER_READS = int(config.get("xci_min_cluster_reads", 5))
 XCI_MIN_CHRX_COVERAGE = float(config.get("xci_min_chrx_coverage", 15))
 XCI_MIN_BLOCK_READS = int(config.get("xci_min_block_reads", 5))
-XCI_NEUTRAL_THRESHOLD = float(config.get("xci_neutral_threshold", 0.40))
-XCI_HIGH_SKEW_THRESHOLD = float(config.get("xci_high_skew_threshold", 0.20))
+XCI_PHASE_CONCORDANCE_THRESHOLD = float(
+    config.get("xci_phase_concordance_threshold", 0.90)
+)
+XCI_PHASE_MIN_SHARED_SNVS = int(config.get("xci_phase_min_shared_snvs", 3))
+XCI_MIN_PRIMARY_BLOCKS = int(config.get("xci_min_primary_blocks", 3))
+XCI_MIN_CHRX_HET_SNVS = int(config.get("xci_min_chrx_het_snvs", 50))
+XCI_RANDOM_MINOR_THRESHOLD = float(
+    config.get("xci_random_minor_threshold", 0.30)
+)
+XCI_HIGH_SKEW_MINOR_THRESHOLD = float(
+    config.get("xci_high_skew_minor_threshold", 0.20)
+)
+XCI_EXTREME_SKEW_MINOR_THRESHOLD = float(
+    config.get("xci_extreme_skew_minor_threshold", 0.10)
+)
+XCI_ORIENTATION_MIN_LOG10_ODDS = float(
+    config.get("xci_orientation_min_log10_odds", 1.0)
+)
+XCI_BOOTSTRAP_REPLICATES = int(config.get("xci_bootstrap_replicates", 2000))
+XCI_BOOTSTRAP_SEED = int(config.get("xci_bootstrap_seed", 27))
+XCI_SENSITIVITY_MIN_READS = ",".join(
+    str(x) for x in config.get("xci_sensitivity_min_reads", [5, 8, 10, 15])
+)
 XCI_METHYLATION_BIN_BP = int(config.get("xci_methylation_bin_bp", 5000000))
 XCI_THREADS = int(config.get("xci_threads", min(int(config.get("threads", 8)), 8)))
 XCI_MODKIT = config.get("modkitenv", "modkit")
 XCI_R_PLOTS = os.path.join(REPO_ROOT, "r_plots")
+
+XCI_CORE_EXCLUDE_BED = config.get(
+    "xci_core_exclude_bed",
+    os.path.join(REPO_ROOT, "reference", "xci_grch38_core_exclude.bed"),
+)
+XCI_ESCAPE_GENES_BED = config.get("xci_escape_genes_bed")
+
 XCI_MODKIT_IO_THREADS = int(config.get("modkit_io_threads", XCI_THREADS))
 XCI_MODKIT_SAMPLING_THREADS = int(
     config.get("modkit_sampling_threads", XCI_THREADS)
@@ -61,6 +89,20 @@ def xci_xist_arg(wc):
         if XCI_XIST_PROMOTER_BED
         else "NONE"
     )
+
+
+def xci_exclude_input(wc):
+    paths = [XCI_CORE_EXCLUDE_BED]
+    if XCI_ESCAPE_GENES_BED:
+        paths.append(XCI_ESCAPE_GENES_BED)
+    return paths
+
+
+def xci_exclude_arg(wc):
+    paths = [str(XCI_CORE_EXCLUDE_BED)]
+    if XCI_ESCAPE_GENES_BED:
+        paths.append(str(XCI_ESCAPE_GENES_BED))
+    return shlex.quote(",".join(paths))
 
 
 rule xci_extract_haplotags:
@@ -113,6 +155,7 @@ rule xci_compare_phasing:
 
         test -s {output.blocks}
         test -s {output.summary}
+        test -s {output.sensitivity}
         """
 
 
@@ -261,12 +304,14 @@ rule xci_cluster_methylation:
         bam=PATH + "{sample}/phasing/{sample}.phased.bam",
         cpg=lambda wc: XCI_CPG_ISLANDS_BED,
         haplotags=rules.xci_extract_haplotags.output.reads,
-        xist=xci_xist_input
+        xist=xci_xist_input,
+        exclude=xci_exclude_input
     output:
         clustered=PATH + "{sample}/xci/{sample}_chrX_clustered_methylation_reads.tsv.gz",
         raw_blocks=PATH + "{sample}/xci/{sample}_chrX_block_skew.raw.tsv.gz"
     params:
-        xist=xci_xist_arg
+        xist=xci_xist_arg,
+        exclude=xci_exclude_arg
     threads:
         XCI_THREADS
     conda:
@@ -285,7 +330,8 @@ rule xci_cluster_methylation:
             {output.raw_blocks} \
             {XCI_MIN_CLUSTER_READS} \
             {threads} \
-            {params.xist}
+            {params.xist} \
+            {params.exclude}
 
         test -s {output.clustered}
         test -s {output.raw_blocks}
@@ -297,10 +343,12 @@ rule xci_calculate_skew:
         blocks=rules.xci_cluster_methylation.output.raw_blocks,
         coverage=PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt",
         haplotags=rules.xci_extract_haplotags.output.summary,
-        phase=rules.xci_compare_phasing.output.summary
+        phase=rules.xci_compare_phasing.output.summary,
+        phase_blocks=rules.xci_compare_phasing.output.blocks
     output:
         blocks=PATH + "{sample}/xci/{sample}_xci_blocks.tsv",
-        summary=PATH + "{sample}/xci/{sample}_xci_summary.tsv"
+        summary=PATH + "{sample}/xci/{sample}_xci_summary.tsv",
+        sensitivity=PATH + "{sample}/xci/{sample}_xci_sensitivity.tsv"
     conda:
         CONDAENV + "plots.yaml"
     shell:
@@ -312,13 +360,24 @@ rule xci_calculate_skew:
             --mosdepth-summary {input.coverage} \
             --haplotag-summary {input.haplotags} \
             --phase-summary {input.phase} \
+            --phase-blocks {input.phase_blocks} \
             --chrom {XCI_CHROM} \
             --min-chrx-coverage {XCI_MIN_CHRX_COVERAGE} \
             --min-block-reads {XCI_MIN_BLOCK_READS} \
-            --neutral-threshold {XCI_NEUTRAL_THRESHOLD} \
-            --high-skew-threshold {XCI_HIGH_SKEW_THRESHOLD} \
+            --phase-concordance-threshold {XCI_PHASE_CONCORDANCE_THRESHOLD} \
+            --phase-min-shared-snvs {XCI_PHASE_MIN_SHARED_SNVS} \
+            --min-primary-blocks {XCI_MIN_PRIMARY_BLOCKS} \
+            --min-chrx-het-snvs {XCI_MIN_CHRX_HET_SNVS} \
+            --random-minor-threshold {XCI_RANDOM_MINOR_THRESHOLD} \
+            --high-skew-minor-threshold {XCI_HIGH_SKEW_MINOR_THRESHOLD} \
+            --extreme-skew-minor-threshold {XCI_EXTREME_SKEW_MINOR_THRESHOLD} \
+            --orientation-min-log10-odds {XCI_ORIENTATION_MIN_LOG10_ODDS} \
+            --bootstrap-replicates {XCI_BOOTSTRAP_REPLICATES} \
+            --bootstrap-seed {XCI_BOOTSTRAP_SEED} \
+            --sensitivity-min-reads "{XCI_SENSITIVITY_MIN_READS}" \
             --blocks-output {output.blocks} \
-            --summary-output {output.summary}
+            --summary-output {output.summary} \
+            --sensitivity-output {output.sensitivity}
 
         test -s {output.blocks}
         test -s {output.summary}
@@ -329,17 +388,21 @@ rule xci_plot_analysis:
     input:
         blocks=rules.xci_calculate_skew.output.blocks,
         summary=rules.xci_calculate_skew.output.summary,
+        sensitivity=rules.xci_calculate_skew.output.sensitivity,
         phase_blocks=rules.xci_compare_phasing.output.blocks,
         phase_summary=rules.xci_compare_phasing.output.summary,
         hp1=rules.xci_modkit_phased_chrX.output.hp1,
         hp2=rules.xci_modkit_phased_chrX.output.hp2,
+        cpg=lambda wc: XCI_CPG_ISLANDS_BED,
+        exclude=xci_exclude_input,
         script=XCI_R_PLOTS + "/plot_xci.R"
     output:
         done=PATH + "{sample}/plots/15_x_inactivation/.xci_plots.done"
     params:
         outdir=lambda wc: (
             PATH + f"{wc.sample}/plots/15_x_inactivation"
-        )
+        ),
+        exclude=xci_exclude_arg
     conda:
         CONDAENV + "r_plot.yaml"
     shell:
@@ -350,10 +413,13 @@ rule xci_plot_analysis:
         Rscript {input.script} \
             {input.blocks} \
             {input.summary} \
+            {input.sensitivity} \
             {input.phase_blocks} \
             {input.phase_summary} \
             {input.hp1} \
             {input.hp2} \
+            {input.cpg} \
+            {params.exclude} \
             {params.outdir} \
             {wildcards.sample} \
             {XCI_METHYLATION_BIN_BP}
@@ -362,6 +428,8 @@ rule xci_plot_analysis:
         test -s {params.outdir}/{wildcards.sample}_xci_chrX_block_skew.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_orientation_log_odds.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_haplotype_methylation.pdf
+        test -s {params.outdir}/{wildcards.sample}_xci_methylation_delta.pdf
+        test -s {params.outdir}/{wildcards.sample}_xci_sensitivity.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_phase_concordance.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_plot_manifest.tsv
 
