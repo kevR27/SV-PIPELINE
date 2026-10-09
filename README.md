@@ -932,6 +932,10 @@ For an initial candidate review from completed outputs, use the
 launcher's `--review-only` option. Start with the generated
 `plots/00_start_here/START_HERE.txt` and editable candidate review table.
 
+For a separate >1 kb genic review view, with small events archived, explicit
+AF/caller/inversion-support groups and preserved ranks, see
+[Further downstream SV filtering](docs/DOWNSTREAM_SV_FILTERING.md).
+
 To generate the full plotting collection:
 
 ```bash

@@ -54,6 +54,12 @@ availability and mechanism summaries. Optional `--gene-gtf` provides actual
 exon tracks; existing depth bins are used where available. Existing review
 notes are preserved on rerun.
 
+After optional further filtering, `plot_downstream_sv_filtering.py` creates
+four separate figures explaining filter outcomes, large/small annotation
+context and unique-SV caller/AF groups. See
+[Downstream SV filtering](../docs/DOWNSTREAM_SV_FILTERING.md) for the commands,
+counting units and scientific limits.
+
 ```bash
 conda env create -f envs/plots.yaml
 conda activate svplots
