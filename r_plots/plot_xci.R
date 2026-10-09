@@ -34,6 +34,16 @@ bin_bp <- as.numeric(args[[12]])
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
+# Thesis-friendly, color-blind-aware palette.
+COL_XA <- "#0072B2"
+COL_XI <- "#D55E00"
+COL_TEAL <- "#009E73"
+COL_PURPLE <- "#CC79A7"
+COL_GOLD <- "#E69F00"
+COL_GREY <- "#9E9E9E"
+COL_LIGHT_GREY <- "#D9D9D9"
+COL_DARK <- "#333333"
+
 save_plot <- function(plot, name, width, height) {
   prefix <- file.path(out_dir, paste0(sample_id, "_", name))
   ggsave(
@@ -170,11 +180,14 @@ if (nrow(blocks) > 0) {
         weight = TRIALS
       ),
       binwidth = 0.025,
-      boundary = 0
+      boundary = 0,
+      fill = COL_TEAL,
+      color = "white"
     ) +
     geom_vline(
       xintercept = 0.5,
-      linetype = "dotted"
+      linetype = "dotted",
+      color = COL_DARK
     )
 
   if (is.finite(ci_low) && is.finite(ci_high)) {
@@ -185,7 +198,8 @@ if (nrow(blocks) > 0) {
         xmax = ci_high,
         ymin = -Inf,
         ymax = Inf,
-        alpha = 0.08
+        alpha = 0.14,
+        fill = COL_XA
       )
   }
 
@@ -194,7 +208,8 @@ if (nrow(blocks) > 0) {
       geom_vline(
         xintercept = global_p,
         linetype = "dashed",
-        linewidth = 0.9
+        linewidth = 1.0,
+        color = COL_XI
       )
   }
 
@@ -270,6 +285,14 @@ if (
     is.finite(BLOCK_START_MB) &
     is.finite(BLOCK_END_MB)
   ]
+  plot_blocks[
+    ,
+    ORIENTATION_DIRECTION := fifelse(
+      H1_XA_PROPORTION_RAW >= 0.5,
+      "H1 favoured as Xa",
+      "H2 favoured as Xa"
+    )
+  ]
 
   p2 <- ggplot(
     plot_blocks,
@@ -280,7 +303,8 @@ if (
         x = BLOCK_START_MB,
         xend = BLOCK_END_MB,
         yend = H1_XA_PROPORTION_RAW,
-        linetype = PHASE_QC_PASS
+        linetype = PHASE_QC_PASS,
+        color = ORIENTATION_DIRECTION
       ),
       linewidth = 1.0,
       alpha = 0.7
@@ -289,7 +313,8 @@ if (
       aes(
         x = BLOCK_MID_MB,
         size = TRIALS,
-        shape = PHASE_QC_PASS
+        shape = PHASE_QC_PASS,
+        color = ORIENTATION_DIRECTION
       ),
       alpha = 0.85
     ) +
@@ -300,6 +325,13 @@ if (
     scale_size_continuous(
       name = "Informative reads",
       range = c(2.5, 8)
+    ) +
+    scale_color_manual(
+      name = "Local orientation",
+      values = c(
+        "H1 favoured as Xa" = COL_XA,
+        "H2 favoured as Xa" = COL_XI
+      )
     ) +
     coord_cartesian(ylim = c(0, 1)) +
     labs(
@@ -352,6 +384,14 @@ if (
     is.finite(BLOCK_START_MB) &
     is.finite(BLOCK_END_MB)
   ]
+  odds_blocks[
+    ,
+    ORIENTATION_DIRECTION := fifelse(
+      LOG10_ODDS_H1_XA_VS_H2_XA >= 0,
+      "H1 favoured as Xa",
+      "H2 favoured as Xa"
+    )
+  ]
 
   p3 <- ggplot(
     odds_blocks,
@@ -362,7 +402,8 @@ if (
         x = BLOCK_START_MB,
         xend = BLOCK_END_MB,
         yend = LOG10_ODDS_H1_XA_VS_H2_XA,
-        linetype = PHASE_QC_PASS
+        linetype = PHASE_QC_PASS,
+        color = ORIENTATION_DIRECTION
       ),
       linewidth = 1.0,
       alpha = 0.7
@@ -371,7 +412,8 @@ if (
       aes(
         x = BLOCK_MID_MB,
         size = TRIALS,
-        shape = PHASE_QC_PASS
+        shape = PHASE_QC_PASS,
+        color = ORIENTATION_DIRECTION
       ),
       alpha = 0.85
     ) +
@@ -387,6 +429,13 @@ if (
     scale_size_continuous(
       name = "Informative reads",
       range = c(2.5, 8)
+    ) +
+    scale_color_manual(
+      name = "Local orientation",
+      values = c(
+        "H1 favoured as Xa" = COL_XA,
+        "H2 favoured as Xa" = COL_XI
+      )
     ) +
     labs(
       title = paste0(
@@ -747,11 +796,19 @@ if (nrow(oriented_meth) > 0) {
       position_mb,
       methylation_percent,
       group = X_STATE,
-      linetype = X_STATE
+      linetype = X_STATE,
+      color = X_STATE
     )
   ) +
     geom_line(linewidth = 0.9) +
     geom_point(size = 2.0) +
+    scale_color_manual(
+      name = "Oriented X state",
+      values = c(
+        "Xa" = COL_XA,
+        "Xi" = COL_XI
+      )
+    ) +
     coord_cartesian(ylim = c(0, 100)) +
     labs(
       title = paste0(
@@ -764,7 +821,8 @@ if (nrow(oriented_meth) > 0) {
       ),
       x = "chrX position (Mb)",
       y = "CpG-island 5mC (%)",
-      linetype = "Oriented X state"
+      linetype = "Oriented X state",
+      color = "Oriented X state"
     ) +
     theme_thesis()
 
@@ -779,6 +837,14 @@ if (nrow(oriented_meth) > 0) {
     "Xi" %in% names(wide)
   ) {
     wide[, XI_MINUS_XA := Xi - Xa]
+    wide[
+      ,
+      DELTA_DIRECTION := fifelse(
+        XI_MINUS_XA >= 0,
+        "Xi > Xa",
+        "Xa > Xi"
+      )
+    ]
 
     fwrite(
       wide,
@@ -799,7 +865,8 @@ if (nrow(oriented_meth) > 0) {
       ],
       aes(
         position_mb,
-        XI_MINUS_XA
+        XI_MINUS_XA,
+        color = DELTA_DIRECTION
       )
     ) +
       geom_hline(
@@ -808,6 +875,13 @@ if (nrow(oriented_meth) > 0) {
       ) +
       geom_line(linewidth = 0.8) +
       geom_point(size = 2.2) +
+      scale_color_manual(
+        name = "Methylation difference",
+        values = c(
+          "Xi > Xa" = COL_XI,
+          "Xa > Xi" = COL_XA
+        )
+      ) +
       labs(
         title = paste0(
           sample_id,
@@ -924,15 +998,31 @@ if (nrow(phase) > 0) {
     "FLIP_TOLERANT_PHASE_CONCORDANCE",
     "."
   )
+  phase[
+    ,
+    CONCORDANCE_CLASS := fifelse(
+      ORIENTATION_CONCORDANCE >= 0.90,
+      "≥ 0.90 concordance",
+      "< 0.90 concordance"
+    )
+  ]
 
   p5 <- ggplot(
     phase,
     aes(
       block,
-      ORIENTATION_CONCORDANCE
+      ORIENTATION_CONCORDANCE,
+      fill = CONCORDANCE_CLASS
     )
   ) +
     geom_col() +
+    scale_fill_manual(
+      name = "Phase QC",
+      values = c(
+        "≥ 0.90 concordance" = COL_TEAL,
+        "< 0.90 concordance" = COL_GREY
+      )
+    ) +
     geom_text(
       aes(
         label = paste0(
@@ -1035,7 +1125,8 @@ if (nrow(sensitivity) > 0) {
       minor_p,
       group = analysis,
       linetype = analysis,
-      shape = analysis
+      shape = analysis,
+      color = analysis
     )
   ) +
     geom_hline(
@@ -1044,6 +1135,13 @@ if (nrow(sensitivity) > 0) {
     ) +
     geom_line(linewidth = 0.9) +
     geom_point(size = 2.8) +
+    scale_color_manual(
+      name = "Block set",
+      values = c(
+        "All read-qualified blocks" = COL_XA,
+        "Phase-QC-passed blocks" = COL_TEAL
+      )
+    ) +
     coord_cartesian(ylim = c(0, 0.5)) +
     labs(
       title = paste0(
@@ -1057,7 +1155,8 @@ if (nrow(sensitivity) > 0) {
       x = "Minimum informative reads per block",
       y = "Folded minor-X P",
       linetype = "Block set",
-      shape = "Block set"
+      shape = "Block set",
+      color = "Block set"
     ) +
     theme_thesis()
 } else {
