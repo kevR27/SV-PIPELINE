@@ -46,6 +46,14 @@ The plotting layer remains intentionally downstream and is not part of the biolo
 
 ## Environment
 
+For a small initial review of completed outputs, start with
+[Interpreting LRS results](../docs/INTERPRETING_LRS_RESULTS.md). The launcher now
+supports `--review-only`, creates `00_start_here/START_HERE.txt` and an editable
+review TSV, separates panel/non-panel evidence matrices, and adds evidence
+availability and mechanism summaries. Optional `--gene-gtf` provides actual
+exon tracks; existing depth bins are used where available. Existing review
+notes are preserved on rerun.
+
 ```bash
 conda env create -f envs/plots.yaml
 conda activate svplots
@@ -368,3 +376,4 @@ and breakends), plus the number of INV/BND events.
 Candidate locus and Samplot selection are now stratified across event classes
 so small SVs cannot crowd all large and breakpoint-defined events out of
 detailed review.
+

@@ -927,7 +927,12 @@ snakemake \
   --cores 8
 ```
 
-Generate all available plots with:
+For an initial candidate review from completed outputs, use the
+[interpretation guide](docs/INTERPRETING_LRS_RESULTS.md) and the plotting
+launcher's `--review-only` option. Start with the generated
+`plots/00_start_here/START_HERE.txt` and editable candidate review table.
+
+To generate the full plotting collection:
 
 ```bash
 snakemake \
@@ -1101,3 +1106,4 @@ and independent experimental confirmation where required?
 ```
 
 The main purpose of the pipeline is to move from a large genome-wide SV callset to a smaller and more informative set of candidates, while keeping the analysis transparent and without discarding potentially relevant variants simply because one caller or one annotation resource cannot evaluate them.
+

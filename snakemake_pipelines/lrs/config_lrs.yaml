@@ -333,6 +333,11 @@ large_sv_depth_min_size: 100000
 # Number of top genes/candidate gene-SV rows shown in the main thesis figures.
 # Change this single value to 20 or 30 if you want a shorter/longer display.
 thesis_top_genes: 25
+# Initial interpretation workload only: these do not alter analysis or ranks.
+candidate_review_top_n: 5
+candidate_locus_top_n: 10
+# Optional matching GRCh38 GTF; a gene BED alone cannot provide exon structure.
+candidate_plot_gene_gtf: null
 
 # Publication-style R figures.
 r_plot_top_candidates: 30
@@ -355,3 +360,4 @@ dorado_summary_bams:
 # all reads. N50 itself is a QC metric; this threshold is what separates the
 # short-read tail from the long-read QC subset.
 n50_min_length: 1000
+

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import math
+from io import BytesIO
 from pathlib import Path
 from typing import Iterable
 
@@ -180,7 +181,12 @@ def save_figure(fig, out_prefix: str | Path, dpi: int = 600) -> list[Path]:
         ("png", {"dpi": dpi}),
     ]:
         path = prefix.with_suffix(f".{ext}")
-        fig.savefig(path, **kwargs)
+        # Finish encoding before writing to mounted output filesystems, so
+        # every format includes its complete trailer rather than a partial
+        # renderer buffer.
+        with BytesIO() as encoded:
+            fig.savefig(encoded, format=ext, **kwargs)
+            path.write_bytes(encoded.getvalue())
         outputs.append(path)
     return outputs
 
@@ -215,3 +221,4 @@ def parse_semicolon_numeric(value) -> list[float]:
         if math.isfinite(x):
             values.append(x)
     return values
+

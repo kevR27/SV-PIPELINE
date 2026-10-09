@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Create an integrated technical/biological evidence matrix for top SV-gene candidates."""
+"""Plot separate, annotated evidence matrices for panel/non-panel SV-gene rows."""
 
 from __future__ import annotations
 
 import argparse
-import re
 import textwrap
 from pathlib import Path
 
@@ -12,362 +11,105 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 import numpy as np
-import pandas as pd
 
-from plot_utils import add_panel_label, first_existing, numeric, read_tsv, save_figure, set_thesis_style
+from candidate_review import (
+    DOMAINS, PANEL_GROUPS, GROUP_LABELS, GROUP_SUFFIXES, STATE_COLORS,
+    STATE_LABELS, enrich_events, event_evidence, evidence_table, select_events, text,
+)
+from plot_utils import read_tsv, save_figure, set_thesis_style
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Plot integrated evidence for prioritized SV-gene pairs.")
-    p.add_argument("--input", required=True, help="Integrated or extended SV-gene analysis TSV")
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--input", required=True)
+    p.add_argument("--evidence-table", help="Optional detailed integrated table, joined by SV_ID and gene")
     p.add_argument("--out-prefix", required=True)
-    p.add_argument("--top-n", type=int, default=25)
-    p.add_argument("--rare-af", type=float, default=0.01)
-    p.add_argument("--title", default="Integrated evidence for prioritized SV-gene candidates")
+    p.add_argument("--top-n", type=int, default=25, help="Rows per panel group")
+    p.add_argument("--rare-af", type=float, default=0.01, help="AF review threshold; not a pathogenicity threshold")
+    p.add_argument("--platform", choices=["lrs", "srs"], default="lrs")
+    p.add_argument("--title", default="Candidate event evidence")
     return p.parse_args()
 
 
-def text_present(series: pd.Series) -> pd.Series:
-    s = series.fillna("").astype(str).str.strip()
-    return ~s.isin(["", ".", "NA", "N/A", "None", "nan", "NaN"])
+def cell_text(label):
+    replacements = {
+        "direct effect recessive second allele required": "Second allele required",
+        "direct effect moi unknown": "Inheritance unknown",
+        "mixed ad ar disease model review": "Mixed AD/AR model",
+        "gene fully spanned by inversion": "Inversion spans gene",
+        "inversion spans intact gene": "Inversion spans gene",
+        "breakpoint within transcript": "Transcript breakpoint",
+        "whole gene dosage context": "Whole-gene dosage",
+    }
+    label = replacements.get(label, label)
+    lines = []
+    for line in label.splitlines():
+        lines.extend(textwrap.wrap(line, width=14) or [""])
+    if len(lines) > 4:
+        lines = lines[:4]
+        lines[-1] = lines[-1][:11] + "..."
+    return "\n".join(lines)
 
 
-def caller_present(series: pd.Series, caller: str) -> pd.Series:
-    return series.fillna("").astype(str).str.contains(re.escape(caller), case=False, regex=True)
-
-
-def yes_flag(series: pd.Series) -> pd.Series:
-    values = series.fillna("").astype(str).str.upper().str.strip()
-    return values.map({"YES": 1.0, "TRUE": 1.0, "1": 1.0, "NO": 0.0, "FALSE": 0.0, "0": 0.0})
+def render_matrix(work, prefix, title, rare_af=0.01):
+    if work.empty:
+        return []
+    states = list(STATE_COLORS)
+    observations = [event_evidence(row, rare_af) for _, row in work.iterrows()]
+    matrix = np.array([[states.index(obs[d][0]) for d in DOMAINS] for obs in observations])
+    height = max(3.3, len(work) * 0.67 + 2.25)
+    fig, ax = plt.subplots(figsize=(19, height))
+    ax.imshow(matrix, aspect="auto", interpolation="nearest", cmap=ListedColormap(list(STATE_COLORS.values())), vmin=-0.5, vmax=len(states)-0.5)
+    for i, obs in enumerate(observations):
+        for j, domain in enumerate(DOMAINS):
+            ax.text(j, i, cell_text(obs[domain][1]), ha="center", va="center", fontsize=9, color="#25364A")
+    labels = []
+    for _, row in work.iterrows():
+        locus = text(row, ["CHROM"]) + ":" + text(row, ["START", "POS"])
+        rank = row["_rank"]
+        rank_label = str(int(rank)) if np.isfinite(rank) else "?"
+        labels.append(f"{rank_label}. {row['GENE']} | {text(row, ['SVTYPE'])}\n{locus} | {row['SV_ID'][:32]}")
+    ax.set_yticks(range(len(work)), labels, fontsize=10)
+    ax.set_xticks(range(len(DOMAINS)), [d.replace(" ", "\n", 1) for d in DOMAINS], fontsize=11)
+    ax.tick_params(axis="both", length=0)
+    ax.set_xticks(np.arange(-0.5, len(DOMAINS)), minor=True)
+    ax.set_yticks(np.arange(-0.5, len(work)), minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.5)
+    ax.tick_params(which="minor", length=0)
+    ax.set_ylabel("SV–gene association", fontsize=11)
+    ax.set_title(title, loc="left", pad=72, fontsize=15, fontweight="bold")
+    ax.legend(handles=[Patch(facecolor=STATE_COLORS[s], edgecolor="#FFFFFF", label=STATE_LABELS[s]) for s in states], loc="lower left", bbox_to_anchor=(0, 1.01), ncol=4, frameon=False, fontsize=9)
+    fig.text(0.5, 0.015, "Colours describe evidence states, not pathogenicity. Gene relevance and methylation are context. Depth and caller agreement use the same sequencing data.\nPopulation cells show the largest explicit event AF across available sources. Full observations and identifiers are in the accompanying TSV.", ha="center", fontsize=9)
+    fig.subplots_adjust(left=0.26, right=0.985, bottom=0.8/height, top=1-1.45/height)
+    result = save_figure(fig, prefix, dpi=300)
+    plt.close(fig)
+    return result
 
 
 def main():
     args = parse_args()
     set_thesis_style()
-    df = read_tsv(args.input)
-    if df.empty:
-        raise ValueError("Integrated SV-gene table is empty.")
-
-    id_col = first_existing(df, ["SV_ID", "ID"])
-    gene_col = first_existing(df, ["GENES", "Gene", "GENE", "ANNotsv_Gene"])
-    chrom_col = first_existing(df, ["CHROM", "chrom"])
-    start_col = first_existing(df, ["START", "POS"])
-    type_col = first_existing(df, ["SVTYPE", "SV_type"])
-    if id_col is None or gene_col is None:
-        raise ValueError("Input needs an SV ID and gene column.")
-
-    work = df.copy()
-    work["_gene"] = work[gene_col].fillna(".").astype(str)
-    if chrom_col and start_col and type_col:
-        start_mb = numeric(work[start_col]) / 1e6
-        work["_label"] = (
-            work["_gene"]
-            + " | "
-            + work[type_col].astype(str)
-            + " "
-            + work[chrom_col].astype(str)
-            + ":"
-            + start_mb.map(lambda x: f"{x:.2f} Mb" if pd.notna(x) else "?")
-        )
-    else:
-        work["_label"] = work["_gene"] + " | " + work[id_col].fillna(".").astype(str)
-
-    callers_col = first_existing(work, ["CALLERS"])
-    caller_count_col = first_existing(work, ["CALLER_COUNT", "SUPP"])
-    af_col = first_existing(work, ["NEEDLR_AF"])
-    panel_col = first_existing(work, ["PANEL_STATUS"])
-    pheno_col = first_existing(work, ["PHENOTYPE_SCORE"])
-    omim_col = first_existing(work, ["OMIM", "NEEDLR_OMIM"])
-    gencc_col = first_existing(work, ["GENCC", "NEEDLR_GENCC"])
-    ann_col = first_existing(
-        work,
-        [
-            "ANNOTSV_GENERAL_CLASSIFICATION",
-            "ANNotsv_Classification",
-            "AnnotSV_Classification",
-        ],
-    )
-
-    if callers_col:
-        caller_text = work[callers_col]
-        work["Sniffles2"] = caller_present(caller_text, "Sniffles2").astype(int)
-        work["cuteSV"] = caller_present(caller_text, "cuteSV").astype(int)
-        work["Manta"] = caller_present(caller_text, "Manta").astype(int)
-        work["Delly"] = caller_present(caller_text, "Delly").astype(int)
-    else:
-        work[["Sniffles2", "cuteSV", "Manta", "Delly"]] = np.nan
-
-    caller_count = numeric(work[caller_count_col]) if caller_count_col else pd.Series(np.nan, index=work.index)
-    work["Multi-caller"] = (caller_count >= 2).astype(float).where(caller_count.notna())
-
-    if af_col:
-        af = numeric(work[af_col])
-        work["needLR evaluable"] = af.notna().astype(int)
-        work[f"needLR AF ≤ {args.rare_af:g}"] = ((af <= args.rare_af) & af.notna()).astype(int)
-        work["needLR AF = 0"] = (af.eq(0) & af.notna()).astype(int)
-    else:
-        af = pd.Series(np.nan, index=work.index)
-        work["needLR evaluable"] = 0
-        work[f"needLR AF ≤ {args.rare_af:g}"] = 0
-        work["needLR AF = 0"] = 0
-
-    if panel_col:
-        ptxt = work[panel_col].fillna("").astype(str).str.upper()
-        work["Panel gene"] = ptxt.str.strip().isin(["PANEL_GENE", "YES"]).astype(int)
-    else:
-        work["Panel gene"] = 0
-
-    work["OMIM evidence"] = text_present(work[omim_col]).astype(int) if omim_col else 0
-    work["GenCC evidence"] = text_present(work[gencc_col]).astype(int) if gencc_col else 0
-    work["AnnotSV class"] = text_present(work[ann_col]).astype(int) if ann_col else 0
-    pheno = numeric(work[pheno_col]).fillna(0) if pheno_col else pd.Series(0, index=work.index)
-    work["Phenotype overlap"] = (pheno > 0).astype(int)
-
-    inheritance_col = first_existing(
-        work,
-        ["GENE_INHERITANCE_CLASS"],
-    )
-    mechanism_col = first_existing(
-        work,
-        [
-            "FINAL_INHERITANCE_MECHANISM_CLASS",
-            "INHERITANCE_MECHANISM_CLASS",
-        ],
-    )
-    recessive_pair_col = first_existing(
-        work,
-        ["RECESSIVE_PAIR_STATUS"],
-    )
-
-    inheritance_flags = []
-    if inheritance_col:
-        inheritance_text = (
-            work[inheritance_col].fillna("UNKNOWN").astype(str).str.upper()
-        )
-        work["AD gene model"] = inheritance_text.eq(
-            "AUTOSOMAL_DOMINANT"
-        ).astype(int)
-        work["AR gene model"] = inheritance_text.eq(
-            "AUTOSOMAL_RECESSIVE"
-        ).astype(int)
-        inheritance_flags += ["AD gene model", "AR gene model"]
-
-    if mechanism_col:
-        mechanism_text = (
-            work[mechanism_col].fillna("UNRESOLVED").astype(str).str.upper()
-        )
-        work["Mechanism compatible"] = mechanism_text.isin(
-            [
-                "STRONG_DOSAGE_OR_BIALLELIC_COMPATIBILITY",
-                "SUPPORTED_DISEASE_MECHANISM",
-                "AR_TRANS_SECOND_ALLELE_SUPPORTED",
-            ]
-        ).astype(int)
-        work["AR second allele required"] = mechanism_text.eq(
-            "DIRECT_EFFECT_RECESSIVE_SECOND_ALLELE_REQUIRED"
-        ).astype(int)
-        inheritance_flags += [
-            "Mechanism compatible",
-            "AR second allele required",
-        ]
-
-    if recessive_pair_col:
-        pair_text = (
-            work[recessive_pair_col].fillna(".").astype(str).str.upper()
-        )
-        work["AR SNV+SV phased trans"] = pair_text.eq(
-            "AR_TRANS_SNV_SV_CANDIDATE"
-        ).astype(int)
-        inheritance_flags.append("AR SNV+SV phased trans")
-
-    optional_flags = []
-    for source_col, display in [
-        ("STRAGLR_MATCH", "Straglr match"),
-        ("TLDR_MATCH", "TLDR match"),
-        ("LONGPHASE_MATCH", "LongPhase match"),
-    ]:
-        col = first_existing(work, [source_col])
-        if col:
-            work[display] = yes_flag(work[col])
-            optional_flags.append(display)
-
-    whatshap_count_col = first_existing(work, ["WHATSHAP_PHASED_HET_COUNT"])
-    if whatshap_count_col:
-        work["Nearby WhatsHap phase"] = (numeric(work[whatshap_count_col]).fillna(0) > 0).astype(int)
-        optional_flags.append("Nearby WhatsHap phase")
-
-    methylation_context_col = first_existing(work, ["METHYLATION_CONTEXT"])
-    if methylation_context_col:
-        work["Methylation data available"] = (
-            work[methylation_context_col].fillna("").astype(str).str.upper().eq("EVALUATED")
-        ).astype(int)
-        optional_flags.append("Methylation data available")
-
-    mitocarta_encoding_col = first_existing(work, ["MITOCARTA_ENCODING"])
-    if mitocarta_encoding_col:
-        work["Nuclear mitochondrial gene"] = (
-            work[mitocarta_encoding_col]
-            .fillna("")
-            .astype(str)
-            .str.upper()
-            .eq("NUCLEAR_MITOCHONDRIAL_GENE")
-        ).astype(int)
-        optional_flags.append("Nuclear mitochondrial gene")
-
-    mito_on_col = first_existing(work, ["MITO_ON_CONTEXT"])
-    if mito_on_col:
-        work["Mito + ON context"] = (
-            work[mito_on_col].fillna("").astype(str).str.upper().eq("YES")
-        ).astype(int)
-        optional_flags.append("Mito + ON context")
-
-    score_col = first_existing(
-        work,
-        [
-            "FINAL_GENE_RELEVANCE_DISPLAY_SCORE",
-            "GENE_RELEVANCE_DISPLAY_SCORE",
-            "EVENT_GENE_RELEVANCE_SCORE",
-            "INTEGRATED_DISCOVERY_SCORE",
-            "integrated_discovery_score",
-            "PHENOTYPE_SCORE",
-        ],
-    )
-    rank_col = first_existing(
-        work,
-        [
-            "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
-            "EVENT_RANK_WITHIN_PANEL_STATUS",
-            "EVENT_RANK_GLOBAL",
-        ],
-    )
-    # Match the documented gene-discovery ranking. Database presence, panel
-    # membership and optional analyses must not silently create another score.
-    work["PLOT_ORDER_BASIS"] = rank_col or score_col or (pheno_col or "UNRANKED")
-    work["PLOT_ORDER_SCORE"] = numeric(work[score_col]) if score_col else (
-        numeric(work[pheno_col]) if pheno_col else np.nan
-    )
-    work["_caller_count"] = caller_count
-    work["_pheno"] = pheno
-    work["_af"] = af
-    work["_rank"] = (
-        numeric(work[rank_col])
-        if rank_col
-        else pd.Series(np.nan, index=work.index)
-    )
-    work["_panel_group"] = (
-        work[panel_col].fillna("NONPANEL_GENE").astype(str).str.upper()
-        if panel_col
-        else "NONPANEL_GENE"
-    )
-    work["_panel_group"] = work["_panel_group"].replace(
-        {"NON_PANEL": "NONPANEL_GENE", "YES": "PANEL_GENE"}
-    )
-
-    # Keep both panel and non-panel candidates visible. Within each group,
-    # prefer the final shared event rank; old outputs fall back to score/support.
-    selected = []
-    for group_name in ["PANEL_GENE", "NONPANEL_GENE"]:
-        subset = work[work["_panel_group"].eq(group_name)].copy()
-        subset = subset.sort_values(
-            ["_rank", "PLOT_ORDER_SCORE", "_pheno", "_caller_count", id_col, gene_col],
-            ascending=[True, False, False, False, True, True],
-            na_position="last",
-        )
-        selected.append(subset.head(args.top_n))
-
-    work = (
-        pd.concat(selected, ignore_index=True)
-        .drop_duplicates(subset=[id_col, gene_col], keep="first")
-        .copy()
-    )
-    # Selection is balanced between panel and non-panel candidates, but panel
-    # membership must not become an undeclared ranking score. Display the
-    # selected rows by the shared rank/score across both groups.
-    work = work.sort_values(
-        [
-            "_rank",
-            "PLOT_ORDER_SCORE",
-            "_pheno",
-            "_caller_count",
-            id_col,
-            gene_col,
-        ],
-        ascending=[True, False, False, False, True, True],
-        na_position="last",
-    ).reset_index(drop=True)
-    # Keep the full SV_ID in the exported TSV; the figure uses a shorter label
-    # so candidate rows remain readable at thesis scale.
-
-    evidence_cols = [
-        "Sniffles2", "cuteSV", "Manta", "Delly", "Multi-caller",
-        "needLR evaluable", f"needLR AF ≤ {args.rare_af:g}", "needLR AF = 0",
-        "Panel gene", "AnnotSV class", "OMIM evidence", "GenCC evidence",
-        "Phenotype overlap",
-    ] + inheritance_flags + optional_flags
-
+    work = enrich_events(select_events(read_tsv(args.input), args.top_n), args.evidence_table)
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    work[[id_col, gene_col, "_panel_group", "_rank", "PLOT_ORDER_BASIS", "PLOT_ORDER_SCORE"] + evidence_cols].to_csv(
-        prefix.with_name(prefix.name + "_matrix.tsv"), sep="\t", index=False
-    )
-
-    matrix = work[evidence_cols].astype(float).to_numpy()
-    n = len(work)
-    fig_h = max(7.2, 0.42 * n + 2.6)
-    fig, ax = plt.subplots(figsize=(17.0, fig_h))
-    cmap = ListedColormap(["#F3F4F4", "#0B6E69"])
-    cmap.set_bad("#AAB2BA")
-    ax.imshow(matrix, aspect="auto", interpolation="nearest", cmap=cmap, vmin=0, vmax=1)
-
-    ax.set_xticks(np.arange(len(evidence_cols)))
-    wrapped_evidence = ["\n".join(textwrap.wrap(x, width=14)) for x in evidence_cols]
-    ax.set_xticklabels(wrapped_evidence, rotation=35, ha="right", fontsize=8.5)
-    ax.set_yticks(np.arange(n))
-    ax.set_yticklabels(
-        [
-            ("P | " if group == "PANEL_GENE" else "NP | ") + label
-            for group, label in zip(work["_panel_group"], work["_label"])
-        ],
-        fontsize=9,
-    )
-    ax.set_xlabel("Evidence layer")
-    ax.set_ylabel("SV | overlapping gene")
-    ax.legend(handles=[Patch(facecolor="#0B6E69", label="Reported"),
-                       Patch(facecolor="#F3F4F4", edgecolor="#BBBBBB", label="Not reported"),
-                       Patch(facecolor="#AAB2BA", label="Unavailable/unknown")],
-              loc="upper left", bbox_to_anchor=(0, 1.08), ncol=3, fontsize=8)
-    ax.set_xticks(np.arange(-0.5, len(evidence_cols), 1), minor=True)
-    ax.set_yticks(np.arange(-0.5, n, 1), minor=True)
-    ax.grid(which="minor", color="white", linewidth=1.0)
-    ax.tick_params(which="minor", bottom=False, left=False)
-    add_panel_label(ax, "A")
-
-    for i, (_, row) in enumerate(work.iterrows()):
-        af_txt = "AF n/e" if pd.isna(row["_af"]) else f"AF={row['_af']:.3g}"
-        ax.text(
-            len(evidence_cols) - 0.15,
-            i,
-            f"  {af_txt}; phenotype={row['_pheno']:.2f}",
-            va="center",
-            ha="left",
-            fontsize=8,
-            clip_on=False,
-        )
-    ax.set_xlim(-0.5, len(evidence_cols) + 3.4)
-
-    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=0.995)
-    fig.text(
-        0.5,
-        0.008,
-        "Panel and non-panel candidates are selected separately. Order follows the final shared event rank when available. AD/AR and mechanism columns are inheritance-context flags, not pathogenicity classifications; AR trans support requires phased SNV+SV evidence.",
-        ha="center",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=[0, 0.03, 1, 0.97])
-    outputs = save_figure(fig, prefix)
-    plt.close(fig)
+    observations = evidence_table(work, args.rare_af)
+    observations.to_csv(str(prefix) + "_observations.tsv", sep="\t", index=False)
+    # Keep earlier exported caller fields, but do not show inapplicable callers.
+    work["LongPhase match"] = [1 if text(r, ["LONGPHASE", "LONGPHASE_MATCH"]).upper() == "YES" else 0 if text(r, ["LONGPHASE", "LONGPHASE_MATCH"]).upper() == "NO" else np.nan for _, r in work.iterrows()]
+    callers = work.get("CALLERS")
+    if callers is not None:
+        for caller in ["Sniffles2", "cuteSV", "Delly", "Manta"]:
+            if callers.fillna("").astype(str).str.contains(caller, case=False, regex=False).any():
+                work[caller] = callers.fillna("").astype(str).str.contains(caller, case=False, regex=False).astype(int)
+    work.drop(columns=["_source_order"], errors="ignore").to_csv(str(prefix) + "_matrix.tsv", sep="\t", index=False)
+    outputs = []
+    for group in PANEL_GROUPS:
+        subset = work[work["_panel_group"].eq(group)].copy()
+        path = prefix.with_name(prefix.name + "_" + GROUP_SUFFIXES[group])
+        outputs.extend(render_matrix(subset, path, args.title + ": " + GROUP_LABELS[group], args.rare_af))
     print("[OK]", *outputs, sep="\n")
 
 
 if __name__ == "__main__":
     main()
+

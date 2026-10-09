@@ -26,6 +26,10 @@ def parse_args():
     p.add_argument("--methylation-region", default=None, help="Optional chr:start-end for methylation plot")
     p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
     p.add_argument("--gene-bed", default=None, help="Optional gene BED for candidate-specific locus plots")
+    p.add_argument("--gene-gtf", help="Optional matching GRCh38 GTF for real exon tracks")
+    p.add_argument("--review-top-n", type=int, default=5, help="Initial review associations per panel group")
+    p.add_argument("--locus-top-n", type=int, default=10, help="Maximum detailed locus figures from the review shortlist")
+    p.add_argument("--review-only", action="store_true", help="Generate QC and essential review outputs from completed tables only")
     p.add_argument("--dry-run", action="store_true")
     return p.parse_args()
 
@@ -71,12 +75,19 @@ def run(command: list[str], required_paths: list[Path], dry_run: bool):
 
 def main():
     args = parse_args()
+    if min(args.top_genes, args.review_top_n, args.locus_top_n) < 1:
+        raise ValueError("Plot and review counts must be at least 1")
+    for name in ["candidate_table", "gene_bed", "gene_gtf"]:
+        value = getattr(args, name)
+        if value and not Path(value).expanduser().exists():
+            raise FileNotFoundError(f"Requested --{name.replace('_', '-')} does not exist: {value}")
     root = Path(args.root).expanduser().resolve()
     sample_root = root / args.sample
     out = Path(args.out_dir).expanduser().resolve() if args.out_dir else sample_root / "plots"
     out.mkdir(parents=True, exist_ok=True)
 
     folders = {
+        "review": out / "00_start_here",
         "qc": out / "01_qc",
         "caller": out / "02_caller_concordance",
         "landscape": out / "03_sv_landscape",
@@ -90,7 +101,7 @@ def main():
         "methylation": out / "09_methylation",
         "integration": out / "10_integrated_evidence",
         "associations": out / "11_sv_gene_associations",
-        "loci": out / "12_candidate_loci" / f"top_{args.top_genes}",
+        "loci": out / "12_candidate_loci" / f"top_{args.locus_top_n}",
         "mitochondrial": out / "14_mitochondrial_context",
     }
     for folder in folders.values():
@@ -138,7 +149,8 @@ def main():
     if args.candidate_table:
         candidate_events = Path(args.candidate_table).expanduser().resolve()
     else:
-        candidate_events = integrated
+        final_events = sample_root / "gene_discovery" / "final" / f"{s}_sv_gene_candidates.ranked.tsv"
+        candidate_events = final_events if final_events.exists() else integrated
 
     candidate_source = candidate_events if candidate_events.exists() else integrated
 
@@ -216,6 +228,45 @@ def main():
     else:
         print("[SKIP] no mosdepth summary found")
 
+    # Review outputs run first. No variant calling or ranking is invoked here.
+    if not candidate_source.exists():
+        raise FileNotFoundError(f"No completed SV-gene candidate table found: {candidate_source}")
+    evidence_args = ["--evidence-table", str(integrated)] if integrated.exists() and integrated != candidate_source else []
+    jobs.extend([
+        ([py, str(HERE / "build_candidate_review.py"), "--input", str(candidate_source),
+          *evidence_args, "--sample", s, "--out-dir", str(folders["review"]),
+          "--top-n", str(args.review_top_n)], [candidate_source]),
+        ([py, str(HERE / "plot_candidate_evidence_matrix.py"), "--input", str(candidate_source),
+          *evidence_args, "--platform", args.platform,
+          "--out-prefix", str(folders["candidates"] / f"{s}_candidate_evidence"),
+          "--top-n", str(args.top_genes)], [candidate_source]),
+        ([py, str(HERE / "plot_event_review_summary.py"), "--input", str(candidate_source),
+          "--sample", s, "--out-dir", str(folders["review"])], [candidate_source]),
+    ])
+    if args.gene_bed:
+        gene_bed = Path(args.gene_bed).expanduser().resolve()
+        locus_cmd = [py, str(HERE / "plot_candidate_locus.py"), "--input", str(candidate_source),
+                     *evidence_args, "--gene-bed", str(gene_bed), "--out-dir", str(folders["loci"]),
+                     "--selection-table", str(folders["review"] / f"{s}_candidate_shortlist.tsv"),
+                     "--top-n", str(args.locus_top_n)]
+        locus_required = [candidate_source, gene_bed]
+        if args.gene_gtf:
+            locus_cmd += ["--gene-gtf", str(Path(args.gene_gtf).expanduser().resolve())]
+        depth_bins = sample_root / "gene_discovery" / "final" / f"{s}_large_sv_depth_bins.tsv"
+        if depth_bins.exists():
+            locus_cmd += ["--depth-bins", str(depth_bins)]
+        if args.platform == "lrs" and methylation:
+            locus_cmd += ["--methylation-bed", str(methylation), "--methylation-units", args.methylation_units]
+        jobs.append((locus_cmd, locus_required))
+    else:
+        print("[SKIP] no gene BED supplied; candidate-specific locus plots skipped")
+
+    if args.review_only:
+        for command, required in jobs:
+            run(command, required, args.dry_run)
+        print(f"[OK] start at {folders['review'] / 'START_HERE.txt'}")
+        return
+
     jobs.extend(
         [
             (
@@ -248,15 +299,6 @@ def main():
                     py, str(HERE / "plot_large_complex_candidates.py"),
                     "--input", str(candidate_source),
                     "--out-prefix", str(folders["large_sv"] / f"{s}_large_complex_candidates"),
-                ],
-                [candidate_source],
-            ),
-            (
-                [
-                    py, str(HERE / "plot_candidate_evidence_matrix.py"),
-                    "--input", str(candidate_source),
-                    "--out-prefix", str(folders["candidates"] / f"{s}_candidate_evidence"),
-                    "--top-n", str(args.top_genes),
                 ],
                 [candidate_source],
             ),
@@ -409,28 +451,6 @@ def main():
     elif args.platform == "lrs":
         print("[SKIP] no modkit bedMethyl/.bed.gz file found")
 
-    if args.gene_bed:
-        gene_bed = Path(args.gene_bed).expanduser().resolve()
-        locus_cmd = [
-            py,
-            str(HERE / "plot_candidate_locus.py"),
-            "--input",
-            str(candidate_source),
-            "--gene-bed",
-            str(gene_bed),
-            "--out-dir",
-            str(folders["loci"]),
-            "--top-n",
-            str(args.top_genes),
-        ]
-        locus_required = [candidate_source, gene_bed]
-        if args.platform == "lrs" and methylation:
-            locus_cmd += ["--methylation-bed", str(methylation)]
-            locus_required.append(methylation)
-        jobs.append((locus_cmd, locus_required))
-    else:
-        print("[SKIP] no gene BED supplied; candidate-specific locus plots skipped")
-
     for command, required in jobs:
         run(command, required, args.dry_run)
 
@@ -439,4 +459,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

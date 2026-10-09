@@ -9,6 +9,7 @@ the integrated table.  It is an interpretation aid, not read-level validation.
 from __future__ import annotations
 
 import argparse
+import gzip
 import re
 from pathlib import Path
 
@@ -19,13 +20,19 @@ import numpy as np
 import pandas as pd
 
 from plot_utils import SVTYPE_COLORS, first_existing, normalize_svtype, numeric, read_tsv, save_figure, set_thesis_style
+from candidate_review import enrich_events, event_evidence
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Generate detailed candidate-specific SV locus figures.")
     p.add_argument("--input", required=True, help="Integrated/multimodal SV-gene TSV")
     p.add_argument("--gene-bed", required=True, help="BED with chrom, start, end, gene label")
+    p.add_argument("--gene-gtf", help="Optional matching GRCh38 GTF for exon-resolved gene tracks")
+    p.add_argument("--evidence-table", help="Detailed table used to fill missing selected-row evidence")
+    p.add_argument("--depth-bins", help="Optional existing large-SV depth-bin TSV")
+    p.add_argument("--selection-table", help="Optional shortlist containing exact SV_ID and GENE keys")
     p.add_argument("--methylation-bed", default=None, help="Optional tabix-indexed modkit bedMethyl")
+    p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
     p.add_argument("--out-dir", required=True)
     p.add_argument("--top-n", type=int, default=25)
     p.add_argument("--flank", type=int, default=50000)
@@ -57,7 +64,7 @@ def load_gene_bed(path):
     return bed.dropna(subset=["start", "end"])
 
 
-def methylation_records(path, chrom, start, end):
+def methylation_records(path, chrom, start, end, units="percent"):
     if not path:
         return []
     try:
@@ -77,19 +84,64 @@ def methylation_records(path, chrom, start, end):
             f = line.rstrip("\n").split("\t")
             if len(f) < 11:
                 continue
+            if f[3].lower() not in {"m", "5mc", "c+m"}:
+                continue
             try:
                 pos = (int(f[1]) + int(f[2])) / 2
                 cov = float(f[9])
                 pct = float(f[10])
             except ValueError:
                 continue
-            if np.isfinite(pct) and np.isfinite(cov):
+            if units == "fraction":
+                pct *= 100
+            if np.isfinite(pct) and 0 <= pct <= 100 and np.isfinite(cov) and cov >= 5:
                 rows.append((pos, pct, cov, f[3]))
     except Exception:
         pass
     finally:
         tbx.close()
     return rows
+
+
+def load_selected_exons(path, selected_genes):
+    """Keep true exon intervals for selected genes; do not infer exons from BED4."""
+    records = []
+    if not path:
+        return pd.DataFrame(columns=["chrom", "start", "end", "gene", "transcript"])
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rt") as handle:
+        for line in handle:
+            if line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) != 9 or fields[2] != "exon":
+                continue
+            attrs = dict(re.findall(r'(\w+)\s+"([^"]*)"', fields[8]))
+            gene = attrs.get("gene_name", attrs.get("gene_id", "."))
+            if gene not in selected_genes:
+                continue
+            transcript = attrs.get("transcript_id", ".")
+            if transcript == ".":
+                continue
+            records.append({"chrom": normalize_chrom(fields[0]), "start": int(fields[3])-1, "end": int(fields[4]), "gene": gene, "transcript": transcript})
+    return pd.DataFrame(records, columns=["chrom", "start", "end", "gene", "transcript"]).drop_duplicates()
+
+
+def representative_exons(exons, gene, chrom, preferred="."):
+    sub = exons[exons["gene"].eq(gene) & exons["chrom"].eq(chrom)].copy()
+    if sub.empty:
+        return sub, ".", "NO_EXON_ANNOTATION"
+    available = set(sub["transcript"])
+    choices = [t.strip() for t in re.split(r"[;,|]", preferred) if t.strip() in available]
+    if choices:
+        chosen = sorted(choices)[0]
+        basis = "VEP_CANONICAL_TRANSCRIPT_AVAILABLE_IN_GTF"
+    else:
+        sub["_length"] = sub["end"] - sub["start"]
+        totals = sub.groupby("transcript")["_length"].sum()
+        chosen = sorted(totals.index, key=lambda t: (-totals[t], t))[0]
+        basis = "LARGEST_SUMMED_EXON_LENGTH_FOR_DISPLAY_ONLY"
+    return sub[sub["transcript"].eq(chosen)].sort_values("start"), chosen, basis
 
 
 def evidence_value(row, candidates):
@@ -236,7 +288,11 @@ def main():
         .copy()
     )
 
-    bucket_col = first_existing(work, ["EVENT_REVIEW_BUCKET"])
+    if args.selection_table:
+        shortlist = read_tsv(args.selection_table, required=["SV_ID", "GENE"])
+        chosen_keys = set(zip(shortlist["SV_ID"].astype(str), shortlist["GENE"].astype(str)))
+        work = work.loc[[(str(r[id_col]), str(r["_gene"])) in chosen_keys for _, r in work.iterrows()]].copy()
+    bucket_col = first_existing(work, ["EVENT_REVIEW_BUCKET"]) if not args.selection_table else None
     bucket_rank_col = first_existing(work, ["EVENT_RANK_WITHIN_BUCKET"])
     bucket_order = [
         "BREAKPOINT_GENE_CANDIDATE",
@@ -325,6 +381,12 @@ def main():
 
     outdir = Path(args.out_dir)
     outdir.mkdir(parents=True, exist_ok=True)
+    work["SV_ID"] = work[id_col]
+    work["GENE"] = work["_gene"]
+    work = enrich_events(work, args.evidence_table)
+    exons = load_selected_exons(args.gene_gtf, set(work["_gene"]))
+    exons.to_csv(outdir / "candidate_exon_annotations.tsv", sep="\t", index=False)
+    depth = read_tsv(args.depth_bins) if args.depth_bins else pd.DataFrame()
     manifest = []
 
     for rank, (_, row) in enumerate(work.iterrows(), 1):
@@ -388,7 +450,7 @@ def main():
 
         is_breakpoint = svtype in {"INS", "BND"} or end == start
 
-        event_span_col = first_existing(work, ["SV_EVENT_SPAN_BP"])
+        event_span_col = first_existing(work, ["SV_SPAN_BP", "SV_EVENT_SPAN_BP"])
         event_span = (
             numeric(pd.Series([row[event_span_col]])).iloc[0]
             if event_span_col
@@ -429,25 +491,22 @@ def main():
                 [nearby[keep_target], nearby[~keep_target].nsmallest(15, "_distance")]
             ).drop_duplicates().sort_values("start")
 
-        methyl = methylation_records(args.methylation_bed, chrom, locus_start, locus_end)
-
-        if methyl:
-            fig, axes = plt.subplots(
-                4,
-                1,
-                figsize=(16.5, 12.4),
-                gridspec_kw={"height_ratios": [1.0, 1.55, 0.85, 1.6]},
-            )
-            ax_sv, ax_gene, ax_methyl, ax_ev = axes
-        else:
-            fig, axes = plt.subplots(
-                3,
-                1,
-                figsize=(16.5, 10.8),
-                gridspec_kw={"height_ratios": [1.0, 1.55, 1.6]},
-            )
-            ax_sv, ax_gene, ax_ev = axes
-            ax_methyl = None
+        methyl = methylation_records(args.methylation_bed, chrom, locus_start, locus_end, args.methylation_units)
+        shown_exons, transcript, transcript_basis = representative_exons(exons, gene, chrom, evidence_value(row, ["VEP_CANONICAL_TRANSCRIPTS"]))
+        depth_here = pd.DataFrame()
+        if not depth.empty and {"SV_ID", "CHROM", "PLOT_START", "PLOT_END", "NORMALIZED_DEPTH"}.issubset(depth.columns):
+            depth_here = depth[depth["SV_ID"].astype(str).eq(sv_id) & depth["CHROM"].map(normalize_chrom).eq(chrom)].copy()
+            depth_here["_pos"] = (numeric(depth_here["PLOT_START"]) + numeric(depth_here["PLOT_END"])) / 2
+            depth_here["_depth"] = numeric(depth_here["NORMALIZED_DEPTH"])
+            depth_here = depth_here[depth_here["_pos"].between(locus_start, locus_end)].dropna(subset=["_pos", "_depth"]).sort_values("_pos")
+        heights = [1.0, 1.55] + ([0.85] if not depth_here.empty else []) + ([0.85] if methyl else []) + [2.2]
+        fig, axes = plt.subplots(len(heights), 1, figsize=(16.5, 10.8 + (len(heights)-3)*1.8), gridspec_kw={"height_ratios": heights})
+        ax_sv, ax_gene, ax_ev = axes[0], axes[1], axes[-1]
+        track_index = 2
+        ax_depth = axes[track_index] if not depth_here.empty else None
+        if ax_depth is not None:
+            track_index += 1
+        ax_methyl = axes[track_index] if methyl else None
 
         color = SVTYPE_COLORS.get(svtype, "#999999")
         if large_gene_centered:
@@ -497,15 +556,12 @@ def main():
                 face = "#0072B2" if target else "#C7CDD3"
                 gstart = float(g["start"])
                 gend = float(g["end"])
-                ax_gene.add_patch(
-                    Rectangle(
-                        (gstart, y - 0.22),
-                        max(gend - gstart, 1.0),
-                        0.44,
-                        facecolor=face,
-                        edgecolor="none",
-                    )
-                )
+                if target and not shown_exons.empty:
+                    ax_gene.plot([gstart, gend], [y, y], color=face, linewidth=1.2)
+                    for _, exon in shown_exons.iterrows():
+                        ax_gene.add_patch(Rectangle((exon["start"], y-0.22), max(exon["end"]-exon["start"], 1), 0.44, facecolor=face, edgecolor="none"))
+                else:
+                    ax_gene.add_patch(Rectangle((gstart, y-0.22), max(gend-gstart, 1), 0.44, facecolor=face, edgecolor="none"))
                 ax_gene.text(
                     (gstart + gend) / 2,
                     y + 0.27,
@@ -525,6 +581,16 @@ def main():
         ax_gene.set_yticks([])
         ax_gene.set_ylabel("Genes")
         ax_gene.grid(axis="x", color="#E6E6E6", linewidth=0.7)
+        exon_note = f"Target exons: {transcript}; representative transcript for display" if not shown_exons.empty else "Gene intervals only; exon annotation unavailable"
+        ax_gene.set_title(exon_note, loc="left", fontsize=9)
+
+        if ax_depth is not None:
+            ax_depth.plot(depth_here["_pos"], depth_here["_depth"], color="#0072B2", linewidth=1)
+            ax_depth.axhline(1, color="#777777", linestyle="--", linewidth=0.8)
+            ax_depth.set_xlim(locus_start, locus_end)
+            ax_depth.set_ylabel("Depth / flanks", fontsize=9)
+            ax_depth.grid(axis="y", color="#EEEEEE", linewidth=0.6)
+            ax_depth.set_title("Existing depth bins from the same BAM; no copy-number state inferred", loc="left", fontsize=9)
 
         if methyl:
             pos = [x[0] for x in methyl]
@@ -542,6 +608,7 @@ def main():
             ax_methyl.tick_params(labelsize=8)
             ax_methyl.grid(axis="y", color="#EEEEEE", linewidth=0.6)
 
+        observations = event_evidence(row)
         evidence = [
             ("Overlapping gene", gene),
             ("Final event rank", (
@@ -549,26 +616,26 @@ def main():
                 if pd.notna(row["_final_rank"])
                 else "."
             )),
-            ("Gene/event relevance", f"{row['_priority']:.3g}" if pd.notna(row["_priority"]) else "."),
+            ("Gene relevance tier", evidence_value(row, ["FINAL_GENE_RELEVANCE_TIER", "GENE_RELEVANCE_TIER"])),
             ("Event bucket", compact_text(evidence_value(row, ["EVENT_REVIEW_BUCKET"]), 52, 2)),
-            ("Gene relationship", compact_text(evidence_value(row, ["SV_GENE_RELATIONSHIP"]), 52, 2)),
-            ("SV gene count", evidence_value(row, ["SV_GENE_COUNT"])),
+            ("Gene relationship", compact_text(evidence_value(row, ["SV_GENE_EFFECT", "SV_GENE_RELATIONSHIP"]), 52, 2)),
+            ("SV gene count", evidence_value(row, ["GENES_AFFECTED", "SV_GENE_COUNT"])),
             ("Callers", evidence_value(row, ["CALLERS"])),
             ("Caller count", evidence_value(row, ["CALLER_COUNT", "SUPP"])),
-            ("Read support", evidence_value(row, ["CALLER_READ_SUPPORT"])),
+            ("Read support", evidence_value(row, ["READ_SUPPORT", "CALLER_READ_SUPPORT", "EVENT_MAX_CALLER_READ_SUPPORT"])),
             ("needLR AF", evidence_value(row, ["NEEDLR_AF"])),
-            ("needLR status", evidence_value(row, ["NEEDLR_STATUS"])),
-            ("Population tier", evidence_value(row, ["EVENT_POPULATION_TIER"])),
+            ("Population state", observations["Population"][1].replace("\n", " ")),
+            ("gnomAD event AF", evidence_value(row, ["GNOMAD_SV_AF"])),
             ("Panel status", evidence_value(row, ["PANEL_STATUS"])),
-            ("Phenotype score", evidence_value(row, ["PHENOTYPE_SCORE"])),
-            ("Gene-disease evidence", compact_text(evidence_value(row, ["GENE_DISEASE_EVIDENCE_LEVEL", "GENCC"]))),
-            ("AnnotSV class", evidence_value(row, ["ANNOTSV_GENERAL_CLASSIFICATION", "ANNotsv_Classification"])),
-            ("Pathogenic SV DB", compact_text(evidence_value(row, ["SV_PATHOGENIC_DB_SOURCE"]))),
-            ("Benign SV DB / AF", compact_text(evidence_value(row, ["SV_BENIGN_DB_SOURCE", "SV_BENIGN_DB_AFMAX"]))),
-            ("LongPhase", evidence_value(row, ["LONGPHASE_PHASED", "LONGPHASE_MATCH"])),
-            ("Straglr / TLDR", evidence_value(row, ["STRAGLR_MATCH"]) + " / " + evidence_value(row, ["TLDR_MATCH"])),
-            ("Nearby phased SNVs", evidence_value(row, ["WHATSHAP_PHASED_HET_COUNT"])),
-            ("Local mean 5mC", evidence_value(row, ["METHYLATION_5MC_MEAN_PERCENT"])),
+            ("Phenotype scope", compact_text(evidence_value(row, ["FINAL_PHENOTYPE_RANKING_SCOPE", "PHENOTYPE_SCORE_SCOPE"]), 48, 2)),
+            ("Mechanism", compact_text(evidence_value(row, ["FINAL_INHERITANCE_MECHANISM_CLASS", "INHERITANCE_MECHANISM_CLASS"]), 48, 2)),
+            ("Depth pattern / ratio", observations["Local depth"][1].replace("\n", " ")),
+            ("Transcript shown", compact_text(transcript, 48, 2)),
+            ("Exon display basis", "VEP canonical" if transcript_basis.startswith("VEP") else "Largest exon length" if not shown_exons.empty else "Unavailable"),
+            ("LongPhase", evidence_value(row, ["LONGPHASE_PHASED", "LONGPHASE", "LONGPHASE_MATCH"])),
+            ("Straglr / TLDR", evidence_value(row, ["STRAGLR", "STRAGLR_MATCH"]) + " / " + evidence_value(row, ["TLDR", "TLDR_MATCH"])),
+            ("SNV + SV pairing", compact_text(evidence_value(row, ["RECESSIVE_PAIR_STATUS"]), 48, 2)),
+            ("Methylation context", observations["Methylation"][1]),
         ]
         ax_ev.axis("off")
         left = evidence[:11]
@@ -577,19 +644,24 @@ def main():
             y = 0.96
             for label, value in block:
                 ax_ev.text(col_x, y, f"{label}:", fontweight="bold", fontsize=8.7, transform=ax_ev.transAxes, va="top")
-                ax_ev.text(col_x + 0.19, y, str(value), fontsize=8.7, transform=ax_ev.transAxes, va="top", wrap=True)
+                ax_ev.text(col_x + 0.19, y, compact_text(value, 48, 2), fontsize=8.2, transform=ax_ev.transAxes, va="top", wrap=True)
                 y -= 0.088
 
         formatter = FuncFormatter(lambda x, _: f"{x / 1e6:.3f}")
         ax_sv.xaxis.set_major_formatter(formatter)
         ax_gene.xaxis.set_major_formatter(formatter)
+        if ax_depth is not None:
+            ax_depth.xaxis.set_major_formatter(formatter)
+            ax_gene.tick_params(axis="x", labelbottom=False)
         ax_sv.tick_params(axis="x", labelbottom=False)
         if methyl:
             ax_methyl.xaxis.set_major_formatter(formatter)
             ax_gene.tick_params(axis="x", labelbottom=False)
+            if ax_depth is not None:
+                ax_depth.tick_params(axis="x", labelbottom=False)
             ax_methyl.set_xlabel(f"{chrom} position (Mb)", fontsize=8.5)
         else:
-            ax_gene.set_xlabel(f"{chrom} position (Mb)")
+            (ax_depth if ax_depth is not None else ax_gene).set_xlabel(f"{chrom} position (Mb)")
 
         fig.suptitle(f"{args.title_prefix} {rank}: {gene}", fontsize=16, fontweight="bold", y=0.995)
         fig.text(
@@ -608,7 +680,7 @@ def main():
         )
 
         stem = f"{rank:02d}_{safe_name(gene)}_{safe_name(sv_id)}"
-        outputs = save_figure(fig, outdir / stem)
+        outputs = save_figure(fig, outdir / stem, dpi=300)
         plt.close(fig)
 
         manifest.append(
@@ -633,6 +705,12 @@ def main():
                 "sv_span_bp": sv_span,
                 "figure_prefix": str(outdir / stem),
                 "methylation_records_plotted": len(methyl),
+                "depth_bins_plotted": len(depth_here),
+                "transcript_shown": transcript,
+                "exon_count": len(shown_exons),
+                "transcript_selection_basis": transcript_basis,
+                "exon_annotation_scope": "GTF_EXONS" if not shown_exons.empty else "GENE_INTERVAL_ONLY",
+                "evidence_join_status": row.get("EVIDENCE_JOIN_STATUS", "."),
                 "nearby_genes_plotted": len(nearby),
             }
         )
@@ -643,3 +721,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -77,6 +77,9 @@ SAMPLOT_WINDOW_BP = config.get("samplot_window_bp", 5000)
 SAMPLOT_LARGE_SV_THRESHOLD = config.get("samplot_large_sv_threshold", 1000000)
 SV_GENE_BREAKPOINT_TOLERANCE = config.get("sv_gene_breakpoint_tolerance", 10000)
 THESIS_TOP_GENES = config.get("thesis_top_genes", 25)
+REVIEW_TOP_N = config.get("candidate_review_top_n", 5)
+LOCUS_TOP_N = config.get("candidate_locus_top_n", 10)
+PLOT_GENE_GTF = config.get("candidate_plot_gene_gtf")
 
 
 def postprocess_required_files(sample):
@@ -491,7 +494,10 @@ def existing_plot_inputs(wc):
         PATH + f"{sample}/methylation/{sample}.cpg.bedmethyl.gz",
         PATH + f"{sample}/methylation/{sample}.bedmethyl.gz",
         PATH + f"{sample}/methylation/{sample}.bed.gz",
+        PATH + f"{sample}/gene_discovery/final/{sample}_large_sv_depth_bins.tsv",
     ]
+    if PLOT_GENE_GTF:
+        candidates.append(PLOT_GENE_GTF)
 
     return [path for path in candidates if os.path.exists(path)]
 
@@ -511,6 +517,9 @@ rule thesis_plots_sample:
         plot_scripts=[
             PLOTS + "/run_thesis_plots.py",
             PLOTS + "/plot_utils.py",
+            PLOTS + "/candidate_review.py",
+            PLOTS + "/build_candidate_review.py",
+            PLOTS + "/plot_event_review_summary.py",
             PLOTS + "/plot_lrs_qc.py",
             PLOTS + "/plot_caller_concordance.py",
             PLOTS + "/plot_sv_landscape.py",
@@ -542,6 +551,9 @@ rule thesis_plots_sample:
     params:
         methylation_units=config.get("methylation_units", "percent"),
         top_genes=THESIS_TOP_GENES,
+        review_top_n=REVIEW_TOP_N,
+        locus_top_n=LOCUS_TOP_N,
+        gene_gtf_arg=(f"--gene-gtf {shlex.quote(PLOT_GENE_GTF)}" if PLOT_GENE_GTF else ""),
         methylation_arg=lambda wc: (
             f"--methylation-region {THESIS_METHYLATION_REGION}"
             if THESIS_METHYLATION_REGION
@@ -565,6 +577,9 @@ rule thesis_plots_sample:
             --platform lrs \
             --candidate-table {input.candidate_events} \
             --top-genes {params.top_genes} \
+            --review-top-n {params.review_top_n} \
+            --locus-top-n {params.locus_top_n} \
+            {params.gene_gtf_arg} \
             --methylation-units {params.methylation_units} \
             {params.gene_bed_arg} \
             {params.methylation_arg} \
@@ -733,3 +748,4 @@ include: "../common/allele_assessment.smk"
 
 # Optional additive thesis-analysis layer. Existing rules/outputs are preserved.
 include: "thesis_extensions.smk"
+
