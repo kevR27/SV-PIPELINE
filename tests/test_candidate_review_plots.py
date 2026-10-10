@@ -20,6 +20,7 @@ import build_candidate_review as builder
 import plot_candidate_evidence_matrix as matrix
 import plot_event_review_summary as summary
 import plot_candidate_locus as locus
+import run_thesis_plots as launcher
 from build_candidate_tables import build_sv_table
 
 
@@ -49,6 +50,103 @@ def synthetic_rows():
 
 
 class CandidateReviewTests(unittest.TestCase):
+    def test_srs_evidence_reports_depth_qc_and_partial_gridss(self):
+        row = {"SVTYPE": "DEL", "CNVPYTOR_READ_DEPTH_MATCH": "YES",
+               "CNVPYTOR_STATUS": "PASS", "CNVPYTOR_LEVEL": "0.55",
+               "GRIDSS_SUPPORT": "PARTIAL_ONE_BREAKPOINT",
+               "EXPANSIONHUNTER_LOCUS_OVERLAP": "YES", "MELT_SUPPORT": "NOT_RUN"}
+        result = review.event_evidence(row, platform="srs")
+        self.assertEqual(list(result), review.SRS_DOMAINS)
+        self.assertEqual(result["CNVpytor depth"][0], "SUPPORTING")
+        self.assertEqual(result["GRIDSS"][0], "UNRESOLVED")
+        self.assertEqual(result["Repeat locus"][0], "REPORTED")
+        self.assertEqual(result["MELT"][0], "UNAVAILABLE")
+        for changes in [{"CNVPYTOR_STATUS": "REVIEW"}, {"CNVPYTOR_LEVEL": "1.5"}, {"CNVPYTOR_LEVEL": "."}]:
+            self.assertEqual(review.event_evidence({**row, **changes}, platform="srs")["CNVpytor depth"][0], "REVIEW")
+        self.assertEqual(review.event_evidence({**row, "SVTYPE": "INV"}, platform="srs")["CNVpytor depth"][0], "NOT_APPLICABLE")
+        self.assertEqual(review.event_evidence({"GRIDSS_SUPPORT": "YES_BOTH_BREAKPOINTS"}, platform="srs")["GRIDSS"][0], "SUPPORTING")
+        self.assertNotIn("SV phase", result)
+        self.assertNotIn("Methylation", result)
+
+    def test_srs_missing_population_distinguishes_search_and_resource(self):
+        self.assertEqual(review.event_evidence({"GNOMAD_SV_EXACT_MATCH": "RESOURCE_NOT_CONFIGURED"}, platform="srs")["Population"][0], "UNAVAILABLE")
+        self.assertEqual(review.event_evidence({"GNOMAD_SV_EXACT_MATCH": "NO", "GNOMAD_SV_MATCH_SCOPE": "NO_EXACT_COORDINATE_TYPE_MATCH"}, platform="srs")["Population"][0], "NO_MATCH")
+        self.assertEqual(review.event_evidence({"GNOMAD_SV_EXACT_MATCH": "NO", "GNOMAD_SV_MATCH_SCOPE": "BND_CTX_EXACT_MATCH_NOT_ATTEMPTED"}, platform="srs")["Population"][0], "UNAVAILABLE")
+        self.assertEqual(review.event_evidence({"GNOMAD_SV_EXACT_MATCH": "YES", "GNOMAD_SV_AF": "0.01"}, platform="srs")["Population"][0], "REPORTED")
+
+    def test_srs_review_preserves_diagnostic_order(self):
+        rows = [{"SV_ID": "low_score_primary", "GENES": "A", "DIAGNOSTIC_REVIEW_RANK": "1", "PHENOTYPE_SCORE": "1"},
+                {"SV_ID": "high_score_secondary", "GENES": "B", "DIAGNOSTIC_REVIEW_RANK": "2", "PHENOTYPE_SCORE": "99"}]
+        ordered = review.select_events(pd.DataFrame(rows), 5)
+        self.assertEqual(list(ordered["SV_ID"]), ["low_score_primary", "high_score_secondary"])
+        self.assertEqual(set(ordered["PLOT_ORDER_BASIS"]), {"DIAGNOSTIC_REVIEW_RANK"})
+
+    def test_srs_counts_depth_once_for_multiple_genes(self):
+        base = {"SV_ID": "depth_only", "GENES": "A", "SVTYPE": "DEL",
+                "CNVPYTOR_READ_DEPTH_MATCH": "DEPTH_ONLY", "CNVPYTOR_STATUS": "PASS", "CNVPYTOR_LEVEL": "0.5"}
+        events = review.normalise_events(pd.DataFrame([base, {**base, "GENES": "B"}]))
+        counts = summary.availability_counts(review.evidence_table(events, platform="srs"), review.SRS_DOMAINS)
+        self.assertEqual(set(counts[counts["DOMAIN"].eq("CNVpytor depth")]["TOTAL"]), {1})
+        self.assertEqual(set(counts[counts["DOMAIN"].eq("Gene effect")]["TOTAL"]), {2})
+
+    def test_srs_launcher_uses_current_evidence_and_correct_titles(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            sample = root / "SYNTHETIC"
+            discovery = sample / "gene_discovery"
+            discovery.mkdir(parents=True)
+            source = discovery / "SYNTHETIC_integrated_SV_gene_with_supporting_evidence.tsv"
+            pd.DataFrame([{"SV_ID": "srs1", "GENES": "A", "SVTYPE": "DEL"}]).to_csv(source, sep="\t", index=False)
+            # An older optional result must not override explicitly selected evidence.
+            pd.DataFrame([{"SV_ID": "old", "GENES": "A", "MITOCARTA_STATUS": "YES", "MITOCARTA_ENCODING": "NUCLEAR_MITOCHONDRIAL_GENE"}]).to_csv(discovery / "SYNTHETIC_integrated_SV_gene_with_mitocarta.tsv", sep="\t", index=False)
+            (sample / "coverage").mkdir()
+            (sample / "coverage/SYNTHETIC.mosdepth.summary.txt").touch()
+            (sample / "phasing").mkdir()
+            (sample / "phasing/SYNTHETIC.phased.vcf.gz").touch()
+            args = ["launcher", "--root", str(root), "--sample", "SYNTHETIC", "--platform", "srs",
+                    "--candidate-table", str(source), "--evidence-table", str(source), "--dry-run"]
+            with patch.object(sys, "argv", args), patch.object(launcher, "run") as run:
+                launcher.main()
+            commands = [call.args[0] for call in run.call_args_list]
+            scripts = [Path(cmd[1]).name for cmd in commands]
+            self.assertNotIn("plot_mitocarta_sv_genes.py", scripts)
+            self.assertNotIn("plot_methylation.py", scripts)
+            self.assertNotIn("plot_straglr.py", scripts)
+            self.assertNotIn("plot_large_complex_candidates.py", scripts)
+            self.assertNotIn("plot_gene_sv_spectrum.py", scripts)
+            self.assertIn("Short-read sequencing coverage QC", commands[scripts.index("plot_lrs_qc.py")])
+            self.assertIn("Short-read local small-variant phasing", commands[scripts.index("plot_phasing_qc.py")])
+            for script in ["build_candidate_review.py", "plot_event_review_summary.py", "plot_candidate_evidence_matrix.py"]:
+                command = commands[scripts.index(script)]
+                self.assertEqual(command[command.index("--platform") + 1], "srs")
+
+    def test_srs_launcher_empty_table_keeps_review_without_sv_overview(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "empty.tsv"
+            pd.DataFrame(columns=["SV_ID", "GENES", "SVTYPE"]).to_csv(source, sep="\t", index=False)
+            args = ["launcher", "--root", str(root), "--sample", "EMPTY", "--platform", "srs",
+                    "--candidate-table", str(source), "--evidence-table", str(source), "--dry-run"]
+            with patch.object(sys, "argv", args), patch.object(launcher, "run") as run:
+                launcher.main()
+            scripts = [Path(call.args[0][1]).name for call in run.call_args_list]
+            self.assertIn("build_candidate_review.py", scripts)
+            self.assertIn("plot_event_review_summary.py", scripts)
+            self.assertNotIn("plot_sv_landscape.py", scripts)
+
+    def test_completed_lrs_candidate_table_still_gets_full_plot_selection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "completed_candidates.tsv"
+            pd.DataFrame(synthetic_rows()).to_csv(source, sep="\t", index=False)
+            args = ["launcher", "--root", str(root), "--sample", "LRS", "--platform", "lrs",
+                    "--candidate-table", str(source), "--dry-run"]
+            with patch.object(sys, "argv", args), patch.object(launcher, "run") as run:
+                launcher.main()
+            scripts = [Path(call.args[0][1]).name for call in run.call_args_list]
+            self.assertIn("plot_large_complex_candidates.py", scripts)
+            self.assertIn("plot_sv_gene_associations.py", scripts)
+
     def test_evidence_states_do_not_invent_negative_results(self):
         empty = review.event_evidence({"SVTYPE": "DEL"})
         self.assertEqual(empty["Straglr"][0], "UNAVAILABLE")

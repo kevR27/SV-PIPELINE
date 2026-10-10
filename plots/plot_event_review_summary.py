@@ -10,15 +10,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from candidate_review import DOMAINS, GROUP_LABELS, PANEL_GROUPS, STATE_COLORS, STATE_LABELS, evidence_table, normalise_events, text
+from candidate_review import DOMAINS, domains_for, GROUP_LABELS, PANEL_GROUPS, STATE_COLORS, STATE_LABELS, evidence_table, normalise_events, text
 from plot_utils import read_tsv, save_figure, set_thesis_style
 
-EVENT_DOMAINS = {"Call support", "Population", "Local depth", "SV phase", "Straglr", "TLDR", "Methylation"}
+EVENT_DOMAINS = {"Call support", "Population", "Local depth", "SV phase", "Straglr", "TLDR", "Methylation", "CNVpytor depth", "GRIDSS", "Repeat locus", "MELT"}
 
 
-def availability_counts(observations):
+def availability_counts(observations, domains=None):
     rows = []
-    for domain in DOMAINS:
+    for domain in DOMAINS if domains is None else domains:
         sub = observations[observations["DOMAIN"].eq(domain)].copy()
         unit = "UNIQUE_SV" if domain in EVENT_DOMAINS else "SV_GENE_ASSOCIATION"
         if unit == "UNIQUE_SV":
@@ -61,6 +61,7 @@ def main():
     p.add_argument("--input", required=True)
     p.add_argument("--out-dir", required=True)
     p.add_argument("--sample", required=True)
+    p.add_argument("--platform", choices=["lrs", "srs"], default="lrs")
     args = p.parse_args()
     set_thesis_style()
     work = normalise_events(read_tsv(args.input))
@@ -70,16 +71,17 @@ def main():
     mechanism_out = out / "mechanisms"
     availability_out.mkdir(exist_ok=True)
     mechanism_out.mkdir(exist_ok=True)
-    counts = availability_counts(evidence_table(work))
+    domains = domains_for(args.platform)
+    counts = availability_counts(evidence_table(work, platform=args.platform), domains)
     counts.to_csv(availability_out / f"{args.sample}_evidence_availability.tsv", sep="\t", index=False)
     fig, ax = plt.subplots(figsize=(13, 8.5))
-    left = np.zeros(len(DOMAINS))
+    left = np.zeros(len(domains))
     for state in STATE_COLORS:
-        values = counts[counts["STATE"].eq(state)].set_index("DOMAIN")["PERCENT"].reindex(DOMAINS).to_numpy()
-        ax.barh(DOMAINS, values, left=left, label=STATE_LABELS[state], color=STATE_COLORS[state], edgecolor="white", height=0.7)
+        values = counts[counts["STATE"].eq(state)].set_index("DOMAIN")["PERCENT"].reindex(domains).to_numpy()
+        ax.barh(domains, values, left=left, label=STATE_LABELS[state], color=STATE_COLORS[state], edgecolor="white", height=0.7)
         left += values
-    labels = [d + (" [SV]" if d in EVENT_DOMAINS else " [SV–gene]") for d in DOMAINS]
-    ax.set_yticks(range(len(DOMAINS)), labels)
+    labels = [d + (" [SV]" if d in EVENT_DOMAINS else " [SV–gene]") for d in domains]
+    ax.set_yticks(range(len(domains)), labels)
     ax.invert_yaxis()
     ax.set_xlim(0, 100)
     ax.set_xlabel("Percentage of the stated counting unit")

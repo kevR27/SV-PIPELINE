@@ -1,279 +1,218 @@
 # SRS WGS pipeline — Illumina
 
-This folder contains the **short-read whole-genome sequencing pipeline** used for
-Illumina data.
+This workflow finds structural variants throughout the genome and organises
+results for hereditary optic-neuropathy research. **Nuclear genes involved in
+mitochondrial function are the main biological focus; mtDNA is a secondary
+analysis.** Non-panel genes remain available for review.
 
-The pipeline is kept separate from the LRS workflow. Nothing in the LRS folder
-needs to be changed to run this SRS analysis.
+The layout now follows LRS: one configuration, numbered analysis stages,
+shared `scripts/` and `envs/` folders, and a separate `all_thesis_plots` target.
+The SRS folder still contains only its existing Snakefile, config and README.
 
-The files kept in this pipeline folder are:
+## Start with these files
 
-- `Snakefile_SRS_WGS`
-- `config_srs_wgs.yaml`
-- this `README.md`
+- **`config_srs_wgs.yaml`**: your samples, paths and analysis settings.
+- **`Snakefile_SRS_WGS`**: the steps Snakemake runs. Usually you only edit the config.
+- **This README**: preparation, commands and interpretation.
 
-As in the LRS workflow, helper programs are stored in the repository-level
-`scripts/` folder and Conda definitions are stored in the repository-level
-`envs/` folder. Only the Snakefile, configuration and workflow documentation
-remain separated here. This keeps installation simple without mixing the LRS
-and SRS workflow logic.
+In the config, start with **sections 1–3**: replace the example BAM/result/reference
+paths, check the annotation files, and choose the optional analyses. Leave
+sections 4–10 at their defaults unless you intend to change a threshold.
+Numeric sample IDs must be quoted. `null` means no file or optional value was
+provided; `true`/`false` enable/disable a branch.
 
----
+Run from this folder so paths such as `../../PANEL_OA/` resolve correctly:
 
-## What the pipeline is trying to answer
+```bash
+cd /path/to/SV-PIPELINE/snakemake_pipelines/srs_wgs_pipeline
+```
 
-The analysis is designed for hereditary optic neuropathy WGS and follows the
-same general reasoning as the LRS pipeline:
+The FASTA and all annotation intervals must match the BAM alignment reference.
+This workflow uses GRCh38. `nuclear_mito_candidate_bed` uses BED coordinates
+(0-based start, excluded end), including the supplied `.tsv` interval file.
+`gene_bed` describes gene intervals. An optional matching GTF supplies real
+exon tracks in locus diagrams; without it, the diagrams show gene intervals.
 
-1. Find structural variants across the genome.
-2. Keep both known optic-neuropathy genes and non-panel genes.
-3. Do not remove a candidate simply because only one type of evidence is
-   available.
-4. Add independent evidence when possible.
-5. Keep mitochondrial biology separate from direct mtDNA variant calling.
-6. Produce a final table that can be inspected biologically, not just a list of
-   variants.
+## How to read the Snakefile
 
-The optic-neuropathy panel is therefore used for **interpretation**, not to
-restrict genome-wide discovery.
+Each numbered section describes a biological step. Inside a rule:
 
----
-
-## Pipeline flow
-
-| Stage | Result and biological question |
+| Word | Meaning |
 | --- | --- |
-| BAM QC | Is coverage/alignment suitable for interpretation? |
-| Manta + DELLY; GRIDSS support | Which genome-wide breakpoint events have supporting reads/assembly? |
-| DeepVariant + WhatsHap | Which small variants occur, and which nearby small variants can be phased? |
-| CNVpytor RD + BAF context | Which deletions/duplications show a copy-number change? |
-| Integrated SVs → AnnotSV/VEP → population/context evidence | Which genes/transcripts may be affected, and what evidence is available? |
-| Nuclear mitochondrial and optic-neuropathy interpretation | Which candidates match the study hypothesis, including non-panel genes? |
-| Repeat, MEI and mtDNA branches | Which additional variant classes need separate review? |
-| Candidate table + locus plots + optional benchmarks | What should be investigated next, and how does a control perform? |
+| `input` | Files needed before the step can run |
+| `output` | Files the step creates |
+| `params` | Analysis settings passed to the tool |
+| `threads` | CPU threads available to that step |
+| `conda` | Existing environment definition in `envs/` |
+| `shell` | Command that runs the tool |
+| `{sample}` | Repeat the step for each configured sample |
 
----
+`rule all` lists the complete analysis results. Snakemake works backwards from
+those results and runs any missing steps; the order of rules in the file is
+for readability. The numerical section labels are a reading guide.
 
-## What each tool contributes
+| Section | Question and result |
+| --- | --- |
+| 1. Reference checks and QC | Are the files compatible, and is coverage/alignment adequate? |
+| 2. Manta + DELLY; GRIDSS | Which breakpoint SVs are detected, and what read/assembly evidence supports them? |
+| 3. DeepVariant + WhatsHap | Which small variants occur, and which nearby small variants are phased? |
+| 4. CNVpytor + combined SVs | Which deletions/duplications have copy-number evidence? Keep passing depth-only CNVs too. |
+| 5. AnnotSV, VEP, Monarch, population | Which genes/transcripts overlap the SV, and what annotation/frequency information is available? |
+| 6. Repeats, optional MELT, secondary mtDNA | Which other variant classes need separate review? |
+| 7. Evidence, MitoCarta, candidate review | Which findings fit the biological focus, including non-panel genes? |
+| 8. Plots and downstream views | What do the data and review filters show? |
+| 9. Optional control checks | How do results compare with known positive controls? |
 
-### Manta
+The panel is used for interpretation. Manta/DELLY and DeepVariant discovery
+remain genome-wide. The readable small-variant VEP table is restricted to
+`nuclear_mito_candidate_bed`; the full DeepVariant VCF is preserved.
+MitoCarta annotation of SVs is genome-wide. Consequently, this workflow does
+not yet give equally broad annotation of non-panel small variants and SVs.
 
-Manta detects structural variants using paired-end, split-read and local
-assembly evidence. It is one of the two main breakpoint-based SV callers.
+## Run the analysis and plots
 
-Manta 1.6 reports inversion junctions as BND. The workflow preserves its original
-VCF and uses Manta's supplied `convertInversion.py` to expose INV3/INV5 junctions
-for type-aware merging with DELLY. These remain inversion junctions: neither
-conversion nor caller agreement proves a complete two-junction inversion.
+After the preparation steps below, use these commands from the SRS folder.
+They reuse your existing environment location.
 
-### DELLY
+```bash
+# Check which analysis steps would run; no analysis is executed.
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix "/home/casadei7/snakemake_envs/envs/" \
+  --cores 32 --dry-run
 
-DELLY is the second breakpoint-based caller. It provides paired-end and
-split-read evidence that can be compared with Manta.
+# Run the complete analysis, including the existing Samplot review branch.
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix "/home/casadei7/snakemake_envs/envs/" \
+  --cores 32 all
 
-### SURVIVOR
-
-SURVIVOR merges the Manta and DELLY calls into one breakpoint-based SV set.
-
-The file containing variants detected by at least two callers is named
-`multi_caller`, not `high_confidence`.
-
-This is deliberate: two callers can use related read evidence, so agreement
-between Manta and DELLY is useful support but does not by itself prove that an
-SV is real.
-
-### GRIDSS
-
-GRIDSS is kept separate from SURVIVOR.
-
-GRIDSS performs breakpoint assembly and represents many rearrangements as
-breakends. The pipeline therefore uses GRIDSS as **additional supporting
-evidence from a different algorithm**. It still uses the same BAM; it is not an
-independent experiment or orthogonal validation.
-
-For events with two defined breakpoints, the final table distinguishes:
-
-- `YES_BOTH_BREAKPOINTS`
-- `PARTIAL_ONE_BREAKPOINT`
-- `NO`
-
-A one-breakpoint GRIDSS match is not treated as equivalent to support for the
-complete rearrangement.
-
-### DeepVariant
-
-DeepVariant is run genome-wide.
-
-This is important because the project is WGS-based. Small-variant discovery is
-therefore not limited to the known optic-neuropathy panel.
-
-The DeepVariant VCF is also used for:
-
-- local WhatsHap phasing;
-- SNP/allelic information used by CNVpytor.
-
-The complete genome-wide VCF is preserved. A second PASS-focused VCF and VEP
-table are generated for loci in `nuclear_mito_candidate_bed`, so SNV/indel
-candidates in the main nuclear mitochondrial/bioenergetic hypothesis are easy
-to review without pretending that the rest of the WGS callset was never made.
-The repository default is the curated optic-neuropathy mitochondrial-gene BED;
-replace it with a broader validated nuclear-mitochondrial BED when appropriate.
-MitoCarta annotation of SVs is genome-wide; the small-variant VEP table covers
-only this configured BED. This asymmetry matters when interpreting non-panel
-small variants. The supplied `.tsv` intervals use 0-based, half-open BED
-coordinates; the rule writes a `.bed` view so bcftools uses the correct convention.
-
-### CNVpytor
-
-CNVpytor adds information that the breakpoint callers do not provide directly:
-**read-depth copy-number evidence**.
-
-The workflow follows the CNVpytor documented sequence:
-
-Read depth is imported, corrected for GC content, partitioned and called as CNVs.
-DeepVariant SNPs provide a separate B-allele-frequency (BAF) context layer.
-
-Two bin sizes are retained by default:
-
-- 10 kb: main CNV analysis;
-- 100 kb: large-CNV context.
-
-The file `*.reference_info.txt` records the CNVpytor `-ls` output so you can
-check that hg38 and the required GC/mask resources were recognized. The rule
-stops if either resource is unavailable, rather than making uncorrected calls.
-
-The pipeline does **not** use CNVpytor's prototype combined RD+BAF caller as the
-main CNV callset. Standard read-depth calls are used for discovery; BAF remains
-supporting information.
-
-### Combining SV and CNV evidence
-
-The script:
-
-`../../scripts/combine_sv_cnv_evidence.py`
-
-does three simple things:
-
-1. keeps the Manta+DELLY breakpoint events;
-2. adds CNVpytor read-depth evidence to overlapping DEL/DUP events;
-3. keeps CNVpytor-only DEL/DUP calls if they pass the configured CNVpytor
-   quality checks.
-
-The resulting file is:
-
-```text
-<sample>/sv/integrated/<sample>_integrated_SV.vcf.gz
+# Generate the overview figures and the separate downstream filtering figures.
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix "/home/casadei7/snakemake_envs/envs/" \
+  --cores 32 all_thesis_plots
 ```
 
-This is the structural-variant file that continues to AnnotSV and VEP.
+To check only coverage/alignment, replace `all` with `quality_control`. To
+create only the downstream filtering tables, use `further_filtering`.
+The plotting target uses completed results when available; if required results
+are missing, Snakemake can run the necessary analysis steps first. It does not
+limit itself to drawing existing files.
 
-### VEP
+## Where to start reading results
 
-VEP is run with `--flag_pick`, not `--pick`.
+All paths below are inside the configured `path` folder.
 
-Therefore all transcript consequences are retained. The script:
+| File/folder inside `<sample>/` | What to read |
+| --- | --- |
+| `qc/<sample>.wgs_qc_summary.tsv` | Coverage/alignment thresholds; `REVIEW` means inspect the sample |
+| `diagnostic_review/<sample>.diagnostic_candidates.tsv` | Main ordered SV–gene review table; all rows by default |
+| `diagnostic_review/<sample>.mitochondrial_gene_ranking.tsv` | Nuclear mitochondrial gene ranking, followed by secondary mtDNA context |
+| `plots/00_start_here/START_HERE.txt` | Guide to the figures and an editable review TSV |
+| `plots/01_qc/` | Short-read coverage figures |
+| `plots/02_caller_concordance/` | Manta/DELLY overlap; GRIDSS is shown separately as supporting evidence |
+| `plots/03_sv_landscape/` | SV types, sizes, chromosomes and large-event context |
+| `plots/05_candidate_prioritization/` | Separate panel/non-panel figures and SRS evidence matrices |
+| `plots/06_phenotype/` | Gene–HPO associations from the configured phenotype resources |
+| `plots/08_phasing/` | Local small-variant phasing; this does not establish SV phase |
+| `plots/12_candidate_loci/` | Diagrams for the initial review shortlist |
+| `plots/14_mitochondrial_context/` | MitoCarta/ranking figures when mitochondrial annotation is enabled |
+| `diagnostic_review/samplot/` | Read-evidence images; the manifest is beside the main review table |
+| `downstream_filtering/` | Separate filtering views, their audit and exact thresholds |
+| `downstream_filtering/plots/` | Five separate figures explaining filter outcomes and retained SVs |
 
-`../../scripts/summarize_vep_transcripts.py`
+Plots are exported as PNG, PDF and SVG with accompanying data tables. Counts
+state whether they describe unique SVs, genes or SV–gene associations: a large
+SV can overlap several genes. A colour describes the stated category or
+evidence state; it is not a pathogenicity classification. Empty SV input still
+produces the QC/review summaries; SV overview plots are skipped.
 
-creates a readable per-SV/per-gene summary without deleting the other
-transcripts.
+The SRS evidence matrix shows CNVpytor depth, GRIDSS, repeat-locus overlap and
+MELT. It distinguishes both-breakpoint GRIDSS support from a partial match and
+an analysis that was not run from an evaluated no-match result. Repeat-locus
+overlap means the SV overlaps a catalogued locus, not that an expansion was
+confirmed. CNVpytor depth requires passing quality checks and the expected
+loss/gain direction to appear as computational support.
 
-### ExpansionHunter
+`candidate_review_top_n` selects initial rows per panel group.
+`candidate_locus_top_n` and `samplot_top_n` limit image numbers.
+`diagnostic_candidate_top_n: 0` keeps every candidate row; changing it to a
+positive value also restricts the input available to downstream filtering.
+Existing editable review notes are preserved on reruns; generated observations
+are refreshed separately. Check `<sample>/logs/plots/` if plotting fails.
 
-ExpansionHunter is used for the repeat-expansion catalog.
+## Your downstream filtering views
 
-It is a separate variant class and is **not** counted as another generic SV
-caller.
+The existing shared filter script is reused. It keeps the complete candidate
+table and writes separate review views with the config section 8 thresholds:
 
-### MELT
+- Main size view **strictly >1 kb**; small (<1 kb), exactly 1 kb and unresolved
+  lengths are kept in separate views. Small genic SVs can still matter.
+- One combined group for **measured AF ≤1% OR missing AF**. For example,
+  `gt_1kb/by_af/af_le_1_percent_or_missing.tsv`. Its accompanying
+  plots use different colours to retain the distinction between measured and
+  unknown AF.
+- Separate exon/splice and intron annotation context, caller support and
+  inversion support views. Annotation context does not prove coding disruption.
+- chrY/chrM events are excluded from these nuclear review views. The complete
+  upstream analysis and secondary mtDNA outputs are preserved.
+- Inversions require at least 3 reported supporting reads, with 3–4 and ≥5
+  separated. The largest reported count from one caller is used, not a sum
+  of counts across callers. Short-read callers may count fragments/read pairs
+  differently; these are review thresholds, not independent molecule counts.
 
-MELT is the optional mobile-element insertion branch.
+Missing AF may be compatible with a candidate absent from the searched
+population data, but it can also result from missing resources or unsuccessful
+matching. **It does not prove that the SV is new.** A 1% threshold is a broad
+review filter, not a disease-specific maximum credible frequency.
+The five plots explain filter outcomes, retained large and small SV context,
+combined low/missing AF by caller support, and inversion support separately.
 
-It remains disabled until the local MELTv2 installation and reference files are
-configured.
+## Interpretation limits that remain
 
-### Mutserve2
+The `TECHNICAL_SUPPORT` column describes how an SV was detected:
 
-Mutserve2 is used for mtDNA SNVs and heteroplasmy.
+| Label | Meaning |
+| --- | --- |
+| `MULTI_CALLER_PLUS_READ_DEPTH` | Manta/DELLY agreement plus passing copy-number evidence |
+| `MULTI_CALLER_PLUS_GRIDSS` | Manta/DELLY agreement plus compatible GRIDSS breakpoints |
+| `MULTI_CALLER` | Agreement between Manta and DELLY |
+| `SINGLE_CALLER_PLUS_SUPPORTING_EVIDENCE` | One main caller plus compatible additional evidence |
+| `SINGLE_CALLER` | One main caller |
+| `READ_DEPTH_ONLY_CNV` | A passing CNVpytor-only deletion/duplication |
+| `REVIEW_REQUIRED` | Available evidence does not establish one of these groups |
 
-This is included because hereditary optic neuropathies can be caused directly by
-mitochondrial-genome variants.
+- Manta's original VCF is preserved; its official converter exposes INV3/INV5
+  inversion junctions for merging. Junctions and caller agreement do not prove
+  a complete two-junction inversion.
+- SURVIVOR combines Manta and DELLY. Its `multi_caller` result means agreement
+  between callers, not validated high confidence. GRIDSS uses the same BAM;
+  it supplies a different algorithm, not an independent experiment.
+- CNVpytor uses corrected read-depth calls at 10 kb and 100 kb. Its BAF layer
+  supplies context; the prototype combined RD+BAF caller is not used. The
+  `*.reference_info.txt` must confirm hg38 GC/mask resources.
+- VEP keeps all transcript consequences with `--flag_pick`; the readable
+  summary does not delete other transcripts.
+- ExpansionHunter and MELT are separate variant classes and are not additional
+  generic SV callers. Mutserve covers mtDNA SNVs/heteroplasmy, not a complete
+  mtDNA indel analysis.
+- Standard Illumina WGS does not provide native-DNA methylation for XCI.
+  SRS has no native methylation/XCI branch. Local small-variant WhatsHap
+  phasing does not establish an SV+SNV pair in trans.
+- Nuclear mitochondrial membership, gene ranking and technical-support labels
+  are research context. They do not establish the causal variant or an ACMG class.
+  Missing patient/family information is not inferred.
 
-The output is summarized by:
+## Optional positive-control checks
 
-`../../scripts/summarize_mtdna_variants.py`
+For prioritisation, fill `validation/candidate_truth.template.tsv` and set
+`candidate_truth_tsv` (GENE required, SV_ID optional). For SV detection, set
+`sv_truth_vcfs` and the matching `sv_truth_beds` for each control sample.
+Confident regions must use the same assembly. The existing result folder is
+`<sample>/benchmark/truari/`.
 
-The current branch is deliberately described as **mtDNA SNV/heteroplasmy
-analysis**, not complete mtDNA variant detection, because Mutserve2 VCF output
-does not provide a complete mtDNA indel solution.
-
-### MitoCarta
-
-MitoCarta answers a different question from Mutserve2.
-
-Mutserve2 evaluates variants **inside the mitochondrial genome**.
-
-MitoCarta is used to ask whether a **nuclear gene affected by an SV encodes a
-mitochondrial protein or belongs to a mitochondrial pathway**.
-
-This is particularly useful for the optic-neuropathy hypothesis.
-
----
-
-## Final technical-support labels
-
-The final SRS table uses readable labels:
-
-```text
-MULTI_CALLER_PLUS_READ_DEPTH
-MULTI_CALLER_PLUS_GRIDSS
-MULTI_CALLER
-SINGLE_CALLER_PLUS_SUPPORTING_EVIDENCE
-SINGLE_CALLER
-READ_DEPTH_ONLY_CNV
-REVIEW_REQUIRED
-```
-
-These labels describe only the technical evidence supporting the call.
-
-They are **not** pathogenicity classifications and they are **not** ACMG
-classes.
-
----
-
-## Files you should edit first
-
-Open:
-
-```text
-config_srs_wgs.yaml
-```
-
-and change the real server paths for:
-
-```yaml
-samples:
-path:
-ref:
-candidate_genes_list:
-nuclear_mito_candidate_bed:
-gene_bed:
-exclude_bed:
-expansionhunter_catalog:
-vep_cache_dir:
-annotsv_annotations_dir:
-monarch_nodes:
-monarch_edges:
-```
-
-MELT can remain disabled until its local files are ready. MitoCarta is enabled
-because nuclear mitochondrial genes and bioenergetic pathways are the main
-biological focus. The preflight check will stop with a clear missing-resource
-message until the MitoCarta inventory and pathway files are installed.
-
-Install the MitoCarta 3.0 inventory and pathway GMX at the configured paths.
-This promotes nuclear-encoded mitochondrial genes and preserves their pathway
-and subcompartment context. Mutserve remains a separate secondary mtDNA branch.
+Truvari compares PASS events ≥50 bp by type, coordinates and size
+(`--pctseq 0`, `--pctsize 0.7`). This is not sequence-resolved allele validation.
+Interpret only variant classes and regions represented in the truth data;
+absence outside confident regions is not a reliable negative.
 
 ## Install tools and prepare references once (manual steps)
 
@@ -394,132 +333,16 @@ BWA index, annotation bundle, HPO/Monarch resource, or enabled optional resource
 is missing. Each sample also receives `qc/*.wgs_qc_summary.tsv`; threshold
 failures are marked `REVIEW` instead of silently discarding calls.
 
-## Candidate review and benchmarking
+## Checks made for this update — 10 October 2026
 
-The principal review output is:
+The 176 regression tests passed. Workflow dry runs covered the default analyses,
+disabled optional branches, enabled optional resources/control checks, and the
+QC-only target. Synthetic data produced 24 overview figures and the five
+downstream filtering figures; representative evidence and AF figures were
+visually checked. The seven plotting/filtering steps also completed for two
+synthetic samples through Snakemake using the installed Python runtime.
 
-```text
-<sample>/diagnostic_review/<sample>.diagnostic_candidates.tsv
-<sample>/diagnostic_review/<sample>.mitochondrial_gene_ranking.tsv
-```
-
-It is an ordered research/diagnostic-support table, not a pathogenicity
-classification. The mitochondrial table uses the same ranking script as LRS
-and places nuclear-encoded mitochondrial genes before the secondary mtDNA
-section. `diagnostic_candidate_top_n: 0` keeps every ranked row, including
-non-panel candidates; a positive value deliberately restricts this table.
-Samplot alone limits its images to `samplot_top_n` and writes a manifest beside it. Interchromosomal BNDs are
-explicitly retained for manual two-breakpoint review instead of being drawn as
-false same-chromosome intervals.
-
-To benchmark prioritization, copy `validation/candidate_truth.template.tsv`,
-enter known positive-control genes/IDs, and set `candidate_truth_tsv`. To
-benchmark SV detection against a sample truth VCF, add that sample under
-`sv_truth_vcfs` **and the matching confident-region BED under `sv_truth_beds`**.
-Truvari output is written under `<sample>/benchmark/truari/` (existing folder
-name retained). The benchmark compares PASS events ≥50 bp by type, coordinates
-and size (`--pctseq 0`, `--pctsize 0.7`). This is not sequence-resolved allele
-validation. Interpret only classes/regions covered by the truth set; a DEL/INS
-truth set cannot establish inversion/translocation performance. Absence outside
-confident truth regions is not a reliable negative.
-
-The integrated table now includes explicit gnomAD match/resource states using
-the existing conservative coordinate/type matching script. No exact match can
-result from representation differences. Its AF is provisional site evidence;
-the allele assessment still requires verified allele-level evidence before
-scoring population rarity. Missing or corrupt population indexes now fail
-explicitly; they cannot silently appear as no population match. Custom `.tbi`
-or `.csi` paths are passed to the reader. There is no needLR step in SRS.
-
-For the additional large-SV review, reuse the existing
-[downstream filtering and plotting guide](../../docs/DOWNSTREAM_SV_FILTERING.md),
-supplying the complete `.diagnostic_candidates.tsv` as input. Missing AF and AF
-≤1% enter the same retained group. Exon/intron context and inversion support
-still need to pass; incomplete information goes to review. SRS has two generic
-SURVIVOR callers, not three. GRIDSS, read depth and repeat/MEI tools are separate
-support layers; a depth-only CNV legitimately has zero generic callers.
-
----
-
-## Dry run
-
-From this folder:
-
-```bash
-cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/srs_wgs_pipeline
-```
-
-first run:
-
-```bash
-snakemake \
-    -s Snakefile_SRS_WGS \
-    --configfile config_srs_wgs.yaml \
-    --use-conda \
-    --conda-prefix "/home/casadei7/snakemake_envs/envs/" \
-    --cores 32 \
-    -n
-```
-
-Only after the dry run is clean should the complete workflow be launched.
-
----
-
-## Main methodological references
-
-The choices in this workflow follow the published/documented methods of the
-tools rather than treating them as interchangeable callers:
-
-- Manta — Chen et al., *Bioinformatics*, 2016.
-- DELLY — Rausch et al., *Bioinformatics*, 2012.
-- GRIDSS2 — Cameron et al., *Genome Biology*, 2021.
-- CNVpytor — Suvakov et al., *GigaScience*, 2021.
-- DeepVariant — Poplin et al., *Nature Biotechnology*, 2018.
-- ExpansionHunter — Dolzhenko et al., *Genome Research*, 2017 and
-  *Bioinformatics*, 2019.
-- Mutserve / mtDNA-Server — Weissensteiner et al. and subsequent mtDNA-Server
-  developments.
-
----
-
-## Important interpretation limits
-
-The workflow intentionally does not make conclusions that the available data
-cannot support.
-
-- Multi-caller support is not equivalent to variant truth.
-- GRIDSS partial breakpoint support is kept separate from full breakpoint
-  support.
-- CNVpytor read depth supports copy-number change, not the exact breakpoint.
-- WhatsHap here phases small variants locally. It does not phase an SV to a
-  small variant. The pipeline does **not yet test an SV + SNV/indel combination
-  in trans** in a recessive gene. That hypothesis requires allele-level
-  integration and validated phasing/inheritance evidence.
-- The genome-wide small-variant VCF is preserved, but its readable VEP candidate
-  table is restricted to `nuclear_mito_candidate_bed`; genome-wide SV annotation
-  does not make small-variant interpretation genome-wide.
-- MitoCarta membership and phenotype similarity prioritize a hypothesis. They
-  do not demonstrate altered gene function or establish a new disease gene.
-- Short-read phasing is not treated as equivalent to long-read phasing.
-- ExpansionHunter and MELT are separate variant classes, not extra votes for all
-  SVs.
-- mtDNA SNV analysis and nuclear mitochondrial-gene annotation are kept
-  separate.
-- Family inheritance is not inferred when trio/family data are unavailable.
-
-
-## What this audit can establish
-
-For the 10 October 2026 audit, all **169 regression tests passed**. Default and
-optional-branch SRS dry runs built successfully. The XCI R plotter produced seven
-separate figure families for informative and empty synthetic inputs, and the
-new filtering figures were inspected.
-
-These checks use synthetic variants, boundary cases and BAM metadata;
-workflow validation checks Snakemake rule/DAG construction. These checks can
-find coding/interface errors but do not validate sensitivity, specificity or
-patient conclusions. Native NanoMethViz clustering against real modBAMs and the full WGS callers
-were not executed in this audit. The full caller/reference stack and real WGS data must be
-run on your configured server and assessed with relevant controls. Installation
-instructions are manual and no new production helper scripts were added for
-this audit.
+No real patient BAMs or full variant callers were run here. Conda is absent in
+this validation environment, so creating/reusing your server environments was
+not tested. All existing caller commands and configuration defaults were
+preserved; this update adds plotting/review controls and changes organisation.

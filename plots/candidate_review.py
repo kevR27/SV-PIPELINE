@@ -38,6 +38,11 @@ STATE_LABELS = {
     "NOT_APPLICABLE": "Not applicable",
 }
 DOMAINS = ["Gene relevance", "Gene effect", "Mechanism", "Call support", "Population", "Local depth", "SV phase", "SNV + SV", "Straglr", "TLDR", "Methylation"]
+SRS_DOMAINS = ["Gene relevance", "Gene effect", "Mechanism", "Call support", "Population", "CNVpytor depth", "GRIDSS", "Repeat locus", "MELT"]
+
+
+def domains_for(platform="lrs"):
+    return SRS_DOMAINS if platform == "srs" else DOMAINS
 
 # Only these small evidence columns are read from the large integrated table.
 EVIDENCE_FIELDS = [
@@ -55,6 +60,9 @@ EVIDENCE_FIELDS = [
     "RECESSIVE_PAIR_STATUS", "GENE_INHERITANCE_CLASS", "GENE_MOI_SET",
     "STRAGLR", "STRAGLR_MATCH", "STRAGLR_CONTEXT", "TLDR", "TLDR_MATCH",
     "METHYLATION_CONTEXT", "METHYLATION_5MC_MEAN_PERCENT", "ALLELE_GENOTYPE", "GENOTYPE",
+    "DIAGNOSTIC_FOCUS", "TECHNICAL_SUPPORT", "CNVPYTOR_READ_DEPTH_MATCH",
+    "CNVPYTOR_STATUS", "CNVPYTOR_LEVEL", "CNVPYTOR_FLAGS", "GRIDSS_SUPPORT",
+    "MELT_SUPPORT", "EXPANSIONHUNTER_LOCUS_OVERLAP",
 ]
 
 
@@ -93,7 +101,7 @@ def normalise_events(df):
         "PANEL_GENE": "PANEL_GENE", "YES": "PANEL_GENE", "TRUE": "PANEL_GENE", "1": "PANEL_GENE",
         "NONPANEL_GENE": "NONPANEL_GENE", "NON_PANEL": "NONPANEL_GENE", "NO": "NONPANEL_GENE", "FALSE": "NONPANEL_GENE", "0": "NONPANEL_GENE",
     }).fillna("UNRESOLVED_PANEL")
-    rank_col = first_existing(work, ["FINAL_EVENT_RANK_WITHIN_PANEL_STATUS", "EVENT_RANK_WITHIN_PANEL_STATUS", "FINAL_EVENT_RANK_GLOBAL", "EVENT_RANK_GLOBAL", "RANK_WITHIN_PANEL_STATUS"])
+    rank_col = first_existing(work, ["DIAGNOSTIC_REVIEW_RANK", "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS", "EVENT_RANK_WITHIN_PANEL_STATUS", "FINAL_EVENT_RANK_GLOBAL", "EVENT_RANK_GLOBAL", "RANK_WITHIN_PANEL_STATUS"])
     score_col = first_existing(work, ["FINAL_GENE_RELEVANCE_DISPLAY_SCORE", "GENE_RELEVANCE_DISPLAY_SCORE", "GENE_RELEVANCE_SCORE", "EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "PHENOTYPE_SCORE"])
     work["_rank"] = numeric(work[rank_col]) if rank_col else float("nan")
     work["PLOT_ORDER_SCORE"] = numeric(work[score_col]) if score_col else float("nan")
@@ -210,7 +218,7 @@ def population(row, rare_af=0.01):
     return "UNAVAILABLE", "AF unknown"
 
 
-def event_evidence(row, rare_af=0.01):
+def event_evidence(row, rare_af=0.01, platform="lrs"):
     """Return state and short observation for every domain; no total score."""
     result = {}
     tier = text(row, ["FINAL_GENE_RELEVANCE_TIER", "GENE_RELEVANCE_TIER"])
@@ -295,12 +303,51 @@ def event_evidence(row, rare_af=0.01):
         result["Methylation"] = ("NO_MATCH", "No usable CpGs")
     else:
         result["Methylation"] = ("UNAVAILABLE", "Unavailable")
+    if platform == "srs":
+        # Use short-read evidence actually produced by this workflow. The
+        # local small-variant phase is not an SV phase or an SV+SNV pairing.
+        focus = text(row, ["DIAGNOSTIC_FOCUS"])
+        if tier == "." and focus != ".":
+            result["Gene relevance"] = ("REPORTED", focus.replace("_", " ").lower())
+        depth_match = text(row, ["CNVPYTOR_READ_DEPTH_MATCH"]).upper()
+        depth_qc = text(row, ["CNVPYTOR_STATUS"]).upper()
+        level = number(row, ["CNVPYTOR_LEVEL"])
+        if svtype in {"INV", "INS", "BND", "TRA"}:
+            result["CNVpytor depth"] = ("NOT_APPLICABLE", "Not a depth CNV")
+        elif depth_match in {"YES", "DEPTH_ONLY"}:
+            direction_matches = level is not None and ((svtype == "DEL" and level < 1) or (svtype == "DUP" and level > 1))
+            label = f"depth {level:.2f}" if level is not None else "Depth match"
+            if depth_match == "DEPTH_ONLY":
+                label += "\ndepth-only SV"
+            result["CNVpytor depth"] = ("SUPPORTING" if depth_qc == "PASS" and direction_matches else "REVIEW", label)
+        else:
+            result["CNVpytor depth"] = finding(depth_match)
+        gridss = text(row, ["GRIDSS_SUPPORT"]).upper()
+        if gridss == "YES_BOTH_BREAKPOINTS":
+            result["GRIDSS"] = ("SUPPORTING", "Both breakpoints")
+        elif gridss == "YES_SINGLE_BREAKPOINT":
+            result["GRIDSS"] = ("SUPPORTING", "Single-breakpoint event")
+        elif gridss == "PARTIAL_ONE_BREAKPOINT":
+            result["GRIDSS"] = ("UNRESOLVED", "One of two breakpoints")
+        else:
+            result["GRIDSS"] = finding(gridss)
+        repeat = text(row, ["EXPANSIONHUNTER_LOCUS_OVERLAP"]).upper()
+        result["Repeat locus"] = ("REPORTED", "Catalog locus overlap") if repeat == "YES" else finding(repeat)
+        result["MELT"] = finding(text(row, ["MELT_SUPPORT"]))
+        # A database search with no compatible match is different from a
+        # resource that was not configured. Neither establishes novelty.
+        scope = text(row, ["GNOMAD_SV_MATCH_SCOPE"]).upper()
+        if "NOT_ATTEMPTED" in scope and result["Population"][0] == "UNAVAILABLE":
+            result["Population"] = ("UNAVAILABLE", "Match not evaluated")
+        elif text(row, ["GNOMAD_SV_EXACT_MATCH"]).upper() == "NO" and result["Population"][0] == "UNAVAILABLE":
+            result["Population"] = ("NO_MATCH", "No compatible match\nAF unknown")
+        return {domain: result[domain] for domain in SRS_DOMAINS}
     return result
 
 
-def evidence_table(events, rare_af=0.01):
+def evidence_table(events, rare_af=0.01, platform="lrs"):
     rows = []
     for _, row in events.iterrows():
-        for domain, (state, label) in event_evidence(row, rare_af).items():
+        for domain, (state, label) in event_evidence(row, rare_af, platform).items():
             rows.append({"SV_ID": row["SV_ID"], "GENE": row["GENE"], "PANEL_STATUS": row["_panel_group"], "DOMAIN": domain, "STATE": state, "OBSERVATION": label})
     return pd.DataFrame(rows, columns=["SV_ID", "GENE", "PANEL_STATUS", "DOMAIN", "STATE", "OBSERVATION"])

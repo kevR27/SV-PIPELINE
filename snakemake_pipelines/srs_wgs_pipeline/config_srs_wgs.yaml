@@ -1,162 +1,129 @@
-# ============================================================
-# SRS WGS PIPELINE — ILLUMINA
-# Isolated from the LRS workflow. Edit paths before running.
-# ============================================================
+# SRS PIPELINE CONFIGURATION — Illumina whole-genome sequencing
+# Start with sections 1–3. Sections 4–10 contain the analysis defaults.
+# Use spaces, not tabs. Quote numeric sample IDs, as in the LRS config.
+# Run from snakemake_pipelines/srs_wgs_pipeline/ so relative paths work.
 
+# ============================================================
+# 1. SAMPLES, RESULTS AND REFERENCE — edit these first
+# ============================================================
 samples:
   patient01: "/data/srs_bams/patient01.sorted.bam"
   patient02: "/data/srs_bams/patient02.sorted.bam"
 
-# Optional non-standard BAM index names.
+path: "/DATA/srs_results"          # Folder where results will be written.
+ref: "/DATA/Reference/hg38.fa"      # Same GRCh38 FASTA used for alignment.
+threads: 32                        # Maximum threads for one analysis step.
+
+# Default index name: <BAM path>.bai. Uncomment only for other index names.
 # bam_indexes:
 #   patient01: "/data/srs_bams/patient01.sorted.bai"
 
-path: "/DATA/srs_results"
-ref: "/DATA/Reference/hg38.fa"
-threads: 32
-
-# Central environment, panel and reference folders shared with the LRS workflow.
+# Existing environment definitions, shared with LRS. Installation is in README.
 condaenv: "../../envs/"
+
+# ============================================================
+# 2. PANEL, GENES AND ANNOTATION FILES — check these paths
+# ============================================================
+# SV and DeepVariant discovery are genome-wide. The panel labels known genes;
+# it does not restrict variant calling.
 bed: "../../PANEL_OA/optic_neuropathy_panel.bed"
 candidate_genes_list: "../../PANEL_OA/optic_neuropathy_genes.txt"
-# BED coordinates: 0-based start, half-open end (also for the supplied .tsv).
-nuclear_mito_candidate_bed: "../../PANEL_OA/optic_neuropathy_mito_panel_annotated.tsv"
 gene_bed: "../../reference/gencode.genes.hg38.sorted.bed"
 exclude_bed: "../../reference/delly_hg38_exclude.bed"
+
+# This BED selects the readable small-variant VEP table, not the full VCF.
+# The supplied .tsv also uses BED coordinates: start = 0-based, end = excluded.
+nuclear_mito_candidate_bed: "../../PANEL_OA/optic_neuropathy_mito_panel_annotated.tsv"
 expansionhunter_catalog: "../../reference/variant_catalog_hg38_repeats.json"
 
 vep_cache_dir: "/DATA/Reference/vep"
 vep_assembly: "GRCh38"
-vep_cache_version: 113
+vep_cache_version: 113             # Must match envs/srs_vep.yaml and cache.
 annotsv_annotations_dir: "/DATA/Reference/AnnotSV_annotations"
-annotsv_benign_af: 0.01
-hpo_terms: null
+annotsv_benign_af: 0.01            # AnnotSV setting; not the final AF filter.
+hpo_terms: null                   # Optional AnnotSV HPO terms.
 
 monarch_nodes: "/DATA/Reference/monarch/monarch-kg_nodes.tsv"
 monarch_edges: "/DATA/Reference/monarch/monarch-kg_edges.tsv"
 discovery_hpo_file: "../../reference/hon_hpo_seed_terms.tsv"
 
 # ============================================================
-# HOW TO READ THIS CONFIG
+# 3. BIOLOGICAL FOCUS AND OPTIONAL ANALYSES
 # ============================================================
-# The pipeline is genome-wide. The optic-neuropathy panel is used later to
-# distinguish known disease genes from non-panel candidates; it is not used
-# to restrict genome-wide SV or SNV/indel discovery.
-#
-# Most settings below can be left at their defaults. The paths at the top
-# must be changed to match the server before running the pipeline.
+# Main focus: nuclear genes related to mitochondrial function, including
+# non-panel genes. MitoCarta membership is context, not proof of causality.
+mitocarta_enabled: true
+mitocarta_file: "../../reference/mitocarta/Human.MitoCarta3.0.xls"
+mitocarta_pathways_gmx: "../../reference/mitocarta/Human.MitoPathways3.0.gmx"
+
+# Extra algorithmic breakpoint support from the same short-read BAM.
+gridss_enabled: true
+# Secondary mtDNA SNV/heteroplasmy analysis.
+mtdna_enabled: true
+mt_contig: "chrM"
+mutserve_level: 0.01               # Minimum heteroplasmy fraction = 1%.
+# Leave MELT off until its local files in section 7 are installed.
+melt_enabled: false
+
+# Population database: optional, local GRCh38 VCF and its index.
+# null means frequency is unavailable; it does not prove a novel variant.
+gnomad_sv_vcf: null
+gnomad_sv_index: null             # null uses <VCF path>.tbi when a VCF is set.
 
 # ============================================================
-# WGS QC
+# 4. ALIGNMENT QC
 # ============================================================
-# mosdepth + samtools flagstat/stats are mandatory outputs.
-# Sample identity/relatedness/sex QC remains appropriate for your separate
-# Somalier cohort workflow rather than being duplicated here.
+# Below these thresholds, mark the sample REVIEW; do not delete its results.
 qc_min_mean_coverage: 25
 qc_min_mapped_percent: 95
-canonical_chromosomes_only: true
+canonical_chromosomes_only: true   # chr1–22, chrX, chrY and chrM.
 
 # ============================================================
-# MANTA / DELLY BREAKPOINT CALLING
+# 5. MANTA + DELLY AND GRIDSS SUPPORT
 # ============================================================
+# Evidence filters before Manta/DELLY merging (SV length is in base pairs).
 evidence_min_support: 2
 evidence_min_svlen: 50
 evidence_max_svlen: 250000000
 # evidence_min_gq: 10
 # evidence_blacklist_bed: "/DATA/Reference/low_mappability_segdup.bed"
 
-# SURVIVOR is used only to establish the Manta+DELLY breakpoint-event union.
-# SUPP>=2 is called "caller_concordant", NOT "high confidence".
+# Merge nearby events of matching type/orientation, keeping single-caller SVs.
+# Agreement between two callers is support, not validation.
 survivor_max_distance: 1000
 survivor_min_support: 1
 survivor_require_same_type: 1
 survivor_require_same_strand: 1
 survivor_use_size_ratio: 0
 survivor_min_size: 50
-survivor_caller_order: "Manta,Delly"
+survivor_caller_order: "Manta,Delly"  # Must stay in the actual input order.
 multi_caller_min_support: 2
 
-# ============================================================
-# GRIDSS — independent assembly/breakend evidence
-# ============================================================
-gridss_enabled: true
 gridss_threads: 8
 gridss_min_qual: null
-# GRIDSS recommends the ENCODE hg38 exclusion list (ENCFF356LFX) for UCSC
-# chromosome naming. Leave null until that BED is installed locally.
+# Optional installed exclusion BED. See README for reference preparation.
 gridss_exclude_bed: null
-# Set true only when BAMs were aligned by an aligner that already writes SA
-# split-read tags correctly (e.g. bwa mem); false is the conservative default.
+# Set true only if the aligner already wrote correct SA split-read tags.
 gridss_skip_softclip_realignment: false
+supporting_evidence_breakpoint_tolerance: 500
 
 # ============================================================
-# DEEPVARIANT — WHOLE-GENOME SNV/INDEL
+# 6. CNVPYTOR — COPY-NUMBER EVIDENCE FROM READ DEPTH
 # ============================================================
-# No panel BED restriction. Panel/non-panel filtering happens downstream.
-# The complete VCF is preserved; a focused review view is also generated from
-# nuclear_mito_candidate_bed and annotated with VEP.
-
-# ============================================================
-# CNVpytor — independent read-depth CNV evidence + BAF context
-# ============================================================
-# 10 kb is the primary RD discovery scale; 100 kb is retained as a robust
-# large-CNV context scale. Small/exonic events remain primarily breakpoint-
-# driven because very small RD bins become noisy in ordinary Illumina WGS.
+# 10 kb = main bins; 100 kb = large-event context. Small SVs depend mainly
+# on breakpoint evidence. B-allele frequency (BAF) adds context separately.
 cnvpytor_main_bin_size: 10000
 cnvpytor_large_cnv_bin_size: 100000
-cnvpytor_chroms:
-  - chr1
-  - chr2
-  - chr3
-  - chr4
-  - chr5
-  - chr6
-  - chr7
-  - chr8
-  - chr9
-  - chr10
-  - chr11
-  - chr12
-  - chr13
-  - chr14
-  - chr15
-  - chr16
-  - chr17
-  - chr18
-  - chr19
-  - chr20
-  - chr21
-  - chr22
-  - chrX
-  - chrY
-
-# Conservative QC thresholds derived from documented CNVpytor filtering fields.
-# They determine whether an unmatched read-depth CNV can enter the integrated SV callset.
-cnvpytor_max_q0: 0.5
-cnvpytor_max_pn: 0.5
+cnvpytor_chroms: [chr1, chr2, chr3, chr4, chr5, chr6, chr7, chr8, chr9, chr10, chr11, chr12, chr13, chr14, chr15, chr16, chr17, chr18, chr19, chr20, chr21, chr22, chrX, chrY]
+# Quality requirements for adding a CNVpytor-only deletion/duplication.
+cnvpytor_max_q0: 0.5               # Maximum fraction of mapping-quality-0 reads.
+cnvpytor_max_pn: 0.5               # Maximum fraction of unknown reference bases.
 cnvpytor_max_eval1: 0.0001
 cnvpytor_min_reciprocal_overlap: 0.5
 
 # ============================================================
-# mtDNA — Mutserve2
+# 7. MELT FILES — used only when melt_enabled is true
 # ============================================================
-# Secondary analysis. Nuclear mitochondrial/bioenergetic genes remain the
-# primary biological focus of the diagnostic-support candidate table.
-mtdna_enabled: true
-mt_contig: "chrM"
-# Mutserve2 default minimum heteroplasmy level is 0.01.
-mutserve_level: 0.01
-
-# ============================================================
-# REPEAT EXPANSIONS — ExpansionHunter
-# ============================================================
-# Catalog-driven. It is a separate variant class and is not counted as another
-# generic SV caller.
-
-# ============================================================
-# MOBILE ELEMENT INSERTIONS — MELTv2
-# ============================================================
-melt_enabled: false
 melt_jar: "/DATA/Reference/MELTv2.2.2/MELT.jar"
 melt_genes_bed: "/DATA/Reference/MELTv2.2.2/add_bed_files/Hg38/Hg38.genes.bed"
 melt_java_memory_gb: 8
@@ -166,41 +133,33 @@ melt_transposons:
   SVA: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/SVA_MELT.zip"
   HERVK: "/DATA/Reference/MELTv2.2.2/me_refs/Hg38/HERVK_MELT.zip"
 
-supporting_evidence_breakpoint_tolerance: 500
-
 # ============================================================
-# MITOCHONDRIAL-NUCLEAR GENE CONTEXT
+# 8. CANDIDATE REVIEW AND PLOTS — same plotting controls as LRS
 # ============================================================
-# MitoCarta is part of the main biological analysis. Preflight stops clearly
-# if these files have not yet been installed in reference/mitocarta/.
-mitocarta_enabled: true
-mitocarta_file: "../../reference/mitocarta/Human.MitoCarta3.0.xls"
-mitocarta_pathways_gmx: "../../reference/mitocarta/Human.MitoPathways3.0.gmx"
-
-# The diagnostic-support table is produced even when MitoCarta is disabled.
-# With MitoCarta enabled, nuclear-encoded mitochondrial genes and their
-# bioenergetic pathways are placed ahead of mtDNA findings in the review tier.
-diagnostic_candidate_top_n: 0 # Keep every ranked row; only Samplot limits its images.
+diagnostic_candidate_top_n: 0      # 0 = keep every ranked SV–gene row.
 samplot_enabled: true
-samplot_top_n: 20
+samplot_top_n: 20                  # Maximum read-evidence images per sample.
 samplot_min_mapq: 20
 
-# Optional validation/benchmark inputs. Leave null/empty for ordinary runs.
-# candidate_truth_tsv columns: GENE (required), SV_ID (optional).
-candidate_truth_tsv: null
-# Per-sample, bgzip-compressed truth SV VCFs for Truvari.
-sv_truth_vcfs: {}
-# Matching confident regions for each truth sample, on the same GRCh38 assembly.
-sv_truth_beds: {}
-# Optional local indexed gnomAD-SV VCF; the workflow never downloads it.
-gnomad_sv_vcf: null
-gnomad_sv_index: null
+# Run the separate all_thesis_plots target after the analysis.
+plot_top_genes: 25
+candidate_review_top_n: 5          # Initial review rows per panel group.
+candidate_locus_top_n: 10          # Maximum diagrams of selected loci.
+candidate_plot_gene_gtf: null      # Matching GRCh38 GTF for real exon tracks.
+
+# Separate review views; the complete candidate table is preserved.
+# One combined group retains measured AF <=1% OR missing AF. The plots use
+# different colours within that group to show which frequency is known.
+downstream_size_cutoff: 1000        # Main view >1 kb; <1 kb and =1 kb separate.
+downstream_max_af: 0.01
+downstream_inv_min_reads: 3
+downstream_inv_strong_reads: 5       # Higher support tier, not validation.
 
 # ============================================================
-# ALLELE-LEVEL RESEARCH ASSESSMENT
+# 9. ALLELE RESEARCH ASSESSMENT — optional patient/family evidence
 # ============================================================
-# Optional metadata remains null because your current cohort does not have
-# systematic trios/patient-specific phenotype tables.
+# Keep null when unavailable. The pipeline does not infer missing family data
+# or establish an SV + SNV in trans from small-variant WhatsHap phasing alone.
 allele_patient_context: null
 allele_disease_models: null
 allele_evidence: null
@@ -209,3 +168,10 @@ allele_rare_af: 0.01
 allele_min_support: 5
 allele_min_gq: 20
 allele_min_dp: 5
+
+# ============================================================
+# 10. OPTIONAL POSITIVE-CONTROL CHECKS
+# ============================================================
+candidate_truth_tsv: null          # Columns: GENE; optional SV_ID.
+sv_truth_vcfs: {}                  # Sample ID: indexed truth SV VCF.
+sv_truth_beds: {}                  # Same sample ID: confident-region BED.

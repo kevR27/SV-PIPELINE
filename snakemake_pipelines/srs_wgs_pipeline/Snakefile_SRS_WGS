@@ -1,32 +1,27 @@
-##########################################################################
-# SRS WGS PIPELINE - ILLUMINA
+# SRS WGS — Illumina; organised like the LRS workflow.
+# Edit config_srs_wgs.yaml for your samples, paths and analysis settings.
 #
-# Aim:
-#   Analyse Illumina whole-genome sequencing data for structural variants
-#   and other variant classes relevant to hereditary optic neuropathies.
+# Reading a rule:
+#   input   = files this step needs; output = files it creates
+#   params  = analysis settings; threads = CPU threads for this step
+#   conda   = existing environment definition; shell = tool command
+#   {sample} means repeat the step for each sample in the config.
 #
-# Main logic:
-#   1. Check BAM quality and coverage.
-#   2. Call breakpoint-based SVs with Manta and DELLY.
-#   3. Use GRIDSS as independent breakpoint/assembly support.
-#   4. Call genome-wide SNVs/indels with DeepVariant.
-#   5. Detect read-depth CNVs with CNVpytor and add BAF information.
-#   6. Combine breakpoint SVs and read-depth CNVs into one integrated SV VCF.
-#   7. Annotate with AnnotSV and VEP.
-#   8. Separate known optic-neuropathy genes from non-panel candidates.
-#   9. Analyse repeat expansions, mobile elements, mtDNA and MitoCarta context.
-#  10. Produce one final table containing the evidence supporting each SV/gene.
-#
-# IMPORTANT:
-#   This workflow is independent from the LRS pipeline.
-##########################################################################
+# Follow the numbered sections to understand the biological sequence.
+# Snakemake chooses the execution order from the required input files.
+# Main targets: all (analysis), quality_control (QC), all_thesis_plots (figures).
+# The plots target also creates the separate downstream filtering views.
 
+# ============================================================
+# 0. READ SETTINGS AND LIST THE REQUIRED RESULTS
+# ============================================================
 import os
 import shlex
 from pathlib import Path
 
 configfile: "config_srs_wgs.yaml"
 
+# Samples and shared folders (config sections 1–2)
 SAMPLES = list(config["samples"].keys())
 BAMS = config["samples"]
 BAM_INDEXES = config.get("bam_indexes", {})
@@ -41,12 +36,15 @@ GENE_BED = config["gene_bed"]
 EXCLUDE_BED = config["exclude_bed"]
 EH_CATALOG = config["expansionhunter_catalog"]
 
+REPO_ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
 ENV_DIR = os.path.abspath(os.path.join(workflow.basedir, config["condaenv"]))
 CONDAENV = ENV_DIR + "/"
-SCRIPTS = os.path.abspath(os.path.join(workflow.basedir, "../../scripts"))
+SCRIPTS = os.path.join(REPO_ROOT, "scripts")
+PLOTS = os.path.join(REPO_ROOT, "plots")
 # LRS and SRS use the same central folders. The Snakefiles remain separated,
 # while all helper scripts and environment definitions are easy to find.
 
+# Gene annotations and alignment QC (sections 2 and 4)
 ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
 HPO_TERMS = config.get("hpo_terms")
 ANNOTSV_ANNOTATIONS_DIR = config["annotsv_annotations_dir"]
@@ -63,6 +61,7 @@ CANONICAL_FLAG = "--canonical-only" if CANONICAL_ONLY else ""
 QC_MIN_MEAN_COVERAGE = float(config.get("qc_min_mean_coverage", 25))
 QC_MIN_MAPPED_PERCENT = float(config.get("qc_min_mapped_percent", 95))
 
+# Manta/DELLY evidence and merging (section 5)
 FILTER_SV_EVIDENCE_SCRIPT = config.get(
     "filter_sv_evidence_script",
     os.path.join(SCRIPTS, "filter_sv_evidence.py"),
@@ -84,12 +83,14 @@ if SURVIVOR_CALLER_ORDER != "Manta,Delly":
     raise ValueError("survivor_caller_order must be Manta,Delly to match the actual input VCF order")
 MULTI_CALLER_MIN_SUPPORT = config.get("multi_caller_min_support", 2)
 
+# Extra GRIDSS breakpoint support (sections 3 and 5)
 GRIDSS_ENABLED = config.get("gridss_enabled", True)
 GRIDSS_EXCLUDE_BED = config.get("gridss_exclude_bed")
 GRIDSS_SKIP_SOFTCLIP = config.get("gridss_skip_softclip_realignment", False)
 GRIDSS_THREADS = min(int(config.get("gridss_threads", 8)), THREADS)
 GRIDSS_MIN_QUAL = config.get("gridss_min_qual")
 
+# Copy-number evidence (section 6)
 CNVPYTOR_MAIN_BIN = int(config.get("cnvpytor_main_bin_size", 10000))
 CNVPYTOR_LARGE_CNV_BIN = int(config.get("cnvpytor_large_cnv_bin_size", 100000))
 CNVPYTOR_MAX_Q0 = float(config.get("cnvpytor_max_q0", 0.5))
@@ -102,6 +103,7 @@ CNVPYTOR_CHROMS = config.get(
 )
 CNVPYTOR_CHROM_FLAG = "-chrom " + " ".join(CNVPYTOR_CHROMS)
 
+# Secondary mtDNA analysis and optional MELT (sections 3 and 7)
 MTDNA_ENABLED = config.get("mtdna_enabled", True)
 MT_CONTIG = config.get("mt_contig", "chrM")
 MUTSERVE_LEVEL = float(config.get("mutserve_level", 0.01))
@@ -113,6 +115,7 @@ MELT_GENES_BED = config.get("melt_genes_bed")
 MELT_JAVA_MEMORY_GB = config.get("melt_java_memory_gb", 8)
 MELT_FAMILIES = list(MELT_TRANSPOSONS.keys())
 
+# Nuclear mitochondrial context and candidate review (sections 3 and 8)
 MITOCARTA_ENABLED = config.get("mitocarta_enabled", False)
 MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS = config.get("mitocarta_pathways_gmx")
@@ -122,16 +125,29 @@ DIAGNOSTIC_TOP_N = int(config.get("diagnostic_candidate_top_n", 0))
 SAMPLOT_ENABLED = config.get("samplot_enabled", True)
 SAMPLOT_TOP_N = int(config.get("samplot_top_n", 20))
 SAMPLOT_MIN_MAPQ = int(config.get("samplot_min_mapq", 20))
+# Optional control results and population frequency (sections 3 and 10)
 CANDIDATE_TRUTH = config.get("candidate_truth_tsv")
 SV_TRUTH_VCFS = config.get("sv_truth_vcfs", {})
 SV_TRUTH_BEDS = config.get("sv_truth_beds", {})
 GNOMAD_SV_VCF = config.get("gnomad_sv_vcf")
 GNOMAD_SV_INDEX = config.get("gnomad_sv_index") or (str(GNOMAD_SV_VCF) + ".tbi" if GNOMAD_SV_VCF else None)
 
-# The shared audit defaults to the LRS merged callset. SRS annotation is run
-# on the post-CNV integrated callset, so reconcile against that exact VCF.
+# Check that annotations account for the exact SRS VCF containing both
+# breakpoint SVs and passing read-depth CNVs.
 ANNOTSV_AUDIT_VCF = PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz"
 
+
+# Plot and downstream review controls (section 8). These do not change SV calling.
+PLOT_TOP_GENES = int(config.get("plot_top_genes", 25))
+REVIEW_TOP_N = int(config.get("candidate_review_top_n", 5))
+LOCUS_TOP_N = int(config.get("candidate_locus_top_n", 10))
+PLOT_GENE_GTF = config.get("candidate_plot_gene_gtf")
+DOWNSTREAM_SIZE_CUTOFF = int(config.get("downstream_size_cutoff", 1000))
+DOWNSTREAM_MAX_AF = float(config.get("downstream_max_af", 0.01))
+DOWNSTREAM_INV_MIN_READS = int(config.get("downstream_inv_min_reads", 3))
+DOWNSTREAM_INV_STRONG_READS = int(config.get("downstream_inv_strong_reads", 5))
+
+# Small helpers choose the sample's BAM index and only the enabled branches.
 
 def bam_index_for(sample):
     return BAM_INDEXES.get(sample, BAMS[sample] + ".bai")
@@ -154,6 +170,7 @@ def diagnostic_source(wc):
     return PATH + f"{wc.sample}/gene_discovery/{wc.sample}{suffix}"
 
 
+# Optional results are requested only when their analysis is enabled.
 GRIDSS_TARGETS = []
 if GRIDSS_ENABLED:
     GRIDSS_TARGETS = (
@@ -204,71 +221,79 @@ if any(not SV_TRUTH_BEDS.get(sample) for sample in SV_BENCHMARK_SAMPLES):
 SV_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/truari", sample=SV_BENCHMARK_SAMPLES)
 
 
+# Default target: complete analysis and review tables. Figures have their own target.
 rule all:
     input:
-        PATH + "reference_checks/srs_preflight.tsv",
-        PATH + "reference_checks/srs_preflight.json",
-        # QC
-        expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/qc/{sample}.flagstat.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/qc/{sample}.samtools.stats.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/qc/{sample}.wgs_qc_summary.tsv", sample=SAMPLES),
+        preflight=[
+            PATH + "reference_checks/srs_preflight.tsv",
+            PATH + "reference_checks/srs_preflight.json",
+        ],
+        quality_control=[
+            expand(PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt", sample=SAMPLES),
+            expand(PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt", sample=SAMPLES),
+            expand(PATH + "{sample}/qc/{sample}.flagstat.txt", sample=SAMPLES),
+            expand(PATH + "{sample}/qc/{sample}.samtools.stats.txt", sample=SAMPLES),
+            expand(PATH + "{sample}/qc/{sample}.wgs_qc_summary.tsv", sample=SAMPLES),
+        ],
+        small_variants=[
+            expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
+            expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi", sample=SAMPLES),
+            expand(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz", sample=SAMPLES),
+            expand(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vep.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
+            expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi", sample=SAMPLES),
+        ],
+        breakpoint_callers=[
+            expand(PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz", sample=SAMPLES),
+            expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
+            GRIDSS_TARGETS,
+        ],
+        read_evidence=[
+            expand(PATH + "{sample}/parsed/{sample}.manta.evidence.filtered.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/parsed/{sample}.delly.evidence.filtered.tsv", sample=SAMPLES),
+        ],
+        merged_breakpoints=[
+            expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz", sample=SAMPLES),
+            expand(PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller.vcf.gz", sample=SAMPLES),
+        ],
+        copy_number=[
+            expand(PATH + "{sample}/cnv/cnvpytor/{sample}.pytor", sample=SAMPLES),
+            expand(PATH + "{sample}/cnv/cnvpytor/{sample}.calls.main_bin.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/cnv/cnvpytor/{sample}.calls.large_cnv_bin.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/cnv/cnvpytor/{sample}.reference_info.txt", sample=SAMPLES),
+        ],
+        combined_svs=[
+            expand(PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz", sample=SAMPLES),
+            expand(PATH + "{sample}/sv/integrated/{sample}_cnvpytor_integration.tsv", sample=SAMPLES),
+        ],
+        candidate_review=[
+            expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
+            expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
+            expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.summary.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_supporting_evidence.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/diagnostic_review/{sample}.mitochondrial_gene_ranking.tsv", sample=SAMPLES),
+            SAMPLOT_TARGETS,
+            CANDIDATE_BENCHMARK_TARGETS,
+            SV_BENCHMARK_TARGETS,
+        ],
+        other_variant_classes=[
+            expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
+            MELT_TARGETS,
+            MTDNA_TARGETS,
+            MITOCARTA_TARGETS,
+        ],
 
-        # Genome-wide SNV/indel and short-read local phasing
-        expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi", sample=SAMPLES),
-        expand(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vep.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi", sample=SAMPLES),
-
-        # Breakpoint callers
-        expand(PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/delly/{sample}_delly.vcf.gz", sample=SAMPLES),
-        GRIDSS_TARGETS,
-
-        # Normalized Manta/DELLY evidence
-        expand(PATH + "{sample}/parsed/{sample}.manta.evidence.filtered.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/parsed/{sample}.delly.evidence.filtered.tsv", sample=SAMPLES),
-
-        # Manta+DELLY breakpoint union + multi-caller companion
-        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/merged/{sample}_caller_support_summary.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/merged/{sample}_merged_SV.multi_caller.vcf.gz", sample=SAMPLES),
-
-        # CNVpytor RD/BAF branch
-        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.pytor", sample=SAMPLES),
-        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.calls.main_bin.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.calls.large_cnv_bin.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/cnv/cnvpytor/{sample}.reference_info.txt", sample=SAMPLES),
-
-        # Integrated structural-variant callset
-        expand(PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/integrated/{sample}_cnvpytor_integration.tsv", sample=SAMPLES),
-
-        # Annotation and candidate discovery
-        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
-        expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.summary.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_supporting_evidence.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/diagnostic_review/{sample}.mitochondrial_gene_ranking.tsv", sample=SAMPLES),
-        SAMPLOT_TARGETS,
-        CANDIDATE_BENCHMARK_TARGETS,
-        SV_BENCHMARK_TARGETS,
-
-        # Specialized variant classes
-        expand(PATH + "{sample}/str/expansionhunter/{sample}_EH.vcf", sample=SAMPLES),
-        MELT_TARGETS,
-        MTDNA_TARGETS,
-        MITOCARTA_TARGETS
-
+# ============================================================
+# 1. CHECK REFERENCE FILES, ALIGNMENT AND COVERAGE
+# Stop early when required files are missing; report coverage/alignment QC.
+# ============================================================
 
 rule srs_preflight:
     input:
@@ -298,10 +323,6 @@ rule srs_preflight:
           --output-tsv {output.tsv:q} --output-json {output.json:q}
         """
 
-
-########################
-# WGS alignment QC
-########################
 
 rule mosdepth_coverage:
     input:
@@ -365,9 +386,10 @@ rule summarize_wgs_qc:
         """
 
 
-########################
-# Breakpoint SV callers
-########################
+# ============================================================
+# 2A. FIND BREAKPOINT SVs — MANTA, DELLY AND GRIDSS
+# Manta/DELLY define the main SVs. GRIDSS adds algorithmic support from the same BAM.
+# ============================================================
 
 rule manta_sv_calling:
     input:
@@ -458,9 +480,10 @@ rule gridss_sv_calling:
         """
 
 
-################################################
-# Manta/DELLY evidence normalization + filtering
-################################################
+# ============================================================
+# 2B. READ AND FILTER THE MANTA/DELLY EVIDENCE
+# Use the shared scripts to compare caller evidence in a consistent table.
+# ============================================================
 
 rule manta_caller_parse:
     input:
@@ -534,9 +557,10 @@ rule filter_delly_sv:
         """
 
 
-##############################################
-# Manta+DELLY breakpoint event union
-##############################################
+# ============================================================
+# 2C. COMBINE MANTA + DELLY EVENTS
+# Keep the union and a separate companion detected by both callers.
+# ============================================================
 
 rule survivor_merge:
     input:
@@ -592,9 +616,10 @@ rule summarize_caller_support:
         """
 
 
-##############################################
-# Whole-genome SNV/indel calling
-##############################################
+# ============================================================
+# 3. FIND SMALL VARIANTS AND PHASE NEARBY SMALL VARIANTS
+# Preserve the genome-wide VCF; annotate a focused nuclear mitochondrial view.
+# ============================================================
 
 rule deepvariant_snv_indel_calling:
     input:
@@ -682,9 +707,10 @@ rule vep_nuclear_mito_small_variants:
         """
 
 
-##############################################
-# CNVpytor read-depth CNV + BAF context
-##############################################
+# ============================================================
+# 4A. FIND COPY-NUMBER CHANGES FROM READ DEPTH
+# GC-corrected depth calls provide DEL/DUP evidence; BAF is additional context.
+# ============================================================
 
 rule cnvpytor_cnv_calling:
     input:
@@ -722,17 +748,10 @@ rule cnvpytor_cnv_calling:
         """
 
 
-##############################################
-# Combine breakpoint SVs and read-depth CNVs
-##############################################
-
-##########################################################################
-# COMBINE BREAKPOINT SVs WITH READ-DEPTH CNVs
-#
-# Manta/DELLY define breakpoint-based events.
-# CNVpytor contributes an independent read-depth signal for DEL/DUP events.
-# CNVpytor-only CNVs are retained when they pass the configured QC filters.
-##########################################################################
+# ============================================================
+# 4B. COMBINE BREAKPOINT SVs WITH PASSING DEPTH CNVs
+# This combined SV VCF is the source for genome-wide annotation.
+# ============================================================
 
 rule combine_sv_and_cnv_calls:
     input:
@@ -760,9 +779,10 @@ rule combine_sv_and_cnv_calls:
         """
 
 
-##############################################
-# AnnotSV + gene discovery
-##############################################
+# ============================================================
+# 5A. ANNOTATE SVs AND IDENTIFY PANEL/NON-PANEL GENES
+# AnnotSV describes gene overlap; Monarch adds phenotype context.
+# ============================================================
 
 rule annotsv_annotations_check:
     input:
@@ -780,6 +800,10 @@ rule annotsv_annotations_check:
         mkdir -p $(dirname {output.marker})
         touch {output.marker}
         """
+
+
+# Shared annotation checks used by both LRS and SRS.
+include: "../common/annotsv_evidence_audit.smk"
 
 
 rule annotsv_annotation:
@@ -885,9 +909,10 @@ rule rank_genomewide_candidates:
         """
 
 
-##############################################
-# VEP supplementary SV annotation
-##############################################
+# ============================================================
+# 5B. ADD VEP TRANSCRIPT CONSEQUENCES
+# Keep all transcript consequences and make a readable per-SV/per-gene summary.
+# ============================================================
 
 rule vep_sv_annotation:
     input:
@@ -935,9 +960,10 @@ rule summarize_vep_transcripts:
         """
 
 
-##############################################
-# Integrated master SV/gene evidence
-##############################################
+# ============================================================
+# 5C. MAKE THE SV–GENE TABLE AND ADD POPULATION FREQUENCY
+# Preserve annotation availability and explicit gnomAD match/resource states.
+# ============================================================
 
 rule integrated_sv_gene_table:
     input:
@@ -988,9 +1014,14 @@ rule srs_population_frequency:
         """
 
 
-##############################################
-# ExpansionHunter
-##############################################
+# Apply the shared allele research assessment to the SRS SV–gene table.
+include: "../common/allele_assessment.smk"
+
+
+# ============================================================
+# 6A. REVIEW REPEAT LOCI — EXPANSIONHUNTER
+# Catalogued repeats are a separate variant class, not another generic SV caller.
+# ============================================================
 
 rule expansionhunter_str:
     input:
@@ -1017,9 +1048,10 @@ rule expansionhunter_str:
         """
 
 
-##############################################
-# MELTv2 optional MEI branch
-##############################################
+# ============================================================
+# 6B. OPTIONAL MOBILE-ELEMENT INSERTIONS — MELT
+# Used only when melt_enabled is true and the required files are configured.
+# ============================================================
 
 rule melt_mei_family:
     input:
@@ -1069,9 +1101,10 @@ rule melt_merge_families:
         """
 
 
-##############################################
-# mtDNA Mutserve2 branch
-##############################################
+# ============================================================
+# 6C. SECONDARY mtDNA SNV/HETEROPLASMY ANALYSIS
+# Mutserve examines the mitochondrial genome; nuclear mitochondrial genes remain primary.
+# ============================================================
 
 rule prepare_mt_reference:
     input:
@@ -1117,20 +1150,10 @@ rule mutserve_mtdna_calling:
         """
 
 
-##############################################
-# Add independent supporting evidence to the final table
-##############################################
-
-##########################################################################
-# ADD SUPPORTING EVIDENCE
-#
-# This step does not create new pathogenicity classifications.
-# It only records whether the same candidate has support from:
-#   - CNVpytor read depth
-#   - GRIDSS breakpoint/assembly evidence
-#   - MELT mobile-element calls
-#   - ExpansionHunter repeat loci
-##########################################################################
+# ============================================================
+# 7A. ATTACH THE ADDITIONAL SV EVIDENCE
+# Record depth, GRIDSS, MELT and repeat-locus context without claiming pathogenicity.
+# ============================================================
 
 rule add_supporting_evidence:
     input:
@@ -1162,9 +1185,10 @@ rule add_supporting_evidence:
         """
 
 
-##############################################
-# Primary MitoCarta nuclear-mitochondrial context
-##############################################
+# ============================================================
+# 7B. IDENTIFY NUCLEAR MITOCHONDRIAL GENES AND PATHWAYS
+# MitoCarta annotates genome-wide SVs when mitocarta_enabled is true.
+# ============================================================
 
 rule mitocarta_context_srs:
     input:
@@ -1187,9 +1211,10 @@ rule mitocarta_context_srs:
         """
 
 
-##############################################
-# Diagnostic-support review and benchmarking
-##############################################
+# ============================================================
+# 7C. ORDER CANDIDATES FOR BIOLOGICAL REVIEW
+# Keep all rows by default. Samplot alone limits the number of read-evidence images.
+# ============================================================
 
 rule build_diagnostic_candidates:
     input:
@@ -1247,6 +1272,118 @@ rule samplot_diagnostic_candidates:
         """
 
 
+# ============================================================
+# 8. FIGURES AND SEPARATE DOWNSTREAM FILTERING VIEWS
+# Run all_thesis_plots to create these figures, as in the LRS workflow.
+# The original candidate tables remain the complete analysis results.
+# ============================================================
+
+rule quality_control:
+    input:
+        expand(PATH + "{sample}/qc/{sample}.wgs_qc_summary.tsv", sample=SAMPLES)
+
+
+rule further_filtering:
+    input:
+        expand(PATH + "{sample}/downstream_filtering/filter_run.json", sample=SAMPLES)
+
+
+rule all_thesis_plots:
+    input:
+        expand(PATH + "{sample}/plots/.thesis_plots.done", sample=SAMPLES),
+        expand(PATH + "{sample}/downstream_filtering/plots/.filter_plots.done", sample=SAMPLES),
+        SAMPLOT_TARGETS
+
+
+# Overview figures use the complete candidate table, not the filtered subset.
+rule thesis_plots_sample:
+    input:
+        candidates=rules.build_diagnostic_candidates.output.tsv,
+        evidence=diagnostic_source,
+        coverage=rules.mosdepth_coverage.output.summary,
+        coverage_dist=rules.mosdepth_coverage.output.global_dist,
+        qc=rules.summarize_wgs_qc.output.tsv,
+        callers=rules.summarize_caller_support.output.summary,
+        genes=GENE_BED,
+        ranking=rules.rank_genomewide_candidates.output.tsv,
+        phenotypes=rules.human_gene_phenotypes.output.tsv,
+        phased=rules.whatshap_phasing.output.phased,
+        mito_ranking=lambda wc: [PATH + f"{wc.sample}/diagnostic_review/{wc.sample}.mitochondrial_gene_ranking.tsv"] if MITOCARTA_ENABLED else [],
+        gtf=lambda wc: [PLOT_GENE_GTF] if PLOT_GENE_GTF else [],
+        scripts=sorted(str(p) for p in Path(PLOTS).glob("*.py"))
+    output:
+        marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
+    log:
+        PATH + "{sample}/logs/plots/{sample}.thesis_plots.log"
+    params:
+        gene_gtf_arg=("--gene-gtf " + shlex.quote(str(PLOT_GENE_GTF))) if PLOT_GENE_GTF else "",
+        top_genes=PLOT_TOP_GENES,
+        review_top_n=REVIEW_TOP_N,
+        locus_top_n=LOCUS_TOP_N
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        mkdir -p $(dirname {log:q})
+        python {PLOTS:q}/run_thesis_plots.py --root {PATH:q} --sample {wildcards.sample:q} \
+            --platform srs --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
+            --top-genes {params.top_genes} --review-top-n {params.review_top_n} --locus-top-n {params.locus_top_n} \
+            {params.gene_gtf_arg} > {log:q} 2>&1
+        touch {output.marker:q}
+        """
+
+
+# Keep missing AF and measured AF <=1% together; preserve their source labels.
+# Size, chromosome, annotation-context and inversion views use the same script as LRS.
+rule filter_sv_candidates_for_review:
+    input:
+        candidates=rules.build_diagnostic_candidates.output.tsv,
+        script=SCRIPTS + "/filter_sv_candidates_for_review.py"
+    output:
+        audit=PATH + "{sample}/downstream_filtering/all_records.annotated.tsv",
+        settings=PATH + "{sample}/downstream_filtering/filter_run.json",
+        files=PATH + "{sample}/downstream_filtering/output_files.tsv"
+    params:
+        outdir=PATH + "{sample}/downstream_filtering",
+        size_cutoff=DOWNSTREAM_SIZE_CUTOFF,
+        max_af=DOWNSTREAM_MAX_AF,
+        inv_min_reads=DOWNSTREAM_INV_MIN_READS,
+        inv_strong_reads=DOWNSTREAM_INV_STRONG_READS
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        python {input.script:q} --input {input.candidates:q} --sample {wildcards.sample:q} \
+            --out-dir {params.outdir:q} --size-cutoff {params.size_cutoff} \
+            --max-af {params.max_af} --inv-min-reads {params.inv_min_reads} \
+            --inv-strong-reads {params.inv_strong_reads}
+        """
+
+
+# Five separate, coloured figures explain the filtering outcomes and retained SVs.
+rule downstream_filtering_plots:
+    input:
+        audit=rules.filter_sv_candidates_for_review.output.audit,
+        settings=rules.filter_sv_candidates_for_review.output.settings,
+        script=PLOTS + "/plot_downstream_sv_filtering.py"
+    output:
+        marker=touch(PATH + "{sample}/downstream_filtering/plots/.filter_plots.done")
+    params:
+        outdir=PATH + "{sample}/downstream_filtering/plots"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        python {input.script:q} --filter-dir $(dirname {input.settings:q}) --out-dir {params.outdir:q}
+        touch {output.marker:q}
+        """
+
+
+# ============================================================
+# 9. OPTIONAL CHECKS AGAINST KNOWN POSITIVE CONTROLS
+# Require configured truth files; SV comparisons also require confident regions.
+# ============================================================
+
 rule benchmark_diagnostic_candidates:
     input:
         candidates=rules.build_diagnostic_candidates.output.tsv,
@@ -1282,8 +1419,3 @@ rule benchmark_sv_callset:
           --pctseq 0 --pctsize 0.7
         test -s {output:q}/summary.json
         """
-
-
-# Shared interpretation/audit logic is reused read-only. No LRS file is edited.
-include: "../common/allele_assessment.smk"
-include: "../common/annotsv_evidence_audit.smk"

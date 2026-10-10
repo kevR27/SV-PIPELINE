@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 HERE = Path(__file__).resolve().parent
 
 
@@ -21,6 +23,7 @@ def parse_args():
     p.add_argument("--sample", required=True)
     p.add_argument("--platform", choices=["lrs", "srs"], default="lrs")
     p.add_argument("--candidate-table", default=None, help="Optional mechanism-aware SV-gene table; current LRS workflow passes the final integrated .tsv.gz")
+    p.add_argument("--evidence-table", help="Explicit complete SV-gene evidence table; avoids selecting an older optional result")
     p.add_argument("--top-genes", type=int, default=25, help="Number of top genes/candidate rows shown in thesis figures")
     p.add_argument("--out-dir", default=None, help="Default: <root>/<sample>/plots")
     p.add_argument("--methylation-region", default=None, help="Optional chr:start-end for methylation plot")
@@ -77,7 +80,7 @@ def main():
     args = parse_args()
     if min(args.top_genes, args.review_top_n, args.locus_top_n) < 1:
         raise ValueError("Plot and review counts must be at least 1")
-    for name in ["candidate_table", "gene_bed", "gene_gtf"]:
+    for name in ["candidate_table", "evidence_table", "gene_bed", "gene_gtf"]:
         value = getattr(args, name)
         if value and not Path(value).expanduser().exists():
             raise FileNotFoundError(f"Requested --{name.replace('_', '-')} does not exist: {value}")
@@ -104,7 +107,12 @@ def main():
         "loci": out / "12_candidate_loci" / f"top_{args.locus_top_n}",
         "mitochondrial": out / "14_mitochondrial_context",
     }
+    if args.platform == "srs":
+        for name in ["straglr", "tldr", "methylation", "population", "integration"]:
+            folders.pop(name)
     for folder in folders.values():
+        if args.platform == "srs" and folder == folders["associations"]:
+            continue
         folder.mkdir(parents=True, exist_ok=True)
 
     py = sys.executable
@@ -136,6 +144,7 @@ def main():
     integrated_extended = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_complementary_evidence.tsv"
     integrated_multimodal = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_multimodal_context.tsv"
     integrated_mitocarta = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_mitocarta.tsv"
+    integrated_srs = sample_root / "gene_discovery" / f"{s}_integrated_SV_gene_with_supporting_evidence.tsv"
     if integrated_final.exists():
         integrated = integrated_final
     elif integrated_mitocarta.exists():
@@ -144,13 +153,23 @@ def main():
         integrated = integrated_multimodal
     elif integrated_extended.exists():
         integrated = integrated_extended
+    elif args.platform == "srs" and integrated_srs.exists():
+        integrated = integrated_srs
     else:
         integrated = integrated_base
+    if args.evidence_table:
+        integrated = Path(args.evidence_table).expanduser().resolve()
     if args.candidate_table:
         candidate_events = Path(args.candidate_table).expanduser().resolve()
     else:
         final_events = sample_root / "gene_discovery" / "final" / f"{s}_sv_gene_candidates.ranked.tsv"
-        candidate_events = final_events if final_events.exists() else integrated
+        srs_candidates = sample_root / "diagnostic_review" / f"{s}.diagnostic_candidates.tsv"
+        if args.platform == "srs" and srs_candidates.exists():
+            candidate_events = srs_candidates
+        elif final_events.exists():
+            candidate_events = final_events
+        else:
+            candidate_events = integrated
 
     candidate_source = candidate_events if candidate_events.exists() else integrated
 
@@ -181,6 +200,8 @@ def main():
         if mito_ranking_final.exists()
         else mito_ranking_generic
     )
+    if args.platform == "srs":
+        mito_ranking = sample_root / "diagnostic_review" / f"{s}.mitochondrial_gene_ranking.tsv"
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
     gene_summary = sample_root / "gene_discovery" / f"{s}_gene_multimodal_evidence_summary.tsv"
     straglr = sample_root / "sv" / "straglr" / f"{s}_straglr.annotated.tsv"
@@ -220,6 +241,8 @@ def main():
             "--summary", str(coverage_summary),
             "--out-prefix", str(folders["qc"] / f"{s}_coverage_qc"),
         ]
+        if args.platform == "srs":
+            cmd += ["--title", "Short-read sequencing coverage QC"]
         required = [coverage_summary]
         if coverage_dist:
             cmd += ["--global-dist", str(coverage_dist)]
@@ -234,14 +257,14 @@ def main():
     evidence_args = ["--evidence-table", str(integrated)] if integrated.exists() and integrated != candidate_source else []
     jobs.extend([
         ([py, str(HERE / "build_candidate_review.py"), "--input", str(candidate_source),
-          *evidence_args, "--sample", s, "--out-dir", str(folders["review"]),
+          *evidence_args, "--platform", args.platform, "--sample", s, "--out-dir", str(folders["review"]),
           "--top-n", str(args.review_top_n)], [candidate_source]),
         ([py, str(HERE / "plot_candidate_evidence_matrix.py"), "--input", str(candidate_source),
           *evidence_args, "--platform", args.platform,
           "--out-prefix", str(folders["candidates"] / f"{s}_candidate_evidence"),
           "--top-n", str(args.top_genes)], [candidate_source]),
         ([py, str(HERE / "plot_event_review_summary.py"), "--input", str(candidate_source),
-          "--sample", s, "--out-dir", str(folders["review"])], [candidate_source]),
+          "--platform", args.platform, "--sample", s, "--out-dir", str(folders["review"])], [candidate_source]),
     ])
     if args.gene_bed:
         gene_bed = Path(args.gene_bed).expanduser().resolve()
@@ -261,9 +284,13 @@ def main():
     else:
         print("[SKIP] no gene BED supplied; candidate-specific locus plots skipped")
 
-    if args.review_only:
+    overview_table = integrated if integrated.exists() else candidate_source
+    has_sv_rows = not pd.read_csv(overview_table, sep="\t", nrows=1).empty
+    if args.review_only or not has_sv_rows:
         for command, required in jobs:
             run(command, required, args.dry_run)
+        if not has_sv_rows:
+            print("[SKIP] no SV rows: saved QC and review summaries; SV overview figures are unavailable")
         print(f"[OK] start at {folders['review'] / 'START_HERE.txt'}")
         return
 
@@ -359,32 +386,29 @@ def main():
                     py, str(HERE / "plot_gene_multimodal_summary.py"),
                     "--input", str(gene_summary),
                     "--ranking-table", str(ranked),
-                    "--out-prefix", str(folders["integration"] / f"{s}_gene_multimodal_evidence"),
+                    "--out-prefix", str(folders.get("integration", folders["candidates"]) / f"{s}_gene_multimodal_evidence"),
                     "--top-n", str(args.top_genes),
                 ],
                 [gene_summary, ranked],
             ),
-            (
-                [
-                    py, str(HERE / "plot_mitocarta_sv_genes.py"),
-                    "--input", str(integrated),
-                    "--ranking-table", str(mito_ranking),
-                    "--out-prefix", str(folders["mitochondrial"] / f"{s}_mitocarta_sv_genes"),
-                    "--top-n", str(args.top_genes),
-                ],
-                [integrated, mito_ranking],
-            ),
-            (
-                [
-                    py, str(HERE / "plot_mitochondrial_gene_ranking.py"),
-                    "--input", str(mito_ranking),
-                    "--out-prefix", str(folders["mitochondrial"] / f"{s}_mitochondrial_gene_ranking"),
-                    "--top-n", str(args.top_genes),
-                ],
-                [mito_ranking],
-            ),
         ]
     )
+
+    # A disabled MitoCarta branch has no mitochondrial annotation columns.
+    # Do not interpret its presence in an older result file as a current analysis.
+    mito_columns = set(pd.read_csv(integrated, sep="\t", nrows=0).columns) if integrated.exists() else set()
+    if {"MITOCARTA_STATUS", "MITOCARTA_ENCODING"}.issubset(mito_columns):
+        jobs.extend([
+            ([py, str(HERE / "plot_mitocarta_sv_genes.py"), "--input", str(integrated),
+              "--ranking-table", str(mito_ranking),
+              "--out-prefix", str(folders["mitochondrial"] / f"{s}_mitocarta_sv_genes"),
+              "--top-n", str(args.top_genes)], [integrated, mito_ranking]),
+            ([py, str(HERE / "plot_mitochondrial_gene_ranking.py"), "--input", str(mito_ranking),
+              "--out-prefix", str(folders["mitochondrial"] / f"{s}_mitochondrial_gene_ranking"),
+              "--top-n", str(args.top_genes)], [mito_ranking]),
+        ])
+    else:
+        print("[SKIP] current evidence table has no MitoCarta annotation")
 
     if args.platform == "lrs":
         jobs.extend(
@@ -431,6 +455,8 @@ def main():
         phase_required.append(longphase)
 
     if phase_required:
+        if args.platform == "srs":
+            phase_cmd += ["--title", "Short-read local small-variant phasing"]
         jobs.append((phase_cmd, phase_required))
     else:
         print("[SKIP] no WhatsHap/LongPhase phased VCF found")
@@ -450,6 +476,17 @@ def main():
         jobs.append((methylation_cmd, [methylation]))
     elif args.platform == "lrs":
         print("[SKIP] no modkit bedMethyl/.bed.gz file found")
+
+    if args.platform == "srs":
+        # These figures use detailed LRS event-ranking or multimodal columns.
+        # SRS has no equivalent outputs; its simpler SV overview and
+        # evidence figures already describe the available short-read results.
+        lrs_event_plots = {
+            "plot_large_complex_candidates.py", "plot_gene_sv_spectrum.py",
+            "plot_gene_multimodal_summary.py", "plot_sv_gene_associations.py",
+            "plot_sv_gene_network.py",
+        }
+        jobs = [(command, required) for command, required in jobs if Path(command[1]).name not in lrs_event_plots]
 
     for command, required in jobs:
         run(command, required, args.dry_run)
