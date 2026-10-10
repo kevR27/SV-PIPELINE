@@ -28,6 +28,9 @@ clustered_out <- args[[5]]
 block_out <- args[[6]]
 min_pts <- as.integer(args[[7]])
 nthreads <- as.integer(args[[8]])
+if (is.na(min_pts) || min_pts < 1 || is.na(nthreads) || nthreads < 1) {
+  stop("Minimum cluster reads and threads must be positive integers")
+}
 xist_bed_path <- args[[9]]
 exclude_bed_arg <- args[[10]]
 
@@ -227,7 +230,8 @@ cluster_one <- function(row_index) {
     unique(
       clustered$cluster_id[
         !is.na(clustered$cluster_id) &
-          clustered$cluster_id != ""
+          clustered$cluster_id != "" &
+          clustered$cluster_id != "0"
       ]
     )
   )
@@ -254,6 +258,12 @@ cluster_one <- function(row_index) {
         .groups = "drop"
       ) %>%
       arrange(avg)
+
+    if (any(!is.finite(cluster_means$avg)) || diff(cluster_means$avg) <= 0) {
+      clustered$assigned_X <- NA_character_
+      clustered$XCI_assignment_rule <- "CLUSTER_METHYLATION_UNRESOLVED"
+      return(clustered)
+    }
 
     low_cluster <- cluster_means$cluster_id[[1]]
     high_cluster <- cluster_means$cluster_id[[2]]

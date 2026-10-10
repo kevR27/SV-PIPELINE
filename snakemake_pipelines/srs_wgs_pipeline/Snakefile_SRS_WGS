@@ -22,6 +22,7 @@
 ##########################################################################
 
 import os
+import shlex
 from pathlib import Path
 
 configfile: "config_srs_wgs.yaml"
@@ -54,6 +55,8 @@ MONARCH_EDGES = config["monarch_edges"]
 DISCOVERY_HPO_FILE = config["discovery_hpo_file"]
 VEP_CACHE_DIR = config["vep_cache_dir"]
 VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
+if VEP_ASSEMBLY != "GRCh38":
+    raise ValueError("This SRS workflow uses GRCh38 interval/reference resources; vep_assembly must be GRCh38")
 VEP_CACHE_VERSION = int(config.get("vep_cache_version", 113))
 CANONICAL_ONLY = config.get("canonical_chromosomes_only", True)
 CANONICAL_FLAG = "--canonical-only" if CANONICAL_ONLY else ""
@@ -77,6 +80,8 @@ SURVIVOR_REQUIRE_SAME_STRAND = config.get("survivor_require_same_strand", 1)
 SURVIVOR_USE_SIZE_RATIO = config.get("survivor_use_size_ratio", 0)
 SURVIVOR_MIN_SIZE = config.get("survivor_min_size", 50)
 SURVIVOR_CALLER_ORDER = config.get("survivor_caller_order", "Manta,Delly")
+if SURVIVOR_CALLER_ORDER != "Manta,Delly":
+    raise ValueError("survivor_caller_order must be Manta,Delly to match the actual input VCF order")
 MULTI_CALLER_MIN_SUPPORT = config.get("multi_caller_min_support", 2)
 
 GRIDSS_ENABLED = config.get("gridss_enabled", True)
@@ -113,12 +118,15 @@ MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS = config.get("mitocarta_pathways_gmx")
 
 SUPPORTING_BP_TOLERANCE = int(config.get("supporting_evidence_breakpoint_tolerance", 500))
-DIAGNOSTIC_TOP_N = int(config.get("diagnostic_candidate_top_n", 100))
+DIAGNOSTIC_TOP_N = int(config.get("diagnostic_candidate_top_n", 0))
 SAMPLOT_ENABLED = config.get("samplot_enabled", True)
 SAMPLOT_TOP_N = int(config.get("samplot_top_n", 20))
 SAMPLOT_MIN_MAPQ = int(config.get("samplot_min_mapq", 20))
 CANDIDATE_TRUTH = config.get("candidate_truth_tsv")
 SV_TRUTH_VCFS = config.get("sv_truth_vcfs", {})
+SV_TRUTH_BEDS = config.get("sv_truth_beds", {})
+GNOMAD_SV_VCF = config.get("gnomad_sv_vcf")
+GNOMAD_SV_INDEX = config.get("gnomad_sv_index") or (str(GNOMAD_SV_VCF) + ".tbi" if GNOMAD_SV_VCF else None)
 
 # The shared audit defaults to the LRS merged callset. SRS annotation is run
 # on the post-CNV integrated callset, so reconcile against that exact VCF.
@@ -191,6 +199,8 @@ if CANDIDATE_TRUTH:
         + expand(PATH + "{sample}/benchmark/{sample}.candidate_benchmark.json", sample=SAMPLES)
     )
 SV_BENCHMARK_SAMPLES = sorted(set(SAMPLES) & set(SV_TRUTH_VCFS))
+if any(not SV_TRUTH_BEDS.get(sample) for sample in SV_BENCHMARK_SAMPLES):
+    raise ValueError("Set sv_truth_beds for every benchmark sample; absence from a truth VCF alone is not a reliable negative")
 SV_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/truari", sample=SV_BENCHMARK_SAMPLES)
 
 
@@ -281,6 +291,7 @@ rule srs_preflight:
           --exclude-bed {EXCLUDE_BED:q} --repeat-catalog {EH_CATALOG:q} --hpo-seeds {DISCOVERY_HPO_FILE:q} \
           --monarch-nodes {MONARCH_NODES:q} --monarch-edges {MONARCH_EDGES:q} \
           --annotsv-dir {ANNOTSV_ANNOTATIONS_DIR:q} --vep-cache-dir {VEP_CACHE_DIR:q} \
+          --vep-cache-version {VEP_CACHE_VERSION} \
           --gridss-enabled {params.gridss} --mt-enabled {params.mt} --mt-contig {MT_CONTIG:q} \
           --mitocarta-enabled {params.mito} {params.mito_file} {params.pathways} \
           --bam {input.bams:q} --bai {input.bais:q} \
@@ -366,6 +377,7 @@ rule manta_sv_calling:
         ref=REF,
         fai=REF + ".fai"
     output:
+        original=PATH + "{sample}/sv/manta/{sample}_manta.original.vcf.gz",
         vcf=PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz",
         tbi=PATH + "{sample}/sv/manta/{sample}_manta.vcf.gz.tbi"
     params:
@@ -380,7 +392,12 @@ rule manta_sv_calling:
         rm -rf {params.rundir}
         configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir {params.rundir}
         {params.rundir}/runWorkflow.py -m local -j {threads}
-        cp {params.rundir}/results/variants/diploidSV.vcf.gz {output.vcf}
+        cp {params.rundir}/results/variants/diploidSV.vcf.gz {output.original:q}
+        # Manta 1.6 reports inversion junctions as BND. Its supplied converter
+        # exposes INV3/INV5 for type-aware comparison with DELLY.
+        converter=$(find "$CONDA_PREFIX" -type f -path '*/libexec/convertInversion.py' -print -quit)
+        test -n "$converter"
+        python2 "$converter" "$(command -v samtools)" {input.ref:q} {output.original:q} | bgzip -c > {output.vcf:q}
         tabix -f -p vcf {output.vcf}
         """
 
@@ -409,30 +426,9 @@ rule delly_sv_calling:
         """
 
 
-rule gridss_reference_setup:
-    input:
-        preflight=rules.srs_preflight.output.tsv,
-        ref=REF,
-        fai=REF + ".fai"
-    output:
-        marker=PATH + "reference_checks/gridss_reference_setup.ok"
-    conda:
-        ENV_DIR + "/gridss.yaml"
-    shell:
-        """
-        set -euo pipefail
-        GRIDSS_JAR=$(find "$CONDA_PREFIX/share" -type f -name '*gridss*jar-with-dependencies.jar' | head -n 1)
-        test -n "$GRIDSS_JAR"
-        gridss -s setupreference -r {input.ref:q} -j "$GRIDSS_JAR"
-        mkdir -p $(dirname {output.marker:q})
-        touch {output.marker:q}
-        """
-
-
 rule gridss_sv_calling:
     input:
         preflight=rules.srs_preflight.output.tsv,
-        setup=rules.gridss_reference_setup.output.marker,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
@@ -455,7 +451,7 @@ rule gridss_sv_calling:
         mkdir -p {params.workdir} $(dirname {output.vcf})
         GRIDSS_JAR=$(find "$CONDA_PREFIX/share" -type f -name '*gridss*jar-with-dependencies.jar' | head -n 1)
         test -n "$GRIDSS_JAR"
-        gridss -r {input.ref} -j "$GRIDSS_JAR" -o {params.workdir}/{wildcards.sample}.gridss.vcf \
+        gridss -s preprocess,assemble,call -r {input.ref} -j "$GRIDSS_JAR" -o {params.workdir}/{wildcards.sample}.gridss.vcf \
             --workingdir {params.workdir} -t {threads} {params.exclude} {params.skip} {input.bam}
         bcftools sort -Oz -o {output.vcf} {params.workdir}/{wildcards.sample}.gridss.vcf
         tabix -f -p vcf {output.vcf}
@@ -656,12 +652,16 @@ rule nuclear_mito_small_variant_candidates:
         bed=NUCLEAR_MITO_BED
     output:
         vcf=PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz",
-        tbi=PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz.tbi"
+        tbi=PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz.tbi",
+        bed=temp(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_targets.bed")
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
         """
-        bcftools view -f 'PASS,.' -R {input.bed:q} -Oz -o {output.vcf:q} {input.vcf:q}
+        # bcftools interprets .bed as 0-based but .tsv as 1-based. The curated
+        # gene intervals are BED coordinates, even when named .tsv.
+        awk 'BEGIN {{OFS="\\t"}} !/^#/ && NF>=3 {{print $1,$2,$3}}' {input.bed:q} > {output.bed:q}
+        bcftools view -f 'PASS,.' -R {output.bed:q} -Oz -o {output.vcf:q} {input.vcf:q}
         tabix -f -p vcf {output.vcf:q}
         """
 
@@ -708,7 +708,10 @@ rule cnvpytor_cnv_calling:
         rm -f {output.pytor}
         cnvpytor -root {output.pytor} {CNVPYTOR_CHROM_FLAG} -rd {input.bam}
         # Record whether CNVpytor recognized hg38 and has GC/mask resources.
-        cnvpytor -root {output.pytor} -ls > {output.info}
+        cnvpytor -root {output.pytor} -ls > {output.info:q} 2>&1
+        # Without the installed hg38 GC/mask files, depth calls can be biased.
+        # Resource installation is explained in README.md, outside the analysis.
+        python -c 'import sys; text="".join(open(sys.argv[1]).read().split()); assert "Usingreferencegenome:hg38[GC:yes,mask:yes]" in text, "CNVpytor needs its hg38 GC and mask resources; follow README.md"' {output.info:q}
         cnvpytor -root {output.pytor} -his {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
         cnvpytor -root {output.pytor} -partition {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
         cnvpytor -root {output.pytor} -snp {input.snv} {CNVPYTOR_CHROM_FLAG}
@@ -900,7 +903,7 @@ rule vep_sv_annotation:
         mkdir -p $(dirname {output.txt})
         vep --input_file {input.vcf} --format vcf --output_file {output.txt} --cache --offline \
             --dir_cache {VEP_CACHE_DIR} --cache_version {VEP_CACHE_VERSION} --assembly {VEP_ASSEMBLY} --canonical --overlaps \
-            --flag_pick --symbol --biotype --max_sv_size 250000000 --batch_size 100 --fork {threads}
+            --tab --force_overwrite --flag_pick --symbol --biotype --numbers --max_sv_size 250000000 --batch_size 100 --fork {threads}
         """
 
 
@@ -950,7 +953,7 @@ rule integrated_sv_gene_table:
         manta=rules.filter_manta_sv.output.tsv,
         delly=rules.filter_delly_sv.output.tsv
     output:
-        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv"
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.base.tsv"
     conda:
         CONDAENV + "monarch.yaml"
     shell:
@@ -965,12 +968,33 @@ rule integrated_sv_gene_table:
         """
 
 
+rule srs_population_frequency:
+    input:
+        table=rules.integrated_sv_gene_table.output.tsv,
+        resource=lambda wc: [GNOMAD_SV_VCF, GNOMAD_SV_INDEX] if GNOMAD_SV_VCF else [],
+        script=SCRIPTS + "/annotate_gnomad_sv_exact.py"
+    output:
+        tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv"
+    params:
+        resource=lambda wc: (
+            "--gnomad-vcf " + shlex.quote(str(GNOMAD_SV_VCF))
+            + " --gnomad-index " + shlex.quote(str(GNOMAD_SV_INDEX))
+        ) if GNOMAD_SV_VCF else ""
+    conda:
+        CONDAENV + "gnomad_sv.yaml"
+    shell:
+        """
+        python {input.script:q} --input {input.table:q} {params.resource} --output {output.tsv:q}
+        """
+
+
 ##############################################
 # ExpansionHunter
 ##############################################
 
 rule expansionhunter_str:
     input:
+        preflight=rules.srs_preflight.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
@@ -999,6 +1023,7 @@ rule expansionhunter_str:
 
 rule melt_mei_family:
     input:
+        preflight=rules.srs_preflight.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
@@ -1067,6 +1092,7 @@ rule prepare_mt_reference:
 
 rule mutserve_mtdna_calling:
     input:
+        preflight=rules.srs_preflight.output.tsv,
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         mtref=lambda wc: PATH + f"reference/mt/{MT_CONTIG}.fa",
@@ -1242,6 +1268,7 @@ rule benchmark_sv_callset:
     input:
         calls=rules.combine_sv_and_cnv_calls.output.vcf,
         truth=lambda wc: SV_TRUTH_VCFS[wc.sample],
+        bed=lambda wc: SV_TRUTH_BEDS[wc.sample],
         ref=REF
     output:
         directory(PATH + "{sample}/benchmark/truari")
@@ -1250,7 +1277,9 @@ rule benchmark_sv_callset:
     shell:
         """
         mkdir -p $(dirname {output:q})
-        truvari bench -b {input.truth:q} -c {input.calls:q} -f {input.ref:q} -o {output:q}
+        truvari bench -b {input.truth:q} -c {input.calls:q} -f {input.ref:q} -o {output:q} \
+          --includebed {input.bed:q} --passonly --sizemin 50 --sizemax 250000000 \
+          --pctseq 0 --pctsize 0.7
         test -s {output:q}/summary.json
         """
 

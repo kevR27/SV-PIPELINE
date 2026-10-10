@@ -6,7 +6,7 @@ suppressPackageStartupMessages({
 })
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 12) {
+if (length(args) != 14) {
   stop(
     paste(
       "Usage: plot_xci.R",
@@ -14,7 +14,7 @@ if (length(args) != 12) {
       "<phase_blocks.tsv> <phase_summary.tsv>",
       "<hp1.bedmethyl.gz> <hp2.bedmethyl.gz>",
       "<cpg_islands.bed> <exclude_beds_csv>",
-      "<out_dir> <sample> <bin_bp>"
+      "<out_dir> <sample> <bin_bp> <clustered_reads.tsv.gz> <haplotags.tsv.gz>"
     )
   )
 }
@@ -31,6 +31,9 @@ exclude_arg <- args[[9]]
 out_dir <- args[[10]]
 sample_id <- args[[11]]
 bin_bp <- as.numeric(args[[12]])
+clustered_file <- args[[13]]
+haplotags_file <- args[[14]]
+if (!is.finite(bin_bp) || bin_bp <= 0) stop("bin_bp must be positive")
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -45,13 +48,19 @@ COL_LIGHT_GREY <- "#D9D9D9"
 COL_DARK <- "#333333"
 
 save_plot <- function(plot, name, width, height) {
+  plot <- plot + labs(caption = paste("Analysis QC:", eligibility))
+  if (!is.null(plot$labels$subtitle)) {
+    plot$labels$subtitle <- paste(strwrap(plot$labels$subtitle, width = 100), collapse = "\n")
+  }
   prefix <- file.path(out_dir, paste0(sample_id, "_", name))
   ggsave(
     paste0(prefix, ".pdf"),
     plot,
     width = width,
     height = height,
-    units = "in"
+    units = "in",
+    bg = "white",
+    device = if (capabilities("cairo")) grDevices::cairo_pdf else "pdf"
   )
   ggsave(
     paste0(prefix, ".png"),
@@ -59,14 +68,16 @@ save_plot <- function(plot, name, width, height) {
     width = width,
     height = height,
     units = "in",
-    dpi = 300
+    dpi = 300,
+    bg = "white"
   )
   ggsave(
     paste0(prefix, ".svg"),
     plot,
     width = width,
     height = height,
-    units = "in"
+    units = "in",
+    bg = "white"
   )
 }
 
@@ -102,6 +113,9 @@ global_p <- suppressWarnings(
   as.numeric(first_value(summary, "GLOBAL_FOLDED_SKEW_P", NA))
 )
 ratio <- first_value(summary, "XCI_MAJOR_MINOR_RATIO", ".")
+eligibility <- first_value(summary, "XCI_ANALYSIS_STATUS", "UNKNOWN")
+phase_threshold <- as.numeric(first_value(summary, "PHASE_CONCORDANCE_THRESHOLD", "0.90"))
+phase_min_snvs <- as.numeric(first_value(summary, "PHASE_MIN_SHARED_SNVS", "3"))
 ci_low <- suppressWarnings(
   as.numeric(
     first_value(
@@ -387,9 +401,10 @@ if (
   odds_blocks[
     ,
     ORIENTATION_DIRECTION := fifelse(
-      LOG10_ODDS_H1_XA_VS_H2_XA >= 0,
-      "H1 favoured as Xa",
-      "H2 favoured as Xa"
+      LOG10_ODDS_H1_XA_VS_H2_XA == 0,
+      "Unresolved",
+      fifelse(LOG10_ODDS_H1_XA_VS_H2_XA > 0,
+        "H1 favoured as Xa", "H2 favoured as Xa")
     )
   ]
 
@@ -434,7 +449,8 @@ if (
       name = "Local orientation",
       values = c(
         "H1 favoured as Xa" = COL_XA,
-        "H2 favoured as Xa" = COL_XI
+        "H2 favoured as Xa" = COL_XI,
+        "Unresolved" = COL_GREY
       )
     ) +
     labs(
@@ -477,298 +493,72 @@ save_plot(
 )
 
 # -------------------------------------------------------------------------
-# Helpers for CpG-island-only, block-oriented Xa/Xi methylation.
+# Helpers for read-level, phase-set-specific methylation summaries.
+# HP1/HP2 pileups lose PS information. Use the exact read HP/PS join instead
+# of assigning aggregate methylation to a block based only on its location.
 # -------------------------------------------------------------------------
-read_cpg_bed <- function(path) {
-  dt <- fread(
-    path,
-    header = FALSE,
-    fill = TRUE,
-    showProgress = FALSE
-  )
-  dt <- dt[
-    !grepl("^#", as.character(V1))
-  ]
-  if (ncol(dt) < 3) {
-    stop("CpG-island BED needs at least 3 columns")
-  }
-  dt <- dt[, .(
-    chrom = as.character(V1),
-    cpg_start = as.numeric(V2),
-    cpg_end = as.numeric(V3)
-  )]
-  dt <- dt[
-    chrom == "chrX" &
-    is.finite(cpg_start) &
-    is.finite(cpg_end) &
-    cpg_end > cpg_start
-  ]
-  unique(dt)
+clustered <- fread(clustered_file, na.strings = c("", ".", "NA"))
+haplotags <- fread(haplotags_file, colClasses = c(PS = "character"), na.strings = c("", ".", "NA"))
+if (anyDuplicated(haplotags$read_name)) {
+  stop("Haplotag input has repeated read names; do not guess their phase set")
 }
-
-read_exclusions <- function(csv) {
-  if (is.na(csv) || csv == "" || csv == "NONE") {
-    return(
-      data.table(
-        chrom = character(),
-        ex_start = numeric(),
-        ex_end = numeric()
-      )
-    )
-  }
-
-  paths <- strsplit(csv, ",", fixed = TRUE)[[1]]
-  out <- list()
-
-  for (path in paths[nzchar(paths)]) {
-    if (!file.exists(path)) {
-      stop(
-        paste(
-          "XCI exclusion BED does not exist:",
-          path
-        )
-      )
-    }
-
-    dt <- fread(
-      path,
-      header = FALSE,
-      fill = TRUE,
-      showProgress = FALSE
-    )
-    dt <- dt[
-      !grepl("^#", as.character(V1))
-    ]
-    if (ncol(dt) < 3) {
-      stop(
-        paste(
-          "XCI exclusion BED needs at least 3 columns:",
-          path
-        )
-      )
-    }
-
-    out[[length(out) + 1]] <- dt[, .(
-      chrom = as.character(V1),
-      ex_start = as.numeric(V2),
-      ex_end = as.numeric(V3)
-    )]
-  }
-
-  rbindlist(out, fill = TRUE)[
-    chrom == "chrX" &
-    is.finite(ex_start) &
-    is.finite(ex_end) &
-    ex_end > ex_start
-  ]
-}
-
-mask_cpgs <- function(cpgs, exclusions) {
-  if (nrow(cpgs) == 0 || nrow(exclusions) == 0) {
-    return(cpgs)
-  }
-
-  x <- copy(cpgs)
-  x[, row_id := .I]
-
-  setkey(exclusions, chrom, ex_start, ex_end)
-  hit <- foverlaps(
-    x,
-    exclusions,
-    by.x = c("chrom", "cpg_start", "cpg_end"),
-    by.y = c("chrom", "ex_start", "ex_end"),
-    type = "any",
-    nomatch = 0L
-  )
-
-  remove_ids <- unique(hit$row_id)
-  x <- x[!row_id %in% remove_ids]
-  x[, row_id := NULL]
-  x
-}
-
-read_bedmethyl <- function(path, haplotype) {
-  cmd <- paste("gzip -dc", shQuote(path))
-  dt <- fread(
-    cmd = cmd,
-    header = FALSE,
-    select = 1:11,
-    showProgress = FALSE
-  )
-  if (ncol(dt) < 11) {
-    stop(
-      paste(
-        "bedMethyl has fewer than 11 columns:",
-        path
-      )
-    )
-  }
-
-  setnames(
-    dt,
-    c(
-      "chrom", "start", "end", "name", "score", "strand",
-      "thick_start", "thick_end", "color", "coverage",
-      "methylation"
-    )
-  )
-
-  dt <- dt[
-    chrom == "chrX"
-  ]
-  dt[, start := as.numeric(start)]
-  dt[, end := as.numeric(end)]
-  dt[, coverage := as.numeric(coverage)]
-  dt[, methylation := as.numeric(methylation)]
-
-  dt <- dt[
-    is.finite(start) &
-    is.finite(end) &
-    is.finite(coverage) &
-    is.finite(methylation) &
-    coverage > 0
-  ]
-
-  dt[, haplotype := haplotype]
-  dt[, row_id := paste0(haplotype, "_", .I)]
-  dt
-}
-
-cpgs <- mask_cpgs(
-  read_cpg_bed(cpg_file),
-  read_exclusions(exclude_arg)
-)
 
 orientable <- copy(blocks)
 if (nrow(orientable) > 0) {
   orientable <- orientable[
     ORIENTATION_USABLE == "YES" &
-    PREFERRED_XA_HAPLOTYPE %in% c("H1", "H2") &
-    is.finite(BLOCK_START) &
-    is.finite(BLOCK_END)
+    PREFERRED_XA_HAPLOTYPE %in% c("H1", "H2")
   ]
-  orientable[, ABS_LOG10_ODDS := abs(
-    LOG10_ODDS_H1_XA_VS_H2_XA
-  )]
-  orientable[, chrom := "chrX"]
-  orientable[
-    ,
-    block_start := fifelse(
-      is.finite(PHASE_BLOCK_START),
-      PHASE_BLOCK_START,
-      BLOCK_START
-    )
-  ]
-  orientable[
-    ,
-    block_end := fifelse(
-      is.finite(PHASE_BLOCK_END),
-      PHASE_BLOCK_END,
-      BLOCK_END
-    )
-  ]
+  orientable[, PS := as.character(PS)]
 }
 
-hp1 <- read_bedmethyl(hp1_file, "HP1")
-hp2 <- read_bedmethyl(hp2_file, "HP2")
-meth_raw <- rbindlist(
-  list(hp1, hp2),
-  fill = TRUE
-)
-
-# CpG-island restriction.
-if (nrow(meth_raw) > 0 && nrow(cpgs) > 0) {
-  setkey(cpgs, chrom, cpg_start, cpg_end)
-  meth_cgi <- foverlaps(
-    meth_raw,
-    cpgs,
-    by.x = c("chrom", "start", "end"),
-    by.y = c("chrom", "cpg_start", "cpg_end"),
-    type = "any",
-    nomatch = 0L
-  )
-  meth_cgi <- unique(
-    meth_cgi,
-    by = "row_id"
-  )
-} else {
-  meth_cgi <- data.table()
-}
-
-# Assign each methylation record to a confidently oriented WhatsHap block.
 oriented_meth <- data.table()
-if (
-  nrow(meth_cgi) > 0 &&
-  nrow(orientable) > 0
-) {
-  setkey(
-    orientable,
-    chrom,
-    block_start,
-    block_end
-  )
-
-  oriented_meth <- foverlaps(
-    meth_cgi,
-    orientable,
-    by.x = c("chrom", "start", "end"),
-    by.y = c("chrom", "block_start", "block_end"),
-    type = "within",
-    nomatch = 0L
-  )
-
-  # If a site is covered by more than one candidate block, retain the
-  # orientation with the strongest absolute likelihood ratio.
-  setorder(
-    oriented_meth,
-    row_id,
-    -ABS_LOG10_ODDS
-  )
-  oriented_meth <- unique(
-    oriented_meth,
-    by = "row_id"
-  )
-
-  oriented_meth[, X_STATE := fifelse(
-    (
-      haplotype == "HP1" &
-      PREFERRED_XA_HAPLOTYPE == "H1"
-    ) |
-    (
-      haplotype == "HP2" &
-      PREFERRED_XA_HAPLOTYPE == "H2"
-    ),
-    "Xa",
-    "Xi"
-  )]
-
-  oriented_meth[, bin_start := floor(start / bin_bp) * bin_bp]
-  oriented_meth[
-    ,
-    weighted_methylation := methylation * coverage
+if (nrow(clustered) > 0 && nrow(orientable) > 0) {
+  # XIST has the reverse methylation biology and is omitted from this
+  # ordinary-CGI methylation summary even if used to estimate skew.
+  clustered <- clustered[
+    XCI_assignment_rule != "XIST_PROMOTER_REVERSED" &
+    is.finite(mean) & mean >= 0 & mean <= 1
   ]
+  labelled_reads <- merge(
+    clustered, haplotags[, .(read_name, HP, PS)], by = "read_name"
+  )
+  labelled_reads <- unique(labelled_reads, by = c("read_name", "CGI_id", "PS"))
+  oriented_meth <- merge(
+    labelled_reads,
+    orientable[, .(PS, PREFERRED_XA_HAPLOTYPE)],
+    by = "PS"
+  )
+  oriented_meth <- oriented_meth[HP %in% c(1, 2)]
+  oriented_meth[, X_STATE := fifelse(
+    (HP == 1 & PREFERRED_XA_HAPLOTYPE == "H1") |
+    (HP == 2 & PREFERRED_XA_HAPLOTYPE == "H2"), "Xa", "Xi"
+  )]
+  oriented_meth[, bin_start := floor(start / bin_bp) * bin_bp]
+  oriented_meth[, methylation_percent := 100 * mean]
 }
+
+# Always overwrite both data summaries, including a run with no usable data.
+# Otherwise a plot rerun could leave an earlier nonempty TSV behind.
+fwrite(data.table(bin_start = numeric(), X_STATE = character(), methylation_percent = numeric()),
+  file.path(out_dir, paste0(sample_id, "_xci_oriented_CGI_methylation.tsv")), sep = "\t")
+fwrite(data.table(bin_start = numeric(), XI_MINUS_XA = numeric()),
+  file.path(out_dir, paste0(sample_id, "_xci_methylation_delta.tsv")), sep = "\t")
 
 if (nrow(oriented_meth) > 0) {
   meth_summary <- oriented_meth[
     ,
     .(
-      coverage_sum = sum(coverage, na.rm = TRUE),
-      weighted_sum = sum(
-        weighted_methylation,
-        na.rm = TRUE
-      ),
-      CpG_records = .N,
+      methylation_percent = mean(methylation_percent),
+      read_CGI_observations = .N,
+      unique_reads = uniqueN(read_name),
+      CpG_islands = uniqueN(CGI_id),
       phase_blocks = uniqueN(PS)
     ),
     by = .(
       bin_start,
       X_STATE
     )
-  ]
-  meth_summary[
-    ,
-    methylation_percent := weighted_sum / coverage_sum
   ]
   meth_summary[
     ,
@@ -803,26 +593,32 @@ if (nrow(oriented_meth) > 0) {
     geom_line(linewidth = 0.9) +
     geom_point(size = 2.0) +
     scale_color_manual(
-      name = "Oriented X state",
+      name = "Local haplotype",
+      labels = c("Xa" = "Major-active", "Xi" = "Major-inactive"),
       values = c(
         "Xa" = COL_XA,
         "Xi" = COL_XI
       )
     ) +
+    scale_linetype_manual(
+      name = "Local haplotype",
+      values = c("Xa" = "solid", "Xi" = "dashed"),
+      labels = c("Xa" = "Major-active", "Xi" = "Major-inactive")
+    ) +
     coord_cartesian(ylim = c(0, 100)) +
     labs(
       title = paste0(
         sample_id,
-        ": Xa/Xi CpG-island methylation"
+        ": locally oriented X-haplotype methylation"
       ),
       subtitle = paste(
-        "HP1/HP2 were re-oriented within phase-QC-passed blocks",
-        "with |log10 odds| ≥ 1; only non-masked chrX CpG islands are shown."
+        "Read HP/PS tags define local orientation; each read–CGI mean is one observation.",
+        "XIST is omitted. Lines summarise the two haplotypes in this mixed-cell sample."
       ),
       x = "chrX position (Mb)",
-      y = "CpG-island 5mC (%)",
-      linetype = "Oriented X state",
-      color = "Oriented X state"
+      y = "Mean read-level 5mC probability (%)",
+      linetype = "Local haplotype",
+      color = "Local haplotype"
     ) +
     theme_thesis()
 
@@ -885,14 +681,14 @@ if (nrow(oriented_meth) > 0) {
       labs(
         title = paste0(
           sample_id,
-          ": Xi − Xa CpG-island methylation"
+          ": major-inactive minus major-active haplotype methylation"
         ),
         subtitle = paste(
-          "Positive values indicate higher CpG-island 5mC on the",
-          "locally oriented inactive X."
+          "Positive values mean higher methylation on the major-inactive haplotype.",
+          "This is descriptive QC using the same sample, not independent validation."
         ),
         x = "chrX position (Mb)",
-        y = "Xi − Xa 5mC (percentage points)"
+        y = "Major-inactive − major-active 5mC (percentage points)"
       ) +
       theme_thesis()
   } else {
@@ -907,7 +703,7 @@ if (nrow(oriented_meth) > 0) {
       labs(
         title = paste0(
           sample_id,
-          ": Xi − Xa CpG-island methylation"
+          ": major-inactive minus major-active haplotype methylation"
         )
       )
   }
@@ -926,7 +722,7 @@ if (nrow(oriented_meth) > 0) {
     labs(
       title = paste0(
         sample_id,
-        ": Xa/Xi CpG-island methylation"
+        ": locally oriented X-haplotype methylation"
       )
     )
 
@@ -941,7 +737,7 @@ if (nrow(oriented_meth) > 0) {
     labs(
       title = paste0(
         sample_id,
-        ": Xi − Xa CpG-island methylation"
+        ": major-inactive minus major-active haplotype methylation"
       )
     )
 }
@@ -976,6 +772,10 @@ if (nrow(phase) > 0) {
       ORIENTATION_CONCORDANCE
     )
   ]
+  # WGS can have thousands of block pairs. Keep a readable QC figure and
+  # retain the complete original phase-pair TSV for detailed review.
+  phase_pair_count <- nrow(phase)
+  phase <- tail(phase, 30)
   phase[
     ,
     block := paste0(
@@ -1001,9 +801,11 @@ if (nrow(phase) > 0) {
   phase[
     ,
     CONCORDANCE_CLASS := fifelse(
-      ORIENTATION_CONCORDANCE >= 0.90,
-      "≥ 0.90 concordance",
-      "< 0.90 concordance"
+      is.finite(ORIENTATION_CONCORDANCE) &
+        ORIENTATION_CONCORDANCE >= phase_threshold &
+        SHARED_PHASED_SNVS >= phase_min_snvs,
+      "Meets pair QC thresholds",
+      "Review / too few shared SNVs"
     )
   ]
 
@@ -1019,8 +821,8 @@ if (nrow(phase) > 0) {
     scale_fill_manual(
       name = "Phase QC",
       values = c(
-        "≥ 0.90 concordance" = COL_TEAL,
-        "< 0.90 concordance" = COL_GREY
+        "Meets pair QC thresholds" = COL_TEAL,
+        "Review / too few shared SNVs" = COL_GREY
       )
     ) +
     geom_text(
@@ -1045,7 +847,9 @@ if (nrow(phase) > 0) {
       subtitle = paste0(
         "Overall flip-tolerant shared-SNV concordance: ",
         overall,
-        ". All overlapping block pairs are shown."
+        ". Highest shared-SNV pairs shown: ", nrow(phase), " of ", phase_pair_count,
+        ". Pair thresholds: concordance ≥", phase_threshold,
+        ", shared SNVs ≥", phase_min_snvs, "."
       ),
       x = "Overlapping phase-block pair",
       y = "Flip-tolerant phase concordance"

@@ -108,6 +108,11 @@ class DownstreamFilteringTests(unittest.TestCase):
         count, source = filtering.max_read_support({"CALLER_EVIDENCE_JSON": json.dumps([{"CALLER_SUPPORT": "3"}, {"CALLER_SUPPORT": "5"}])})
         self.assertEqual((count, source), (5, "CALLER_EVIDENCE_JSON"))
         self.assertIn("CALLER_COUNT_CONFLICT", self.annotate(CALLER_COUNT="2")["DOWNSTREAM_REVIEW_REASONS"])
+        self.assertIn("CALLER_COUNT_CONFLICT", self.annotate(CALLER_COUNT=".", SUPP_VEC="110")["DOWNSTREAM_REVIEW_REASONS"])
+        row = self.annotate(SVTYPE="INV", CALLER_READ_SUPPORT="Sniffles2:5;cuteSV:.;Delly:NA")
+        self.assertEqual(row["DOWNSTREAM_MAX_READ_SUPPORT"], 5)
+        self.assertEqual(row["DOWNSTREAM_REVIEW_REASONS"], ".")
+        self.assertEqual(row["DOWNSTREAM_EXCLUSION_REASONS"], ".")
 
     def test_original_values_ranks_and_bytes_are_preserved(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -168,6 +173,41 @@ class DownstreamFilteringTests(unittest.TestCase):
             self.assertTrue((root / "filtered/lt_1kb/by_sv_type/DEL/exonic_or_splice.tsv").exists())
             self.assertTrue((root / "filtered/lt_1kb/by_sv_type/DEL/intronic.tsv").exists())
 
+    def test_af_group_combines_measured_and_missing_without_inventing_frequency(self):
+        measured = self.annotate(NEEDLR_AF="0.01")
+        missing = self.annotate(NEEDLR_AF=".")
+        self.assertEqual(measured["DOWNSTREAM_AF_REVIEW_GROUP"], missing["DOWNSTREAM_AF_REVIEW_GROUP"])
+        self.assertEqual(missing["DOWNSTREAM_MAX_AF"], ".")
+        self.assertNotEqual(measured["DOWNSTREAM_AF_STATUS"], missing["DOWNSTREAM_AF_STATUS"])
+
+    def test_combined_af_export_contains_measured_and_missing_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out = Path(tmp) / "input.tsv", Path(tmp) / "filtered"
+            rows = [{**base_row(), "SV_ID": "measured", "NEEDLR_AF": "0.01"},
+                    {**base_row(), "SV_ID": "sv_missing_af", "NEEDLR_AF": "."}]
+            pd.DataFrame(rows).to_csv(source, sep="\t", index=False)
+            self.run_filter(source, out)
+            files = list((out / "gt_1kb" / "by_af").glob("*.tsv"))
+            self.assertEqual(len(files), 1)
+            combined = pd.read_csv(files[0], sep="\t")
+            self.assertEqual(set(combined["SV_ID"]), {"measured", "sv_missing_af"})
+            self.assertEqual(set(combined["DOWNSTREAM_AF_STATUS"]),
+                             {"MEASURED_AT_OR_BELOW_CUTOFF", "AF_UNKNOWN"})
+
+    def test_rejected_resource_states_cannot_supply_af(self):
+        for state in ["RESOURCE_NOT_CONFIGURED", "NOT_EVALUABLE"]:
+            row = self.annotate(NEEDLR_AF=".", GNOMAD_SV_AF="0.001", GNOMAD_SV_EXACT_MATCH=state)
+            self.assertEqual(row["DOWNSTREAM_AF_STATUS"], "AF_UNKNOWN")
+        row = self.annotate(NEEDLR_AF=".", GNOMAD_SV_AF="0.001", GNOMAD_SV_EXACT_MATCH="YES", GNOMAD_SV_FILTER="FAIL")
+        self.assertEqual(row["DOWNSTREAM_AF_STATUS"], "INVALID_AF_REVIEW")
+
+    def test_caller_vector_and_invalid_support_are_not_silently_accepted(self):
+        self.assertIn("CALLER_COUNT_CONFLICT", self.annotate(SUPP_VEC="100")["DOWNSTREAM_REVIEW_REASONS"])
+        self.assertIn("INVALID_CALLER_COUNT", self.annotate(CALLER_COUNT="2.5")["DOWNSTREAM_REVIEW_REASONS"])
+        row = self.annotate(SVTYPE="INV", CALLER_READ_SUPPORT="Sniffles2:5;Delly:garbage")
+        self.assertIn("INV_READ_SUPPORT_UNKNOWN", row["DOWNSTREAM_REVIEW_REASONS"])
+        self.assertEqual(filtering.caller_count({"CALLER_COUNT": "0"})[0], 0)
+
     def test_empty_and_populated_runs_produce_valid_separate_figures(self):
         for empty in [True, False]:
             with self.subTest(empty=empty), tempfile.TemporaryDirectory() as folder:
@@ -182,7 +222,7 @@ class DownstreamFilteringTests(unittest.TestCase):
                 save = plotting.save_figure
                 with patch.object(sys, "argv", ["plot", "--filter-dir", str(root / "filtered"), "--out-dir", str(root / "plots")]), patch.object(plotting, "save_figure", side_effect=lambda fig, path, **kw: save(fig, path, dpi=60)), contextlib.redirect_stdout(io.StringIO()):
                     plotting.main()
-                self.assertEqual(len(list((root / "plots").rglob("*.png"))), 4)
+                self.assertEqual(len(list((root / "plots").rglob("*.png"))), 5)
                 for png in (root / "plots").rglob("*.png"):
                     with Image.open(png) as image:
                         image.verify()

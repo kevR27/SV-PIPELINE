@@ -1,10 +1,13 @@
 import importlib.util
+import csv
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+import pysam
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +23,54 @@ def module(name, path):
 
 
 class SrsWgsPipelineTests(unittest.TestCase):
+    def test_preflight_rejects_mismatched_contigs_and_empty_resources(self):
+        script = module("preflight_srs", SCRIPTS / "preflight_srs_wgs.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            bam_path = str(Path(tmp) / "sample.bam")
+            header = {"HD": {"VN": "1.6", "SO": "coordinate"},
+                      "SQ": [{"SN": "chr1", "LN": 10000}]}
+            with pysam.AlignmentFile(bam_path, "wb", header=header) as bam:
+                read = pysam.AlignedSegment()
+                read.query_name = "paired_read"
+                read.query_sequence = "A" * 50
+                read.flag = 65
+                read.reference_id = 0
+                read.reference_start = 100
+                read.mapping_quality = 60
+                read.cigarstring = "50M"
+                bam.write(read)
+            pysam.index(bam_path)
+            fai = Path(tmp) / "reference.fa.fai"
+            for length, expected in [(10000, "PASS"), (9999, "FAIL")]:
+                fai.write_text(f"chr1\t{length}\t6\t60\t61\n")
+                checks = []
+                script.check_bam_reference(bam_path, bam_path + ".bai", fai, checks)
+                self.assertEqual(checks[-1]["status"], expected)
+            empty_cache = Path(tmp) / "empty_cache"
+            empty_cache.mkdir()
+            checks = []
+            script.record_file_check(str(empty_cache), "empty VEP cache", checks)
+            self.assertEqual(checks[-1]["status"], "FAIL")
+
+    def test_diagnostic_review_keeps_all_candidates_and_support_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / "input.tsv", Path(tmp) / "output.tsv"
+            with source.open("w") as handle:
+                handle.write("SV_ID\tGENE\tTECHNICAL_SUPPORT\n")
+                for n in range(104):
+                    support = "READ_DEPTH_ONLY_CNV" if n == 0 else "SINGLE_CALLER"
+                    if n == 103:
+                        support = "MULTI_CALLER_PLUS_READ_DEPTH"
+                    handle.write(f"sv{n}\tOTHER\t{support}\n")
+            subprocess.run([sys.executable, str(SCRIPTS / "build_diagnostic_candidates.py"),
+                            "--input", str(source), "--output", str(output)], check=True,
+                           capture_output=True)
+            with output.open() as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(len(rows), 104)
+            self.assertEqual(rows[0]["SV_ID"], "sv103")
+            self.assertEqual(rows[-1]["SV_ID"], "sv0")
+
     def test_required_interfaces_are_wired(self):
         snake = (SRS / "Snakefile_SRS_WGS").read_text(encoding="utf-8")
         config = (SRS / "config_srs_wgs.yaml").read_text(encoding="utf-8")

@@ -18,6 +18,8 @@ if XCI_UNKNOWN:
     )
 
 XCI_CHROM = str(config.get("xci_chrom", "chrX"))
+if XCI_SAMPLES and XCI_CHROM != "chrX":
+    raise ValueError("The current XCI BED masks and R scripts require GRCh38 chrX naming")
 XCI_CPG_ISLANDS_BED = config.get("xci_cpg_islands_bed")
 XCI_XIST_PROMOTER_BED = config.get("xci_xist_promoter_bed")
 XCI_MIN_CLUSTER_READS = int(config.get("xci_min_cluster_reads", 5))
@@ -402,6 +404,8 @@ rule xci_plot_analysis:
         hp2=rules.xci_modkit_phased_chrX.output.hp2,
         cpg=lambda wc: XCI_CPG_ISLANDS_BED,
         exclude=xci_exclude_input,
+        clustered=rules.xci_cluster_methylation.output.clustered,
+        haplotags=rules.xci_extract_haplotags.output.reads,
         script=XCI_R_PLOTS + "/plot_xci.R"
     output:
         done=PATH + "{sample}/plots/15_x_inactivation/.xci_plots.done"
@@ -429,7 +433,9 @@ rule xci_plot_analysis:
             {params.exclude} \
             {params.outdir} \
             {wildcards.sample} \
-            {XCI_METHYLATION_BIN_BP}
+            {XCI_METHYLATION_BIN_BP} \
+            {input.clustered:q} \
+            {input.haplotags:q}
 
         test -s {params.outdir}/{wildcards.sample}_xci_block_skew_distribution.pdf
         test -s {params.outdir}/{wildcards.sample}_xci_chrX_block_skew.pdf

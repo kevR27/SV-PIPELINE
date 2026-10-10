@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.optimize import brentq, minimize_scalar
-from scipy.special import gammaln, logsumexp
+from scipy.special import gammaln, logsumexp, xlogy, xlog1py
 from scipy.stats import chi2
 
 
@@ -70,17 +70,18 @@ def folded_logpmf(x: int, n: int, p_minor: float) -> float:
     if n <= 0:
         return 0.0
 
-    eps = 1e-12
-    p = min(max(float(p_minor), eps), 0.5)
-    q = 1.0 - p
+    if not 0 <= x <= n or not 0 <= p_minor <= 0.5:
+        raise ValueError("Require 0 <= x <= n and minor-X P in [0, 0.5]")
+    p = float(p_minor)
 
     log_choose = (
         gammaln(n + 1)
         - gammaln(x + 1)
         - gammaln(n - x + 1)
     )
-    a = x * math.log(p) + (n - x) * math.log(q)
-    b = (n - x) * math.log(p) + x * math.log(q)
+    # xlogy handles 0*log(0) correctly, including complete skew at P=0.
+    a = xlogy(x, p) + xlog1py(n - x, -p)
+    b = xlogy(n - x, p) + xlog1py(x, -p)
     delta = 1 if x == n - x else 0
 
     return (
@@ -91,10 +92,12 @@ def folded_logpmf(x: int, n: int, p_minor: float) -> float:
 
 
 def negative_log_likelihood(p_minor: float, xs, ns) -> float:
-    return -sum(
-        folded_logpmf(int(x), int(n), p_minor)
-        for x, n in zip(xs, ns)
-    )
+    xs, ns = np.asarray(xs), np.asarray(ns)
+    log_choose = gammaln(ns + 1) - gammaln(xs + 1) - gammaln(ns - xs + 1)
+    a = xlogy(xs, p_minor) + xlog1py(ns - xs, -p_minor)
+    b = xlogy(ns - xs, p_minor) + xlog1py(xs, -p_minor)
+    correction = np.where(2 * xs == ns, -math.log(2), 0)
+    return -float(np.sum(log_choose + np.logaddexp(a, b) + correction))
 
 
 def fit_folded_mle(df: pd.DataFrame) -> float:
@@ -103,15 +106,24 @@ def fit_folded_mle(df: pd.DataFrame) -> float:
 
     xs = df["SUCCESS_FOLDED"].astype(int).to_numpy()
     ns = df["TRIALS"].astype(int).to_numpy()
+    if not np.any(ns >= 2):
+        # Folding a one-read block always yields zero: P is unidentifiable.
+        return np.nan
 
     result = minimize_scalar(
         negative_log_likelihood,
-        bounds=(1e-6, 0.5),
+        bounds=(0.0, 0.5),
         method="bounded",
         args=(xs, ns),
         options={"xatol": 1e-10},
     )
-    return float(result.x) if result.success else np.nan
+    if not result.success:
+        return np.nan
+    # The bounded optimizer never reaches the endpoints itself.
+    candidates = [0.5, 0.0, float(result.x)]
+    scores = [negative_log_likelihood(p, xs, ns) for p in candidates]
+    best = min(scores)
+    return next(p for p, score in zip(candidates, scores) if score <= best + 1e-9)
 
 
 def profile_likelihood_ci(
@@ -127,20 +139,17 @@ def profile_likelihood_ci(
     ns = df["TRIALS"].astype(int).to_numpy()
     nll_min = negative_log_likelihood(mle, xs, ns)
     target = nll_min + 0.5 * chi2.ppf(level, df=1)
-    eps = 1e-8
 
     def f(value):
         return negative_log_likelihood(value, xs, ns) - target
 
-    if mle <= eps:
-        low = eps
-    elif f(eps) <= 0:
-        low = eps
+    if mle == 0 or f(0) <= 0:
+        low = 0.0
     else:
-        low = brentq(f, eps, mle)
+        low = brentq(f, 0, mle)
 
     upper_bound = 0.5
-    if mle >= upper_bound - eps:
+    if mle == upper_bound:
         high = upper_bound
     elif f(upper_bound) <= 0:
         high = upper_bound
@@ -196,13 +205,16 @@ def p_range_label(
 ) -> str:
     if not np.isfinite(p_minor):
         return "NOT_ESTIMATED"
+    # Keep the label consistent with user-configured thresholds.
+    high, middle, low = (f"{v:.2f}" for v in
+                         [threshold_70_30, threshold_80_20, threshold_90_10])
     if p_minor >= threshold_70_30:
-        return "P_GE_0.30"
+        return f"P_GE_{high}"
     if p_minor >= threshold_80_20:
-        return "P_0.20_TO_0.30"
+        return f"P_{middle}_TO_{high}"
     if p_minor >= threshold_90_10:
-        return "P_0.10_TO_0.20"
-    return "P_LT_0.10"
+        return f"P_{low}_TO_{middle}"
+    return f"P_LT_{low}"
 
 
 def conventional_context(
@@ -213,13 +225,15 @@ def conventional_context(
 ) -> str:
     if not np.isfinite(p_minor):
         return "NOT_ESTIMATED"
-    if p_minor >= threshold_70_30:
-        return "BELOW_70_30_SKEW_THRESHOLD"
-    if p_minor >= threshold_80_20:
-        return "AT_OR_BEYOND_70_30_BUT_BELOW_80_20"
-    if p_minor >= threshold_90_10:
-        return "AT_OR_BEYOND_80_20_BUT_BELOW_90_10"
-    return "AT_OR_BEYOND_90_10"
+    pairs = [f"{100*(1-p):g}_{100*p:g}" for p in
+             [threshold_70_30, threshold_80_20, threshold_90_10]]
+    if p_minor > threshold_70_30:
+        return f"BELOW_{pairs[0]}_SKEW_THRESHOLD"
+    if p_minor > threshold_80_20:
+        return f"AT_OR_BEYOND_{pairs[0]}_BUT_BELOW_{pairs[1]}"
+    if p_minor > threshold_90_10:
+        return f"AT_OR_BEYOND_{pairs[1]}_BUT_BELOW_{pairs[2]}"
+    return f"AT_OR_BEYOND_{pairs[2]}"
 
 
 def load_phase_qc(path: str) -> pd.DataFrame:
@@ -306,8 +320,24 @@ def main():
     p.add_argument("--summary-output", required=True)
     p.add_argument("--sensitivity-output", required=True)
     args = p.parse_args()
+    if args.min_block_reads < 1 or args.phase_min_shared_snvs < 1:
+        p.error("Minimum read and shared-SNV counts must be positive")
+    if not 0 <= args.phase_concordance_threshold <= 1 or args.orientation_min_log10_odds < 0:
+        p.error("Require phase concordance in [0,1] and nonnegative orientation threshold")
+    if not 0 < args.threshold_90_10_minor < args.threshold_80_20_minor < args.threshold_70_30_minor < 0.5:
+        p.error("Minor-X thresholds must increase from 90:10 to 70:30, below 0.5")
+    if not parse_cutoffs(args.sensitivity_min_reads) or min(parse_cutoffs(args.sensitivity_min_reads)) < 1:
+        p.error("Sensitivity read thresholds must be positive")
 
     blocks = pd.read_csv(args.block_skew, sep="\t", dtype=str)
+    count_columns = ["H1_Xa", "H1_Xi", "H2_Xa", "H2_Xi"]
+    if not {"PS", *count_columns}.issubset(blocks.columns):
+        raise ValueError("Block input must contain PS and all four H1/H2 Xa/Xi counts")
+    if blocks["PS"].isna().any() or blocks["PS"].isin([".", ""]).any() or blocks["PS"].duplicated().any():
+        raise ValueError("Each block needs one unique, nonmissing PS identifier")
+    counts = blocks[count_columns].apply(pd.to_numeric, errors="coerce").astype(float)
+    if not (np.isfinite(counts) & counts.ge(0) & counts.eq(np.floor(counts))).all().all():
+        raise ValueError("Xa/Xi block counts must be finite, nonnegative integers")
 
     numeric_cols = [
         "H1_Xa",
@@ -458,6 +488,8 @@ def main():
         xx_qc = "XX_COMPATIBLE"
     else:
         xx_qc = "REVIEW_XX_COMPATIBILITY"
+    if eligibility == "PASS" and xx_qc != "XX_COMPATIBLE":
+        eligibility = "XX_COMPATIBILITY_REVIEW"
 
     ratio = ratio_text(mle)
     major = 100.0 * (1.0 - mle) if estimate_ok else np.nan
@@ -478,7 +510,7 @@ def main():
     # Per-block Xa orientation likelihood.
     if estimate_ok and not primary.empty:
         eps = 1e-12
-        p_minor = min(max(float(mle), eps), 0.5 - eps)
+        p_minor = min(max(float(mle), eps), 0.5)
         q_major = 1.0 - p_minor
         successes = primary["SUCCESS_H1_XA"].astype(float)
         trials = primary["TRIALS"].astype(float)
@@ -516,7 +548,9 @@ def main():
         )
         primary["ORIENTATION_USABLE"] = np.where(
             (abs_lod >= args.orientation_min_log10_odds)
-            & primary["PHASE_QC_PASS"].eq("YES"),
+            & (abs_lod > 0)
+            & primary["PHASE_QC_PASS"].eq("YES")
+            & (eligibility == "PASS"),
             "YES",
             "NO",
         )
@@ -718,8 +752,10 @@ def main():
                 ),
                 "LRT_NOTE": (
                     "Balanced P=0.5 lies at the boundary of the folded "
-                    "parameter space; the reported asymptotic p-value "
-                    "uses the 50:50 chi-square(0)/chi-square(1) mixture."
+                    "parameter space; this approximate asymptotic p-value "
+                    "uses the 50:50 chi-square(0)/chi-square(1) mixture. "
+                    "CI and LRT assume independent binomial read counts; "
+                    "few blocks, read dependence or clustering errors can invalidate calibration."
                 ),
                 "METHOD": (
                     "CpG-island Xa/Xi read clustering + WhatsHap HP/PS "

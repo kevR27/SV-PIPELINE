@@ -8,6 +8,8 @@ import csv
 import json
 from pathlib import Path
 
+import pysam
+
 
 def record_file_check(
     path: str,
@@ -18,7 +20,7 @@ def record_file_check(
     checked_path = Path(path)
 
     if checked_path.is_dir():
-        available = True
+        available = any(checked_path.iterdir())
     elif checked_path.is_file():
         available = checked_path.stat().st_size > 0
     else:
@@ -32,6 +34,37 @@ def record_file_check(
         }
     )
     return checked_path
+
+
+def check_bam_reference(bam_path, index_path, reference_index, checks):
+    """Check actual alignment metadata; existing filenames alone are insufficient."""
+    label = "BAM/reference compatibility and paired reads"
+    status = "FAIL"
+    detail = "BAM, index or reference index is missing"
+    if all(Path(path).is_file() for path in [bam_path, index_path, reference_index]):
+        try:
+            reference_contigs = {
+                fields[0]: int(fields[1])
+                for line in Path(reference_index).read_text().splitlines()
+                if len(fields := line.split("\t")) >= 2
+            }
+            with pysam.AlignmentFile(bam_path, "rb", index_filename=index_path) as bam:
+                same_reference = all(reference_contigs.get(name) == length for name, length in zip(bam.references, bam.lengths))
+                sorted_bam = bam.header.to_dict().get("HD", {}).get("SO") == "coordinate"
+                indexed = bam.check_index()
+                observed = paired = 0
+                for read in bam.fetch(until_eof=True):
+                    if read.is_unmapped or read.is_secondary or read.is_supplementary:
+                        continue
+                    observed += 1
+                    paired += int(read.is_paired)
+                    if observed >= 1000:
+                        break
+                status = "PASS" if same_reference and sorted_bam and indexed and paired > 0 else "FAIL"
+                detail = f"same_reference={same_reference};coordinate_sorted={sorted_bam};paired_reads={paired}/{observed} checked"
+        except (ValueError, OSError) as error:
+            detail = str(error)
+    checks.append({"check": label, "path": f"{bam_path};{detail}", "status": status})
 
 
 def write_results(
@@ -81,6 +114,7 @@ def main() -> int:
     parser.add_argument("--monarch-edges", required=True)
     parser.add_argument("--annotsv-dir", required=True)
     parser.add_argument("--vep-cache-dir", required=True)
+    parser.add_argument("--vep-cache-version", default="113")
     parser.add_argument("--gridss-enabled", choices=["true", "false"])
     parser.add_argument("--mt-enabled", choices=["true", "false"])
     parser.add_argument("--mt-contig", default="chrM")
@@ -121,6 +155,14 @@ def main() -> int:
         record_file_check(bam, "sample BAM", checks)
     for index in args.bai:
         record_file_check(index, "sample BAM index", checks)
+    if len(args.bam) != len(args.bai):
+        parser.error("Provide one BAM index per BAM in the same order")
+    for bam, index in zip(args.bam, args.bai):
+        check_bam_reference(bam, index, reference_index, checks)
+    record_file_check(
+        str(Path(args.vep_cache_dir) / "homo_sapiens" / f"{args.vep_cache_version}_GRCh38"),
+        "matching human GRCh38 VEP cache release", checks,
+    )
 
     if args.gridss_enabled == "true":
         for suffix in (".amb", ".ann", ".bwt", ".pac", ".sa"):

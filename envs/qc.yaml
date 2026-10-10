@@ -3,5 +3,7 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  - python>=3.11
+  - pysam>=0.22
   - samtools>=1.20
   - mosdepth>=0.3.8

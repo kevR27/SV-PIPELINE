@@ -15,7 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 
-MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL", "UNKNOWN"}
+MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL", "UNKNOWN", "MISSING", "NOT_AVAILABLE"}
 EXONIC_TERMS = {
     "coding_sequence_variant", "exon_loss_variant", "transcript_ablation",
     "frameshift_variant", "stop_gained", "stop_lost", "start_lost",
@@ -137,9 +137,13 @@ def population_af(row, cutoff):
             continue
         status = value(row, ["NEEDLR_STATUS", "POPULATION_STATUS"]).upper()
         rejected = column == "NEEDLR_AF" and any(x in status for x in ["NO_MATCH", "NO_POPULATION_MATCH", "NOT_EVALUABLE", "NOT_AVAILABLE"])
-        rejected = rejected or (column == "GNOMAD_SV_AF" and value(row, ["GNOMAD_SV_EXACT_MATCH"]).upper() in {"NO", "NO_MATCH", "NOT_AVAILABLE"})
+        gnomad_match = value(row, ["GNOMAD_SV_EXACT_MATCH"]).upper()
+        rejected = rejected or (column == "GNOMAD_SV_AF" and gnomad_match not in {".", "YES"})
         if rejected:
             notes.append(column + "_IGNORED_REJECTED_MATCH")
+            continue
+        if column == "GNOMAD_SV_AF" and value(row, ["GNOMAD_SV_FILTER"]).upper() not in {".", "PASS"}:
+            notes.append("INVALID_AF_GNOMAD_RESOURCE_FILTER")
             continue
         for item in re.split(r"[;,|]", raw):
             if item.strip().upper() in MISSING:
@@ -164,13 +168,22 @@ def population_af(row, cutoff):
 
 # 5. Count callers separately from reads. Never add the same reads across tools.
 def caller_count(row):
-    count = number(value(row, ["CALLER_COUNT", "SUPP"]))
+    raw_count = value(row, ["CALLER_COUNT", "SUPP"])
+    count = number(raw_count)
     callers = tokens(value(row, ["CALLERS"]))
     callers = {"SNIFFLES2" if c == "SNIFFLES" else c for c in callers}
-    if count is not None and count.is_integer() and count >= 1:
-        return int(count), "CALLER_COUNT_CONFLICT" if callers and len(callers) != count else "."
+    vector = value(row, ["SUPP_VEC"])
+    vector_count = vector.count("1") if re.fullmatch(r"[01]+", vector) else None
+    if count is not None and count.is_integer() and count >= 0:
+        conflict = (callers and len(callers) != count) or (vector_count is not None and vector_count != count)
+        return int(count), "CALLER_COUNT_CONFLICT" if conflict else "."
+    if raw_count != ".":
+        return None, "INVALID_CALLER_COUNT"
     if callers:
-        return len(callers), "COUNT_FROM_CALLER_NAMES"
+        conflict = vector_count is not None and vector_count != len(callers)
+        return len(callers), "CALLER_COUNT_CONFLICT" if conflict else "COUNT_FROM_CALLER_NAMES"
+    if vector_count is not None:
+        return vector_count, "COUNT_FROM_SUPPORT_VECTOR"
     return None, "CALLER_COUNT_UNKNOWN"
 
 
@@ -181,9 +194,13 @@ def max_read_support(row):
             continue
         counts = []
         for item in re.split(r"[;,|]", raw):
-            count = number(item.rsplit(":", 1)[-1])
-            if count is not None and count.is_integer() and count >= 0:
-                counts.append(count)
+            read_count = item.rsplit(":", 1)[-1].strip()
+            if read_count.upper() in MISSING:
+                continue
+            count = number(read_count)
+            if count is None or not count.is_integer() or count < 0:
+                return None, column + "_INVALID_READ_SUPPORT"
+            counts.append(count)
         if counts:
             return max(counts), column
     try:
@@ -213,6 +230,14 @@ def annotate_row(row, sample, source_row, cutoff, af_cutoff, inv_min, inv_strong
     reads, read_source = max_read_support(row)
     kind = value(row, ["SVTYPE"]).upper()
     chrom_status = chromosome_scope(row)
+    # One AF review group includes low measured AF and unknown AF. Keep
+    # af_status separately so missing evidence is never converted to AF=0.
+    af_group = "DOES_NOT_PASS_AF_RULE"
+    if af_status in {"MEASURED_AT_OR_BELOW_CUTOFF", "AF_UNKNOWN"}:
+        af_group = (
+            "AF_LE_1_PERCENT_OR_MISSING" if af_cutoff == 0.01
+            else "AF_AT_OR_BELOW_CUTOFF_OR_MISSING"
+        )
     excluded, review = [], []
     if value(row, ["GENE", "GENES", "Gene", "ANNotsv_Gene"]) == ".":
         review.append("GENE_IDENTITY_UNRESOLVED")
@@ -228,7 +253,7 @@ def annotate_row(row, sample, source_row, cutoff, af_cutoff, inv_min, inv_strong
         excluded.append("NO_EXON_OR_INTRON_ANNOTATION")
     elif context == "GENIC_UNRESOLVED":
         review.append("EXON_INTRON_UNRESOLVED")
-    if caller_note == "CALLER_COUNT_CONFLICT":
+    if caller_note in {"CALLER_COUNT_CONFLICT", "INVALID_CALLER_COUNT"}:
         review.append(caller_note)
     inv_group = "NOT_APPLICABLE"
     if kind == "INV":
@@ -244,7 +269,7 @@ def annotate_row(row, sample, source_row, cutoff, af_cutoff, inv_min, inv_strong
             review.append("INV_READ_SUPPORT_UNKNOWN")
         elif reads < inv_min:
             excluded.append("INV_READ_SUPPORT_BELOW_MINIMUM")
-        if callers is None:
+        if callers is None or callers == 0:
             review.append("INV_CALLER_COUNT_UNKNOWN")
         if "AMBIGUOUS" in value(row, ["CALLER_EVIDENCE_MATCH"]).upper():
             review.append("INV_AMBIGUOUS_READ_EVIDENCE_JOIN")
@@ -267,6 +292,7 @@ def annotate_row(row, sample, source_row, cutoff, af_cutoff, inv_min, inv_strong
         "DOWNSTREAM_CHROMOSOME_SCOPE": chrom_status, "DOWNSTREAM_CONTEXT": context,
         "DOWNSTREAM_CONTEXT_SCOPE": context_scope,
         "DOWNSTREAM_MAX_AF": af if af is not None else ".", "DOWNSTREAM_AF_STATUS": af_status,
+        "DOWNSTREAM_AF_REVIEW_GROUP": af_group,
         "DOWNSTREAM_AF_SOURCES": af_sources, "DOWNSTREAM_AF_NOTES": af_notes,
         "DOWNSTREAM_CALLER_COUNT": callers if callers is not None else ".", "DOWNSTREAM_CALLER_NOTE": caller_note,
         "DOWNSTREAM_MAX_READ_SUPPORT": reads if reads is not None else ".", "DOWNSTREAM_READ_SUPPORT_SOURCE": read_source,
@@ -306,7 +332,7 @@ def save_views(work, out, size_cutoff):
             save(types, folder + f"/by_sv_type/{safe_kind}/all.tsv")
             for context, subset in types.groupby("DOWNSTREAM_CONTEXT", sort=True):
                 save(subset, folder + f"/by_sv_type/{safe_kind}/{context.lower()}.tsv")
-        for af_group, subset in kept.groupby("DOWNSTREAM_AF_STATUS", sort=True):
+        for af_group, subset in kept.groupby("DOWNSTREAM_AF_REVIEW_GROUP", sort=True):
             save(subset, folder + f"/by_af/{af_group.lower()}.tsv")
         inversions = kept[kept["DOWNSTREAM_SVTYPE"].eq("INV")]
         for read_group, subset in inversions.groupby("DOWNSTREAM_INV_READ_GROUP", sort=True):
@@ -353,7 +379,7 @@ def main():
     if work["DOWNSTREAM_GENE"].str.contains(r"[;,|]", regex=True).any():
         parser.error("Expected one gene per row: use the final ranked SV-gene table rather than a multi-gene interval report")
     # Population/read evidence belongs to the SV and should agree across genes.
-    shared = ["DOWNSTREAM_SIZE_BP", "DOWNSTREAM_CHROMOSOME_SCOPE", "DOWNSTREAM_MAX_AF", "DOWNSTREAM_AF_STATUS", "DOWNSTREAM_CALLER_COUNT", "DOWNSTREAM_MAX_READ_SUPPORT"]
+    shared = ["DOWNSTREAM_SVTYPE", "DOWNSTREAM_SIZE_BP", "DOWNSTREAM_CHROMOSOME_SCOPE", "DOWNSTREAM_MAX_AF", "DOWNSTREAM_AF_STATUS", "DOWNSTREAM_CALLER_COUNT", "DOWNSTREAM_MAX_READ_SUPPORT"]
     conflicts = work.groupby("DOWNSTREAM_SV_ID")[shared].nunique().gt(1).any(axis=1)
     for idx in work.index[work["DOWNSTREAM_SV_ID"].isin(conflicts.index[conflicts])]:
         previous = work.at[idx, "DOWNSTREAM_REVIEW_REASONS"]
@@ -381,6 +407,7 @@ def main():
         "source": str(source),
         "size_cutoff_bp": args.size_cutoff,
         "main_size_comparison": ">",
+        "af_review_group": "measured AF at or below cutoff and missing AF combined in retained.tsv",
         "max_population_af": args.max_af,
         "inv_min_reads": args.inv_min_reads,
         "inv_strong_reads": args.inv_strong_reads,
@@ -396,7 +423,10 @@ Start with the gt_* / retained.tsv table: size strictly >{args.size_cutoff} bp,
 annotated exon/splice or intron context, AF <={args.max_af:g} or AF unknown,
 and INV maximum reported caller support >={args.inv_min_reads} reads.
 
-AF_UNKNOWN is not demonstrated ultra-rarity. Inspect by_af/ separately.
+Measured AF <=cutoff and AF_UNKNOWN are COMBINED in retained.tsv and
+caller_priority.tsv. Original AF status stays visible for interpretation.
+AF_UNKNOWN may identify a possible novel SV, but it does not prove novelty:
+the resource may be unavailable or the event may lack a compatible match.
 lt_* contains small candidates passing the other filters; do not discard
 small exonic/splice events. eq_* holds events exactly at the size cutoff.
 review_required.tsv holds unresolved annotation/support/length or conflicts.

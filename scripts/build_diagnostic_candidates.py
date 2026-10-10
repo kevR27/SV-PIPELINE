@@ -27,10 +27,12 @@ FOCUS_ORDER = {
 }
 
 TECHNICAL_ORDER = {
+    "MULTI_CALLER_PLUS_READ_DEPTH": 1,
     "MULTI_CALLER_PLUS_GRIDSS": 1,
     "MULTI_CALLER": 2,
     "SINGLE_CALLER_PLUS_SUPPORTING_EVIDENCE": 3,
     "SINGLE_CALLER": 4,
+    "READ_DEPTH_ONLY_CNV": 5,
     "CNVPYTOR_DEPTH_ONLY": 5,
     "REVIEW_REQUIRED": 6,
 }
@@ -86,9 +88,11 @@ def add_biological_focus(table: pd.DataFrame) -> pd.DataFrame:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True)
-    parser.add_argument("--top-n", type=int, default=100)
+    parser.add_argument("--top-n", type=int, default=0, help="0 keeps all rows; a positive value creates a limited review view")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
+    if args.top_n < 0:
+        parser.error("top-n must be zero or positive")
 
     candidates = pd.read_csv(
         args.input,
@@ -137,7 +141,10 @@ def main() -> int:
     candidates = candidates.sort_values(
         ["_FOCUS_ORDER", "_BIOLOGICAL_SCORE", "_TECHNICAL_ORDER"],
         ascending=[True, False, True],
-    ).head(args.top_n)
+        kind="stable",
+    )
+    if args.top_n:
+        candidates = candidates.head(args.top_n)
 
     candidates = candidates.copy()
     candidates.insert(

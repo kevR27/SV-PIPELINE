@@ -98,21 +98,50 @@ def main():
     caller_groups = sorted(events["CALLERS_DISPLAY"].unique(), key=lambda x: -float(x) if x != "Unknown" else float("inf"))
     fig, ax = plt.subplots(figsize=(10.5, 5.5))
     x = np.arange(len(caller_groups))
+    bottom = np.zeros(len(caller_groups))
     for i, (state, label, color) in enumerate([("MEASURED_AT_OR_BELOW_CUTOFF", f"Measured AF ≤{settings['max_population_af']*100:g}%", "#009E73"), ("AF_UNKNOWN", "AF unknown", "#8064A2")]):
         sub = counts[counts["DOWNSTREAM_AF_STATUS"].eq(state)].set_index("CALLERS_DISPLAY")
         values = sub["UNIQUE_SVS"].reindex(caller_groups, fill_value=0).to_numpy()
-        ax.bar(x+(i-0.5)*0.35, values, width=0.35, label=label, color=color)
+        ax.bar(x, values, bottom=bottom, width=0.65, label=label, color=color)
+        bottom += values
     ax.set_xticks(x, [f"{c} callers" for c in caller_groups])
     ax.set_ylabel("Unique retained SVs")
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.set_title(f"{sample}: large SV caller support and population evidence", loc="left", fontweight="bold")
+    ax.set_title(f"{sample}: combined low-AF or missing-AF SVs by caller support", loc="left", fontweight="bold")
     ax.legend(loc="upper left", bbox_to_anchor=(0, -0.15), ncol=2, frameon=False)
     if events.empty:
         ax.text(0.5, 0.5, "No large SVs pass these filters", transform=ax.transAxes, ha="center")
-    fig.text(0.5, 0.01, "AF unknown does not establish ultra-rarity. Higher caller count is a review priority, not independent validation.\nThis figure counts each SV once, regardless of how many genes it overlaps.", ha="center", fontsize=9)
+    fig.text(0.5, 0.01, "Each bar combines measured low AF and missing AF; color preserves the evidence source.\nMissing AF permits review for possible novelty; it does not prove absence from a database. Each SV is counted once.", ha="center", fontsize=9)
     fig.subplots_adjust(left=0.12, right=0.97, top=0.89, bottom=0.27)
     export(fig, folder, f"{safe_sample}_callers_and_population")
-    print(f"[OK] four separate downstream filter figures: {out}")
+    # Inversions need their own simple support view, with unique event counts.
+    inversions = events[events["DOWNSTREAM_SVTYPE"].eq("INV")]
+    folder = out / "inversion_support"
+    counts = inversions.groupby(["CALLERS_DISPLAY", "DOWNSTREAM_INV_READ_GROUP"], as_index=False).agg(UNIQUE_SVS=("DOWNSTREAM_SV_ID", "size"))
+    folder.mkdir(parents=True, exist_ok=True)
+    counts.to_csv(folder / f"{safe_sample}_inversion_support.tsv", sep="\t", index=False)
+    groups = sorted(inversions["CALLERS_DISPLAY"].unique(), key=lambda c: -float(c) if c != "Unknown" else float("inf"))
+    fig, ax = plt.subplots(figsize=(10.5, 5.5))
+    bottom = np.zeros(len(groups))
+    for state, label, color in [
+        ("MINIMUM_TO_STRONG", f"{settings['inv_min_reads']}–{settings['inv_strong_reads']-1} reported reads", "#E69F00"),
+        ("AT_OR_ABOVE_STRONG", f"≥{settings['inv_strong_reads']} reported reads", "#0072B2"),
+    ]:
+        sub = counts[counts["DOWNSTREAM_INV_READ_GROUP"].eq(state)].set_index("CALLERS_DISPLAY")
+        values = sub["UNIQUE_SVS"].reindex(groups, fill_value=0).to_numpy()
+        ax.bar(groups, values, bottom=bottom, color=color, label=label)
+        bottom += values
+    if not groups:
+        ax.text(0.5, 0.5, "No large inversions pass these filters", transform=ax.transAxes, ha="center")
+    ax.set_xlabel("Number of callers")
+    ax.set_ylabel("Unique retained inversions")
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_title(f"{sample}: inversion caller and read support", loc="left", fontweight="bold")
+    ax.legend(loc="upper left", bbox_to_anchor=(0, -0.18), ncol=2, frameon=False)
+    fig.text(0.5, 0.01, "Support is the largest reported count from one caller. These are review thresholds, not validation.\nAn inversion spanning an intact gene does not establish disruption of that gene.", ha="center", fontsize=9)
+    fig.subplots_adjust(left=0.12, right=0.97, top=0.89, bottom=0.28)
+    export(fig, folder, f"{safe_sample}_inversion_support")
+    print(f"[OK] five separate downstream filter figures: {out}")
 
 
 if __name__ == "__main__":

@@ -2,10 +2,11 @@
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from annotate_gnomad_sv_exact import exact_match
+from annotate_gnomad_sv_exact import exact_match, fetch_records
 
 
 class FakeRecord:
@@ -19,6 +20,17 @@ class FakeRecord:
 
 
 class TestGnomadExactMatch(unittest.TestCase):
+    def test_index_errors_are_not_converted_to_no_population_match(self):
+        class BrokenVcf:
+            header = SimpleNamespace(contigs={"chr1": 10000})
+
+            def fetch(self, *args):
+                raise ValueError("fetch requires an index")
+
+        with self.assertRaisesRegex(ValueError, "index"):
+            fetch_records(BrokenVcf(), "chr1", 100)
+        self.assertEqual(fetch_records(BrokenVcf(), "chr2", 100), [])
+
     def test_exact_deletion_requires_same_pos_end_type(self):
         q = {"SVTYPE": "DEL", "START": "100", "END": "500", "SVLEN": "-400"}
         ok, scope = exact_match(q, FakeRecord(100, 500, "DEL", -400))

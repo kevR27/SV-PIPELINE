@@ -131,10 +131,10 @@ def fetch_records(vcf, chrom, pos):
 
     records = []
     for name in names:
-        try:
-            records.extend(list(vcf.fetch(name, max(0, pos - 1), pos)))
-        except (ValueError, KeyError):
+        if name not in vcf.header.contigs:
             continue
+        # Missing/corrupt indexes must fail, not masquerade as no match.
+        records.extend(list(vcf.fetch(name, max(0, pos - 1), pos)))
     return records
 
 
@@ -142,6 +142,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--input", required=True)
     p.add_argument("--gnomad-vcf", default=None)
+    p.add_argument("--gnomad-index", default=None, help="Optional custom .tbi/.csi index path")
     p.add_argument("--annotation-only", action="store_true", help="Write only gnomAD-SV annotation columns plus an internal row key.")
     p.add_argument("--output", required=True)
     args = p.parse_args()
@@ -191,7 +192,9 @@ def main():
             "through the gnomad_sv.yaml Snakemake environment."
         ) from error
 
-    vcf = pysam.VariantFile(str(vcf_path))
+    vcf = pysam.VariantFile(str(vcf_path), index_filename=args.gnomad_index)
+    if vcf.index is None:
+        raise ValueError("Configured gnomAD-SV VCF needs a readable tabix/CSI index; do not interpret an indexing error as absence")
     cache = {}
     results_by_id = {}
     unique_svs = int(df["SV_ID"].nunique())

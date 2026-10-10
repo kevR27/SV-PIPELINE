@@ -28,13 +28,17 @@ The primary estimator is read-level CpG-island methylation linked to read-level 
 
 WhatsHap is the primary read-haplotype assignment because the haplotagged BAM provides HP and PS tags for the same reads whose methylation is analyzed.
 
-LongPhase is an independent phase-consistency layer. Haplotype labels are arbitrary between phase blocks and between phasing tools, so agreement is calculated after allowing each overlapping phase-block pair to be either SAME or FLIPPED. A global requirement that H1 from LongPhase equal H1 from WhatsHap would be biologically incorrect.
+LongPhase is a second phasing algorithm for consistency QC using the same data;
+it is not an independent experiment. Haplotype labels are arbitrary between phase blocks and between phasing tools, so agreement is calculated after allowing each overlapping phase-block pair to be either SAME or FLIPPED. A global requirement that H1 from LongPhase equal H1 from WhatsHap would be biologically incorrect.
 
 ## Methylation
 
-The XCI branch uses 5mCG for its primary analysis. modkit pileup --phased also generates chrX HP1 and HP2 bedMethyl files from the WhatsHap-haplotagged modBAM. These tracks are used for chromosome-wide visualization/QC.
+The XCI branch uses 5mCG for its primary analysis. modkit pileup --phased also generates chrX HP1 and HP2 bedMethyl files from the WhatsHap-haplotagged modBAM. These tracks remain available for external track inspection/QC. The oriented thesis
+plot instead uses each methylation read’s HP and PS tags: aggregate HP1/HP2
+pileups cannot distinguish independent phase sets.
 
-The read-level estimator uses NanoMethViz clustering over GRCh38 chrX CpG islands. Only islands with exactly two methylation clusters contribute Xa/Xi labels. The default minimum cluster size is 5 reads, matching the published SkewX implementation.
+The read-level estimator uses NanoMethViz clustering over GRCh38 chrX CpG islands. Only islands with exactly two non-noise methylation clusters with distinct, finite means
+contribute Xa/Xi labels. HDBSCAN cluster 0 is noise and is never assigned Xa/Xi. The default minimum cluster size is 5 reads, matching the published SkewX implementation.
 
 For ordinary CpG islands: lower-methylation cluster -> Xa; higher-methylation cluster -> Xi.
 The XIST promoter has the opposite methylation relationship and is reversed when xci_xist_promoter_bed is configured.
@@ -50,6 +54,10 @@ P = 0.50 -> balanced XCI
 P = 0.20 -> approximately 80:20 major:minor XCI
 P = 0.10 -> approximately 90:10 major:minor XCI
 P approaches 0 -> increasingly extreme skew
+
+A read is counted once per phase block. Reads assigned opposite epialleles by
+different CpG islands are dropped rather than assigned arbitrarily; this consensus
+rule is a modification of the published workflow.
 
 The continuous GLOBAL_FOLDED_SKEW_P and XCI_MAJOR_MINOR_RATIO should be reported. Threshold labels in the pipeline are descriptive QC/reporting labels, not clinical decision thresholds.
 
@@ -254,7 +262,7 @@ are local phase labels and may flip between phase blocks.
 <sample>_xci_orientation_log_odds.pdf
 ```
 
-This figure plots `LOG10_ODDS_H1_XA_VS_H2_XA` against the number of informative
+This figure plots `LOG10_ODDS_H1_XA_VS_H2_XA` along chromosome X; point size shows the number of informative
 reads per phase block.
 
 ```text
@@ -274,11 +282,23 @@ probabilities.
 <sample>_xci_haplotype_methylation.pdf
 ```
 
-This chromosome-wide QC/context plot summarizes CpG 5mC separately for WhatsHap
-HP1 and HP2. The default display uses 5-Mb bins from the phased modkit bedMethyl
-tracks. It is useful for visualizing broad haplotype-specific methylation
-differences but is not the primary XCI skew estimator. The primary estimator
-remains read-level CpG-island clustering linked to haplotagged reads.
+This plot joins CpG-island methylation to each read's WhatsHap HP/PS tags and
+then to the orientation of that exact phase set. The default display uses 5-Mb
+bins and weights each read–CpG-island mean equally. It does not weight by the
+number of cytosines and is not a percentage of cells.
+
+Blue shows the locally major-active haplotype; orange shows the locally
+major-inactive haplotype. These are preferential states in a mixed-cell sample,
+not pure Xa and Xi populations. Ordinary CpG islands are used; reversed XIST
+promoter islands are omitted from this plot. Only blocks passing phase QC,
+orientation support and sample eligibility contribute.
+
+The separate `xci_methylation_delta` figure shows major-inactive minus
+major-active methylation in percentage points. A positive value means higher
+methylation on the major-inactive haplotype. Both figures use the same data that
+helped estimate orientation, so they are descriptive QC, not independent
+validation of skew. The associated TSVs include observation/read/island/block
+counts so that a smooth-looking line does not hide sparse data.
 
 ### 5. WhatsHap versus LongPhase phase concordance
 
@@ -287,9 +307,21 @@ remains read-level CpG-island clustering linked to haplotagged reads.
 ```
 
 This is a phasing QC plot. It displays the flip-tolerant concordance between
-overlapping WhatsHap and LongPhase phase blocks. H1/H2 labels are arbitrary
-between independent phasing methods, so phase-block orientation is allowed to
-flip before concordance is assessed.
+overlapping WhatsHap and LongPhase phase blocks. For a readable WGS figure,
+the 30 pairs with most shared SNVs are displayed; the full input TSV is retained
+and the subtitle states how many pairs were plotted. H1/H2 labels are arbitrary
+between the two phasing methods using the same reads, so phase-block orientation is allowed to
+flip before concordance is assessed. Colours follow the configured concordance
+and shared-SNV thresholds; a perfect match based on one SNV remains a review
+pair. Pair-level QC is not identical to the aggregated per-WhatsHap-block QC
+used by the estimator.
+
+### 6. Sensitivity to read and phase-QC thresholds
+
+The separate `xci_sensitivity` figure compares the folded minor-X estimate at
+5, 8, 10 and 15 reads per block by default, with and without phase-QC filtering.
+A large change means the result depends on these choices and needs review;
+it is not evidence that the preferred threshold is the one yielding more skew.
 
 ### Recommended thesis use
 
@@ -324,7 +356,7 @@ Xa/Xi orientation of that haplotype.
   methylation/<sample>.chrX.hp2.5mC.bedmethyl.gz
   methylation/<sample>.chrX.combined.5mC.bedmethyl.gz
 
-Static thesis figures are written under <sample>/plots/15_x_inactivation/ as PDF, SVG and 600-dpi PNG.
+Static thesis figures are written under <sample>/plots/15_x_inactivation/ as PDF, SVG and 300-dpi PNG.
 
 ## Running
 
@@ -341,3 +373,17 @@ The analysis reports chrX coverage, haplotagged-read counts, informative CpG isl
 A sample can legitimately have no estimate when chrX coverage is low, too few reads are haplotagged, CpG islands do not form two interpretable methylation clusters, or too few islands overlap informative phase blocks.
 
 XCI is tissue specific. A skew measured in blood, saliva, or buccal DNA should not automatically be extrapolated to retina, optic nerve, or another tissue.
+
+The numerical fit includes exact P=0 (complete skew) and P=0.5 (balanced)
+boundaries. Blocks containing only one informative read cannot identify P;
+they must not produce an arbitrary estimate. Negative, fractional or missing
+Xa/Xi counts and repeated phase-set identifiers are rejected.
+
+The reported profile CI and balanced-XCI likelihood-ratio p-value are model-based.
+The p-value uses an approximate asymptotic boundary correction. Dependence
+between reads/blocks, few informative blocks, methylation-clustering errors,
+X-copy-number abnormalities and tissue mixture can invalidate their calibration.
+The fit is useful research evidence; patient-specific and orthogonal validation
+are still needed. A numeric estimate may be retained when sample QC requires
+review, but every plot displays that QC status and such blocks are not used for
+the oriented methylation plot.
