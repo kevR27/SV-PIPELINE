@@ -81,6 +81,21 @@ REVIEW_TOP_N = config.get("candidate_review_top_n", 5)
 LOCUS_TOP_N = config.get("candidate_locus_top_n", 10)
 PLOT_GENE_GTF = config.get("candidate_plot_gene_gtf")
 
+# Optional genome context uses existing files; downloads belong in the README.
+PLOT_CONTEXT = {
+    "reference-fai": REF + ".fai",
+    "panel-bed": config.get("bed"),
+    "exclude-bed": config.get("exclude_bed", os.path.join(REPO_ROOT, "reference/delly_hg38_exclude.bed")),
+    "centromere-bed": config.get("genome_plot_centromere_bed"),
+    "gap-bed": config.get("genome_plot_gap_bed"),
+    "assembly-manifest": config.get("candidate_assembly_manifest"),
+}
+PLOT_REPEAT_BEDS = config.get("genome_plot_repeat_beds", {})
+PLOT_CONTEXT_INPUTS = [path for path in PLOT_CONTEXT.values() if path] + list(PLOT_REPEAT_BEDS.values())
+PLOT_CONTEXT_ARGS = " ".join("--" + key + " " + shlex.quote(str(path)) for key,path in PLOT_CONTEXT.items() if path)
+PLOT_CONTEXT_ARGS += " " + " ".join("--repeat-bed " + shlex.quote(str(name)+"="+str(path)) for name,path in PLOT_REPEAT_BEDS.items())
+PLOT_CONTEXT_ARGS += " --random-draws " + str(int(config.get("genome_plot_random_draws", 200)))
+
 
 def postprocess_required_files(sample):
     """Upstream files required by the active downstream interpretation DAG."""
@@ -514,6 +529,9 @@ rule thesis_plots_sample:
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
         mitochondrial_ranking=PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv",
         available=existing_plot_inputs,
+        genome_context=PLOT_CONTEXT_INPUTS,
+        depth_bins=PATH + "{sample}/coverage/binned/{sample}.10kb.regions.bed.gz",
+        samplot=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/samplot_manifest.tsv",
         plot_scripts=[
             PLOTS + "/run_thesis_plots.py",
             PLOTS + "/plot_utils.py",
@@ -523,6 +541,7 @@ rule thesis_plots_sample:
             PLOTS + "/plot_lrs_qc.py",
             PLOTS + "/plot_caller_concordance.py",
             PLOTS + "/plot_sv_landscape.py",
+            PLOTS + "/plot_genome_wide_sv_map.py",
             PLOTS + "/plot_large_sv_overview.py",
             PLOTS + "/plot_large_complex_candidates.py",
             PLOTS + "/plot_needlr_population.py",
@@ -549,6 +568,7 @@ rule thesis_plots_sample:
     log:
         PATH + "{sample}/logs/plots/{sample}.thesis_plots.log"
     params:
+        genome_context_args=PLOT_CONTEXT_ARGS,
         methylation_units=config.get("methylation_units", "percent"),
         top_genes=THESIS_TOP_GENES,
         review_top_n=REVIEW_TOP_N,
@@ -576,9 +596,11 @@ rule thesis_plots_sample:
             --sample {wildcards.sample} \
             --platform lrs \
             --candidate-table {input.candidate_events} \
+            --samplot-manifest {input.samplot:q} \
             --top-genes {params.top_genes} \
             --review-top-n {params.review_top_n} \
             --locus-top-n {params.locus_top_n} \
+            {params.genome_context_args} \
             {params.gene_gtf_arg} \
             --methylation-units {params.methylation_units} \
             {params.gene_bed_arg} \

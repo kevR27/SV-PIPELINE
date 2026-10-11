@@ -81,6 +81,10 @@ def main():
    Availability is in evidence_availability/; mechanisms are in mechanisms/.
 6. Inspect retained events in ../12_candidate_loci and the Samplot/read-level
    evidence in {read_evidence}. A gene BED alone has no exon detail.
+   One-page cards are under ../12_candidate_loci/top_N/candidate_cards/.
+   Genome positions/spacing are in ../03_sv_landscape; independent evidence
+   counts and the evidence UpSet are in analysis_counts/. Those groups overlap
+   and are not sequential filters. Missing card panels mean unavailable evidence.
 7. Add lower-ranked direct disruptions or independent repeat/MEI findings
    when justified. This shortlist does not replace the complete results.
 

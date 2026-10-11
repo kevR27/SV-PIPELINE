@@ -9,6 +9,16 @@ The layout now follows LRS: one configuration, numbered analysis stages,
 shared `scripts/` and `envs/` folders, and a separate `all_thesis_plots` target.
 The SRS folder still contains only its existing Snakefile, config and README.
 
+The plotting target now also creates a genome position map, SV-spacing view,
+counts/evidence UpSet, size/support comparison, population AF candidate overlay
+and one-page candidate cards. Its existing mosdepth QC step saves measured depth
+bins for the map and local DEL/DUP views; older QC results need that step rerun
+once. Optional centromere, gap and repeat BEDs are configured in section 8.
+Local-assembly views require an existing assembly alignment. SRS small-variant
+phasing cannot assign SV cis/trans phase. See the
+[shared plotting README](../../plots/README.md#added-genome-and-candidate-views)
+for figure locations, interpretation, manual resource downloads and options.
+
 ## Start with these files
 
 - **`config_srs_wgs.yaml`**: your samples, paths and analysis settings.

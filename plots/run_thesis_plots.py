@@ -30,6 +30,16 @@ def parse_args():
     p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
     p.add_argument("--gene-bed", default=None, help="Optional gene BED for candidate-specific locus plots")
     p.add_argument("--gene-gtf", help="Optional matching GRCh38 GTF for real exon tracks")
+    p.add_argument("--reference-fai", help="Index of the matching FASTA; needed for the genome map")
+    p.add_argument("--panel-bed", help="Panel gene positions (BED)")
+    p.add_argument("--exclude-bed", help="DELLY exclusion BED used in this run")
+    p.add_argument("--centromere-bed", help="Optional matching assembly centromeres (BED)")
+    p.add_argument("--gap-bed", help="Optional matching assembly gaps (BED)")
+    p.add_argument("--depth-bed", help="Existing binned mosdepth coverage; otherwise discover completed bins")
+    p.add_argument("--repeat-bed", action="append", default=[], metavar="CLASS=PATH")
+    p.add_argument("--random-draws", type=int, default=200)
+    p.add_argument("--assembly-manifest", help="Optional SV_ID/PAF_PATH table for existing candidate assemblies")
+    p.add_argument("--samplot-manifest", action="append", default=[], help="Explicit current read-evidence manifest; overrides discovery")
     p.add_argument("--review-top-n", type=int, default=5, help="Initial review associations per panel group")
     p.add_argument("--locus-top-n", type=int, default=10, help="Maximum detailed locus figures from the review shortlist")
     p.add_argument("--review-only", action="store_true", help="Generate QC and essential review outputs from completed tables only")
@@ -80,7 +90,7 @@ def main():
     args = parse_args()
     if min(args.top_genes, args.review_top_n, args.locus_top_n) < 1:
         raise ValueError("Plot and review counts must be at least 1")
-    for name in ["candidate_table", "evidence_table", "gene_bed", "gene_gtf"]:
+    for name in ["candidate_table", "evidence_table", "gene_bed", "gene_gtf", "reference_fai", "panel_bed", "exclude_bed", "centromere_bed", "gap_bed", "depth_bed", "assembly_manifest"]:
         value = getattr(args, name)
         if value and not Path(value).expanduser().exists():
             raise FileNotFoundError(f"Requested --{name.replace('_', '-')} does not exist: {value}")
@@ -108,7 +118,7 @@ def main():
         "mitochondrial": out / "14_mitochondrial_context",
     }
     if args.platform == "srs":
-        for name in ["straglr", "tldr", "methylation", "population", "integration"]:
+        for name in ["straglr", "tldr", "methylation", "integration"]:
             folders.pop(name)
     for folder in folders.values():
         if args.platform == "srs" and folder == folders["associations"]:
@@ -227,11 +237,23 @@ def main():
             "methylation/*.bed.gz",
             "**/*.cpg.bedmethyl.gz",
             "**/*.bedmethyl.gz",
-            "**/*.bed.gz",
+            "methylation/**/*.bed.gz",
         ],
     )
 
     caller_order = "Manta,Delly" if args.platform == "srs" else "Sniffles2,cuteSV,Delly"
+    shortlist = folders["review"] / f"{s}_candidate_shortlist.tsv"
+    phase_pairs = sample_root / "gene_discovery" / "final" / f"{s}_snv_sv_candidates.tsv"
+    samplot_manifests = ([sample_root / "diagnostic_review" / f"{s}.samplot_manifest.tsv"] if args.platform == "srs" else
+                        sorted((out / "13_breakpoint_evidence").glob("*/samplot_manifest.tsv"),key=lambda path:path.stat().st_mtime,reverse=True)[:1])
+    if args.samplot_manifest:
+        samplot_manifests = [Path(path).expanduser().resolve() for path in args.samplot_manifest]
+        for path in samplot_manifests:
+            if not path.exists():
+                raise FileNotFoundError(path)
+    depth_bed = Path(args.depth_bed) if args.depth_bed else first_existing_path([
+        sample_root / "coverage" / "binned" / f"{s}.10kb.regions.bed.gz",
+        sample_root / "coverage" / f"{s}.regions.bed.gz"])
 
     jobs = []
 
@@ -266,9 +288,22 @@ def main():
         ([py, str(HERE / "plot_event_review_summary.py"), "--input", str(candidate_source),
           "--platform", args.platform, "--sample", s, "--out-dir", str(folders["review"])], [candidate_source]),
     ])
+    counts_cmd = jobs[-1][0]
+    if integrated.exists():
+        counts_cmd += ["--master-table", str(integrated), "--selection-table", str(shortlist)]
+    if args.gene_bed:
+        counts_cmd += ["--gene-bed",args.gene_bed]
+    if caller_summary.exists():
+        counts_cmd += ["--caller-summary",str(caller_summary)]
+    raw_callers = ({"Manta":sample_root / "sv/manta" / f"{s}_manta.original.vcf.gz", "Delly":sample_root / "sv/delly" / f"{s}_delly.vcf.gz"} if args.platform == "srs" else
+                  {"Sniffles2":sample_root / "sv/sniffles2" / f"{s}_sniffles.vcf", "cuteSV":sample_root / "sv/cutesv" / f"{s}_cutesv.vcf", "Delly":sample_root / "sv/delly" / f"{s}_delly.vcf"})
+    if all(path.exists() for path in raw_callers.values()):
+        for caller,path in raw_callers.items():
+            counts_cmd += ["--raw-vcf",f"{caller}={path}"]
     if args.gene_bed:
         gene_bed = Path(args.gene_bed).expanduser().resolve()
         locus_cmd = [py, str(HERE / "plot_candidate_locus.py"), "--input", str(candidate_source),
+                     "--platform",args.platform,
                      *evidence_args, "--gene-bed", str(gene_bed), "--out-dir", str(folders["loci"]),
                      "--selection-table", str(folders["review"] / f"{s}_candidate_shortlist.tsv"),
                      "--top-n", str(args.locus_top_n)]
@@ -278,8 +313,17 @@ def main():
         depth_bins = sample_root / "gene_discovery" / "final" / f"{s}_large_sv_depth_bins.tsv"
         if depth_bins.exists():
             locus_cmd += ["--depth-bins", str(depth_bins)]
+        if depth_bed:
+            locus_cmd += ["--depth-bed",str(depth_bed)]
         if args.platform == "lrs" and methylation:
             locus_cmd += ["--methylation-bed", str(methylation), "--methylation-units", args.methylation_units]
+        for manifest in samplot_manifests:
+            if manifest.exists():
+                locus_cmd += ["--samplot-manifest",str(manifest)]
+        if args.platform == "lrs" and phase_pairs.exists():
+            locus_cmd += ["--phase-pairs",str(phase_pairs)]
+        if args.assembly_manifest:
+            locus_cmd += ["--assembly-manifest",args.assembly_manifest]
         jobs.append((locus_cmd, locus_required))
     else:
         print("[SKIP] no gene BED supplied; candidate-specific locus plots skipped")
@@ -309,6 +353,7 @@ def main():
                 [
                     py, str(HERE / "plot_sv_landscape.py"),
                     "--input", str(integrated),
+                    "--candidate-table", str(shortlist),
                     "--out-prefix", str(folders["landscape"] / f"{s}_sv_landscape"),
                 ],
                 [integrated],
@@ -393,6 +438,24 @@ def main():
             ),
         ]
     )
+
+    # The complete master universe is used for both the map and AF overlays.
+    jobs.append(([py,str(HERE / "plot_needlr_population.py"),"--input",str(integrated),"--integrated",
+                  "--candidate-table",str(shortlist),"--out-prefix",str(folders["population"] / f"{s}_population_candidate_overlay")],[integrated]))
+    if args.reference_fai:
+        genome_cmd = [py,str(HERE / "plot_genome_wide_sv_map.py"),"--input",str(integrated),"--reference-fai",args.reference_fai,
+                      "--candidate-table",str(shortlist),"--label-top-n",str(args.locus_top_n),
+                      "--out-prefix",str(folders["landscape"] / f"{s}_genome_position_map"),"--random-draws",str(args.random_draws)]
+        for name in ["panel_bed","exclude_bed","centromere_bed","gap_bed"]:
+            if getattr(args,name):
+                genome_cmd += ["--"+name.replace("_","-"),getattr(args,name)]
+        if depth_bed:
+            genome_cmd += ["--depth-bed",str(depth_bed)]
+        for repeat in args.repeat_bed:
+            genome_cmd += ["--repeat-bed",repeat]
+        jobs.append((genome_cmd,[integrated,Path(args.reference_fai)]))
+    else:
+        print("[SKIP] genome position map needs --reference-fai (index of the actual reference)")
 
     # A disabled MitoCarta branch has no mitochondrial annotation columns.
     # Do not interpret its presence in an older result file as a current analysis.

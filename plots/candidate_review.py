@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -189,6 +190,34 @@ def af_values(value):
         if math.isfinite(x) and 0 <= x <= 1:
             values.append(x)
     return values
+
+
+def event_frequency_table(raw):
+    """Use the same AF rule as downstream filtering, once per master SV.
+
+    A value above 1% from any valid population source wins over a missing or
+    lower value. Invalid values remain review flags; unknown values stay unknown.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from filter_sv_candidates_for_review import population_af
+    if "SV_ID" not in raw or raw["SV_ID"].fillna(".").astype(str).str.upper().isin(MISSING).any():
+        raise ValueError("Frequency/count plots need nonmissing master SV IDs")
+    rows = []
+    for sv_id, group in raw.groupby("SV_ID", sort=False):
+        parsed = [population_af(row, .01) for row in group.to_dict("records")]
+        measured = [item[0] for item in parsed if item[0] is not None]
+        invalid = any(item[1] == "INVALID_AF_REVIEW" for item in parsed)
+        maximum = max(measured) if measured else float("nan")
+        status = ("MEASURED_ABOVE_CUTOFF" if measured and maximum > .01 else
+                  "INVALID_AF_REVIEW" if invalid else "AF_UNKNOWN" if not measured else "MEASURED_AT_OR_BELOW_CUTOFF")
+        needlr = []
+        for row in group.to_dict("records"):
+            if not any(tag in text(row, ["NEEDLR_STATUS", "POPULATION_STATUS"]).upper()
+                       for tag in ["NO_MATCH", "NO_POPULATION_MATCH", "NOT_EVALUABLE", "NOT_AVAILABLE"]):
+                needlr.extend(af_values(row.get("NEEDLR_AF", ".")))
+        rows.append({"SV_ID": sv_id, "MAX_POPULATION_AF": maximum, "AF_STATUS": status,
+                     "NEEDLR_AF_FOR_PLOT": max(needlr) if needlr else float("nan")})
+    return pd.DataFrame(rows, columns=["SV_ID", "MAX_POPULATION_AF", "AF_STATUS", "NEEDLR_AF_FOR_PLOT"])
 
 
 def population(row, rare_af=0.01):

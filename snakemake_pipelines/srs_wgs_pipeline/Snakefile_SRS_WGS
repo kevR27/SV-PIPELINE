@@ -142,6 +142,18 @@ PLOT_TOP_GENES = int(config.get("plot_top_genes", 25))
 REVIEW_TOP_N = int(config.get("candidate_review_top_n", 5))
 LOCUS_TOP_N = int(config.get("candidate_locus_top_n", 10))
 PLOT_GENE_GTF = config.get("candidate_plot_gene_gtf")
+# Genome plots consume existing matching-build resources. See README for downloads.
+PLOT_CONTEXT = {
+    "reference-fai": REF + ".fai", "panel-bed": PANEL_BED, "exclude-bed": EXCLUDE_BED,
+    "centromere-bed": config.get("genome_plot_centromere_bed"),
+    "gap-bed": config.get("genome_plot_gap_bed"),
+    "assembly-manifest": config.get("candidate_assembly_manifest"),
+}
+PLOT_REPEAT_BEDS = config.get("genome_plot_repeat_beds", {})
+PLOT_CONTEXT_INPUTS = [path for path in PLOT_CONTEXT.values() if path] + list(PLOT_REPEAT_BEDS.values())
+PLOT_CONTEXT_ARGS = " ".join("--"+key+" "+shlex.quote(str(path)) for key,path in PLOT_CONTEXT.items() if path)
+PLOT_CONTEXT_ARGS += " " + " ".join("--repeat-bed "+shlex.quote(str(name)+"="+str(path)) for name,path in PLOT_REPEAT_BEDS.items())
+PLOT_CONTEXT_ARGS += " --random-draws " + str(int(config.get("genome_plot_random_draws", 200)))
 DOWNSTREAM_SIZE_CUTOFF = int(config.get("downstream_size_cutoff", 1000))
 DOWNSTREAM_MAX_AF = float(config.get("downstream_max_af", 0.01))
 DOWNSTREAM_INV_MIN_READS = int(config.get("downstream_inv_min_reads", 3))
@@ -331,9 +343,11 @@ rule mosdepth_coverage:
         bai=lambda wc: bam_index_for(wc.sample)
     output:
         global_dist=PATH + "{sample}/coverage/{sample}.mosdepth.global.dist.txt",
-        summary=PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt"
+        summary=PATH + "{sample}/coverage/{sample}.mosdepth.summary.txt",
+        regions=PATH + "{sample}/coverage/{sample}.regions.bed.gz"
     params:
-        prefix=PATH + "{sample}/coverage/{sample}"
+        prefix=PATH + "{sample}/coverage/{sample}",
+        bin_bp=int(config.get("genome_plot_depth_bin_bp", 10000))
     threads: THREADS
     conda:
         ENV_DIR + "/qc.yaml"
@@ -341,7 +355,7 @@ rule mosdepth_coverage:
         """
         set -euo pipefail
         mkdir -p $(dirname {output.global_dist})
-        mosdepth -t {threads} {params.prefix} {input.bam}
+        mosdepth -t {threads} --no-per-base --by {params.bin_bp} {params.prefix} {input.bam}
         test -s {output.global_dist}
         test -s {output.summary}
         """
@@ -1302,6 +1316,7 @@ rule thesis_plots_sample:
         evidence=diagnostic_source,
         coverage=rules.mosdepth_coverage.output.summary,
         coverage_dist=rules.mosdepth_coverage.output.global_dist,
+        depth_bins=rules.mosdepth_coverage.output.regions,
         qc=rules.summarize_wgs_qc.output.tsv,
         callers=rules.summarize_caller_support.output.summary,
         genes=GENE_BED,
@@ -1310,6 +1325,8 @@ rule thesis_plots_sample:
         phased=rules.whatshap_phasing.output.phased,
         mito_ranking=lambda wc: [PATH + f"{wc.sample}/diagnostic_review/{wc.sample}.mitochondrial_gene_ranking.tsv"] if MITOCARTA_ENABLED else [],
         gtf=lambda wc: [PLOT_GENE_GTF] if PLOT_GENE_GTF else [],
+        genome_context=PLOT_CONTEXT_INPUTS,
+        samplot=lambda wc: [PATH + f"{wc.sample}/diagnostic_review/{wc.sample}.samplot_manifest.tsv"] if SAMPLOT_ENABLED else [],
         scripts=sorted(str(p) for p in Path(PLOTS).glob("*.py"))
     output:
         marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
@@ -1317,6 +1334,8 @@ rule thesis_plots_sample:
         PATH + "{sample}/logs/plots/{sample}.thesis_plots.log"
     params:
         gene_gtf_arg=("--gene-gtf " + shlex.quote(str(PLOT_GENE_GTF))) if PLOT_GENE_GTF else "",
+        genome_context_args=PLOT_CONTEXT_ARGS,
+        samplot_arg=lambda wc: "--samplot-manifest " + shlex.quote(PATH + f"{wc.sample}/diagnostic_review/{wc.sample}.samplot_manifest.tsv") if SAMPLOT_ENABLED else "",
         top_genes=PLOT_TOP_GENES,
         review_top_n=REVIEW_TOP_N,
         locus_top_n=LOCUS_TOP_N
@@ -1328,6 +1347,8 @@ rule thesis_plots_sample:
         python {PLOTS:q}/run_thesis_plots.py --root {PATH:q} --sample {wildcards.sample:q} \
             --platform srs --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
             --top-genes {params.top_genes} --review-top-n {params.review_top_n} --locus-top-n {params.locus_top_n} \
+            {params.genome_context_args} \
+            {params.samplot_arg} \
             {params.gene_gtf_arg} > {log:q} 2>&1
         touch {output.marker:q}
         """

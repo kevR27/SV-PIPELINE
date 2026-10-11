@@ -147,6 +147,16 @@ candidate_review_top_n: 5          # Initial review rows per panel group.
 candidate_locus_top_n: 10          # Maximum diagrams of selected loci.
 candidate_plot_gene_gtf: null      # Matching GRCh38 GTF for real exon tracks.
 
+# Position map: reuse reference index, panel and DELLY exclusion BED automatically.
+# Add optional matching GRCh38 tracks using the README; null = unavailable.
+genome_plot_centromere_bed: null
+genome_plot_gap_bed: null
+genome_plot_depth_bin_bp: 10000    # Measured depth bins from the existing QC step.
+# Map each repeat class to a BED path; e.g. Tandem_repeats: /path/to/trf.bed.
+genome_plot_repeat_beds: {}
+genome_plot_random_draws: 200
+candidate_assembly_manifest: null # Optional TSV with SV_ID and PAF_PATH.
+
 # Separate review views; the complete candidate table is preserved.
 # One combined group retains measured AF <=1% OR missing AF. The plots use
 # different colours within that group to show which frequency is known.

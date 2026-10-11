@@ -49,6 +49,8 @@ def read_phase(path: str):
             gt = data.get("GT", ".")
             ps = data.get("PS", ".")
             phased = "YES" if "|" in gt and ps not in {"", "."} else "NO"
+            if len(alts) != 1:
+                phased = "NO"  # Do not assign the ALT=1 haplotype to every ALT.
 
             for alt in alts:
                 phase[(chrom, pos, alt)] = (gt, ps, phased)
@@ -66,6 +68,22 @@ def alt_haplotype(gt: str) -> str:
     if alleles == ["0", "1"]:
         return "H2"
     return "."
+
+
+def pair_phase_relation(small_var, sv_row):
+    """H1/H2 labels can be compared only on the same chromosome and phase set."""
+    small_chrom = str(small_var.get("CHROM", ".")).removeprefix("chr")
+    sv_chrom = str(sv_row.get("CHROM", ".")).removeprefix("chr")
+    small_ps, sv_ps = str(small_var.get("SMALL_PS", ".")), str(sv_row.get("LONGPHASE_PS", "."))
+    h_small = alt_haplotype(str(small_var.get("SMALL_GT", ".")))
+    h_sv = alt_haplotype(str(sv_row.get("LONGPHASE_GT", ".")))
+    if (small_chrom not in {"", ".", "nan"} and small_chrom == sv_chrom
+        and small_var.get("SMALL_PHASED") == "YES"
+        and str(sv_row.get("LONGPHASE_PHASED", "")).upper() == "YES"
+        and small_ps not in {"", ".", "nan"} and small_ps == sv_ps
+        and h_small != "." and h_sv != "."):
+        return "CIS" if h_small == h_sv else "TRANS"
+    return "UNRESOLVED"
 
 
 def read_vep(path: str) -> pd.DataFrame:
@@ -159,10 +177,11 @@ def main():
             except Exception:
                 continue
             alt = str(row.get("Allele", "."))
-        gt, ps, phased = phase.get(
-            (chrom, pos, alt),
-            phase_by_position.get((chrom, pos), (".", ".", "NO")),
-        )
+        # Position alone can match a different allele. Leave unmatched alleles
+        # unresolved rather than borrowing that allele's phase.
+        gt, ps, phased = phase.get((chrom, pos, alt), (".", ".", "NO"))
+        if gt not in {"0|1", "1|0", "0/1", "1/0", "1|1", "1/1"} or "," in alt:
+            phased = "NO"  # allele-specific multiallelic phase needs separate review.
         small_rows.append({
             "GENE": gene,
             "SMALL_VARIANT": row.get("Uploaded_variation", "."),
@@ -175,7 +194,7 @@ def main():
             "SMALL_GT": gt,
             "SMALL_PS": ps,
             "SMALL_PHASED": phased,
-            "SMALL_ALT_HAPLOTYPE": alt_haplotype(gt),
+            "SMALL_ALT_HAPLOTYPE": alt_haplotype(gt) if phased == "YES" else ".",
         })
 
     small = pd.DataFrame(small_rows)
@@ -216,16 +235,7 @@ def main():
             sv_ps = str(sv_row.get("LONGPHASE_PS", "."))
             sv_haplotype = alt_haplotype(sv_gt)
 
-            relation = "UNRESOLVED"
-            if (
-                small_var["SMALL_PHASED"] == "YES"
-                and str(sv_row.get("LONGPHASE_PHASED", "")).upper() == "YES"
-                and small_var["SMALL_PS"] not in {"", "."}
-                and small_var["SMALL_PS"] == sv_ps
-                and small_var["SMALL_ALT_HAPLOTYPE"] != "."
-                and sv_haplotype != "."
-            ):
-                relation = "CIS" if small_var["SMALL_ALT_HAPLOTYPE"] == sv_haplotype else "TRANS"
+            relation = pair_phase_relation(small_var, sv_row)
 
             inheritance_class = str(
                 sv_row.get("GENE_INHERITANCE_CLASS", "UNKNOWN")

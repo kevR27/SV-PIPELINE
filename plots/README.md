@@ -9,7 +9,8 @@ This directory contains downstream visualization and conservative intersection s
 - needLR remains a supplementary population-frequency branch rather than the master SV universe.
 - Straglr, TLDR, methylation and phasing are complementary biological layers and are not forced into the Jasmine caller-concordance calculation.
 - Straglr/TLDR can be attached to the master table only through explicit coordinate-aware matching with `intersect_orthogonal_sv_evidence.py`.
-- Every figure is exported as PDF, SVG and 600-dpi PNG.
+- Figures are exported as PDF, SVG and PNG: normally 600 dpi for overviews,
+  300 dpi for loci and 200 dpi for large candidate cards.
 - Plot scripts also write the summarized TSV used to make the figure when appropriate.
 
 ## Scripts
@@ -17,6 +18,8 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_lrs_qc.py`: mosdepth coverage QC.
 - `plot_caller_concordance.py`: caller-aware UpSet-style plot for Jasmine or SURVIVOR summaries.
 - `plot_sv_landscape.py`: SV type, size, chromosome distribution and caller-support landscape.
+- `plot_genome_wide_sv_map.py`: chromosome position strips, BND/TRA arcs,
+  rainfall spacing, optional measured depth and repeat comparisons.
 - `plot_needlr_population.py`: overall and ancestry-specific needLR population-frequency plots.
 - `plot_candidate_genes.py`: final gene-prioritization figures written separately for panel and non-panel genes; inheritance class and best SV mechanism are shown explicitly when available.
 - `plot_gene_hpo_heatmap.py`: human gene-HPO association heatmap from the offline Monarch branch.
@@ -39,6 +42,133 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_utils.py`: shared styling, parsing and figure-export helpers.
 
 ## Current status
+
+### Added genome and candidate views
+
+Only one new production script was needed; other additions extend the existing
+scripts and launcher. Both LRS and SRS use the shared plotting code. Source TSVs
+accompany the figures.
+
+| View | Folder within a sample's `plots/` | How to read it |
+|---|---|---|
+| Position map and rainfall | `03_sv_landscape/` | Same Mb scale for every chromosome; SV type colours; BND/TRA arcs use the reported partner. Rainfall uses one START anchor per master SV and restarts at each chromosome. |
+| Counts and evidence UpSet | `00_start_here/analysis_counts/` | Raw caller records and unique merged SVs have separate panels. Evidence groups overlap; they are not sequential filters. |
+| Size versus support | `03_sv_landscape/` | Black rings highlight shortlisted SVs. Caller counts and read support are separate; read counts are not summed across callers. |
+| Population AF with candidates | `04_population_frequency/` | Measured AF <=1% and unknown AF stay in one review group, with different colours. Histograms exclude zero/missing values and state their counts; black marks identify candidates. |
+| HP1/HP2 gene view | `12_candidate_loci/top_N/gene_phase/` | Only compatible phased SNV/SV pairs on the same chromosome and phase block are placed on haplotypes. Other pairs remain unresolved. |
+| One-page candidate cards | `12_candidate_loci/top_N/candidate_cards/` | A2 portrait PDFs combine available locus, depth, methylation, Samplot, phase and optional assembly evidence. Originals remain available for detail. |
+| Repeat context | `03_sv_landscape/*repeat_context*` | Observed breakpoint overlap versus matched random positions; needs repeat BED files. |
+| Local assembly alignment | `12_candidate_loci/top_N/*assembly*` | Forward/reverse PAF blocks use different colours; needs an existing local assembly alignment. |
+
+The map includes canonical chromosomes present in the actual reference index,
+including X/Y/MT. Other contigs, invalid positions and conflicting propagated
+coordinates remain in the source TSV with their status. This is separate from
+the nuclear filtering views. Genotype/VAF, when present, are retained in the
+size/support TSV; none is inferred from population AF or caller counts.
+
+**Interpretation:** a cluster can reflect mapping difficulty or biology. Repeat
+overlap does not establish NAHR or another mechanism. Missing AF does not
+establish a novel SV. A shortlist is a review workload, not proven diagnoses.
+Patient HPO counts require explicit patient-specific scope; HON seed terms do
+not qualify. Unknown evidence is reported separately, not assigned support.
+
+### Measured depth and optional reference tracks
+
+Snakemake passes the actual FASTA index, panel BED and DELLY exclusion BED.
+LRS reuses its existing binned-depth rule. SRS saves 10 kb mean-depth bins in
+its existing mosdepth QC step, using `--by` and skipping the large per-base
+file. Its read-selection defaults and summary filenames are preserved. Older
+SRS results need that QC step rerun once for the new `.regions.bed.gz` output.
+
+The genome ribbon pools measured bins into 1 Mb bins for visibility. Autosomes
+share a length-weighted autosomal mean baseline; X/Y/MT use their own chromosome
+mean. A ratio of 1 on X/Y therefore does not establish expected chromosome copy
+number. Bins touching supplied exclusions/gaps/centromeres are masked. The TSV
+records the baseline and covered bases. This is relative depth, not absolute
+copy number or GC-corrected CNVpytor. For individual DEL/DUP events, inspect
+flank-normalised local depth (LRS), local measured mean depth (SRS) and Samplot;
+the 1 Mb ribbon cannot resolve small events. Missing bins are never invented.
+
+Both configs accept matching GRCh38 tracks:
+
+```yaml
+genome_plot_centromere_bed: /path/to/hg38_centromeres.bed
+genome_plot_gap_bed: /path/to/hg38_gaps.bed
+genome_plot_repeat_beds:
+  Tandem_repeats: /path/to/SV-PIPELINE/reference/human_GRCh38_no_alt_analysis_set.trf.bed
+  Segmental_duplications: /path/to/hg38_segdup.bed
+  LINE: /path/to/hg38_LINE.bed
+  SINE: /path/to/hg38_SINE.bed
+genome_plot_random_draws: 200
+```
+
+Defaults are null/empty: unavailable tracks are labelled, and repeat analysis
+is skipped. Download resources manually with the
+[UCSC Table Browser](https://genome.ucsc.edu/cgi-bin/hgTables): choose Human,
+**GRCh38/hg38**, whole genome, and BED output. Use `gap` for assembly gaps;
+`cytoBand`, filtered to `gieStain = acen`, for cytogenetic centromere context;
+`genomicSuperDups` for segmental duplications; and separate `rmsk` exports
+filtered by `repClass = LINE` or `SINE`. Cytobands are not precise molecular
+centromere boundaries. Export BED, not the full UCSC database table. Check the
+assembly against your aligned reference: bounds checks cannot prove assembly
+identity. BED is 0-based/end-excluded; master START/POS2 are VCF 1-based.
+
+Repeat comparisons use 100 bp windows around breakpoints and count each event
+once per class if either endpoint overlaps. Random positions retain chromosome,
+SV type and interval span; intrachromosomal BND separation is retained, and
+interchromosomal BND endpoints remain on their respective chromosomes. Both
+observed and random endpoints avoid the same supplied exclusion mask;
+unresolved BND partners are excluded. Black marks show the mean and central
+95% of the random draws (seed 27), not a confidence interval for a mechanism
+or an adjusted significance test. Classes can overlap. No read-callability or
+mappability mask is inferred, so this comparison is exploratory. Several repeat
+classes for many SVs may take minutes. TLDR/MELT findings remain separate from
+repeat-overlap percentages and retain their existing candidate evidence states.
+
+### Phasing and optional local assembly
+
+LRS gene phase reuses `*_snv_sv_candidates.tsv` and joint LongPhase SV genotypes.
+HP1/HP2 are local block labels, not maternal/paternal labels. Pairing now checks
+chromosome identity and refuses to borrow phase from another ALT at the same
+position. Multiallelic records stay unresolved. SRS currently phases small
+variants only; those calls cannot place an SV on HP1/HP2. Haplotag-coloured
+Samplot is not enabled: compatible SV-aware HP tags in the BAM would be needed
+before that display could support a cis/trans interpretation.
+
+For key candidates with an **existing local assembly**, align its contigs to
+the same reference. If minimap2 is installed:
+
+```bash
+minimap2 -cx asm5 /path/to/matching_reference.fa candidate_assembly.fa > candidate.paf
+```
+
+See [official minimap2 instructions](https://github.com/lh3/minimap2) for
+installation and alignment choices. Assembly generation is a separate analysis
+decision; no assembly/download/install bootstrap script has been added. Create
+a TSV with one `SV_ID` and absolute `PAF_PATH` per candidate and set
+`candidate_assembly_manifest: /path/to/assemblies.tsv` in the relevant config.
+Plots join PAF block endpoints on separate contig/reference-chromosome axes;
+these are alignment-block dotplots, not base-by-base identity matrices or a
+validated reconstruction.
+
+For completed results, the existing launcher accepts the same inputs:
+
+```bash
+python plots/run_thesis_plots.py --root /path/to/results --sample patient01 \
+  --platform srs --gene-bed /path/to/genes.bed \
+  --reference-fai /path/to/reference.fa.fai --panel-bed /path/to/panel.bed \
+  --exclude-bed /path/to/delly_hg38_exclude.bed
+```
+
+Use `--platform lrs` for LRS. Optional flags: `--centromere-bed`, `--gap-bed`,
+`--depth-bed`, repeated `--repeat-bed CLASS=PATH`, and `--assembly-manifest`.
+Samplot images are attached through their manifest's exact SV IDs. Snakemake
+waits for the current Samplot manifest before making cards. If Samplot is
+created separately later, rerun the launcher to refresh cards.
+
+Technical references: [BED coordinates](https://genome.ucsc.edu/FAQ/FAQformat),
+[mosdepth bins](https://github.com/brentp/mosdepth), and
+[phase sets](https://whatshap.readthedocs.io/en/latest/guide.html).
 
 The plotting layer is written against the current integrated LRS/SRS output contracts and is now being used with completed LRS sample outputs. Column aliases remain conservative so schema changes fail visibly rather than silently changing biological interpretation.
 

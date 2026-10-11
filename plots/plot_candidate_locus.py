@@ -30,6 +30,8 @@ def parse_args():
     p.add_argument("--gene-gtf", help="Optional matching GRCh38 GTF for exon-resolved gene tracks")
     p.add_argument("--evidence-table", help="Detailed table used to fill missing selected-row evidence")
     p.add_argument("--depth-bins", help="Optional existing large-SV depth-bin TSV")
+    p.add_argument("--depth-bed", help="Optional actual mosdepth regions BED for local measured depth")
+    p.add_argument("--platform", choices=["lrs","srs"], default="lrs")
     p.add_argument("--selection-table", help="Optional shortlist containing exact SV_ID and GENE keys")
     p.add_argument("--methylation-bed", default=None, help="Optional tabix-indexed modkit bedMethyl")
     p.add_argument("--methylation-units", choices=["percent", "fraction"], default="percent")
@@ -37,6 +39,9 @@ def parse_args():
     p.add_argument("--top-n", type=int, default=25)
     p.add_argument("--flank", type=int, default=50000)
     p.add_argument("--title-prefix", default="Candidate locus")
+    p.add_argument("--samplot-manifest", action="append", default=[], help="Existing Samplot manifest(s); joined by exact master ID")
+    p.add_argument("--phase-pairs", help="Existing same-gene SNV/SV pairing TSV")
+    p.add_argument("--assembly-manifest", help="Optional TSV with SV_ID and PAF_PATH for existing local assemblies")
     return p.parse_args()
 
 
@@ -207,11 +212,103 @@ def compact_text(value, max_chars=72, max_tokens=4):
     return text
 
 
+def load_samplot_images(paths):
+    """Use manifests, never filename guessing, to associate read evidence."""
+    images = {}
+    for path in paths:
+        table = read_tsv(path)
+        for row in table.to_dict("records"):
+            if row.get("STATUS", "OK") != "OK":
+                continue
+            image = row.get("IMAGE", row.get("output"))
+            if image and Path(str(image)).is_file():
+                images.setdefault(str(row["SV_ID"]), []).append(str(image))
+    return images
+
+
+def plot_assembly_alignment(path, prefix):
+    """Plot reported PAF alignment blocks from an existing local assembly.
+
+    Separate reference chromosomes and contigs get separate axes. These lines
+    connect block endpoints; they are not a base-by-base sequence dot matrix.
+    """
+    rows = []
+    with open(path) as handle:
+        for line in handle:
+            f = line.rstrip().split("\t")
+            if len(f) < 12:
+                raise ValueError(f"Invalid PAF record in {path}")
+            qlen, qs, qe, tlen, ts, te, mapq = map(int, [f[1], f[2], f[3], f[6], f[7], f[8], f[11]])
+            if f[4] not in {"+", "-"} or not 0 <= qs < qe <= qlen or not 0 <= ts < te <= tlen:
+                raise ValueError(f"Invalid PAF geometry in {path}")
+            rows.append({"CONTIG":f[0],"CONTIG_LENGTH":qlen,"QUERY_START0":qs,"QUERY_END0":qe,
+                         "STRAND":f[4],"REF_CHROM":f[5],"REF_START0":ts,"REF_END0":te,"MAPQ":mapq})
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        raise ValueError(f"No alignments in supplied PAF: {path}")
+    groups = list(frame.groupby(["CONTIG", "REF_CHROM"], sort=False))
+    fig, axes = plt.subplots(len(groups),1,figsize=(10,max(4,len(groups)*3)),squeeze=False)
+    for ax, ((contig,chrom), group) in zip(axes.flat,groups):
+        for r in group.itertuples():
+            q = [r.QUERY_START0,r.QUERY_END0] if r.STRAND == "+" else [r.QUERY_END0,r.QUERY_START0]
+            ax.plot([r.REF_START0,r.REF_END0],q,color="#0072B2" if r.STRAND == "+" else "#CC79A7",lw=2,alpha=.75)
+        ax.set_title(f"{contig} aligned to {chrom}",loc="left",fontsize=11)
+        ax.set_xlabel("Reference position (bp; 0-based)")
+        ax.set_ylabel("Assembly contig position (bp)")
+        ax.ticklabel_format(style="plain",useOffset=False)
+    fig.suptitle("Local assembly alignment blocks",fontweight="bold")
+    fig.text(.5,.01,"Blue: forward alignment; purple: reverse alignment. Lines join PAF block endpoints; no base-level identity is shown.\nA discordant block pattern is a review clue, not a validated reconstruction. Consult alignment quality and the assembly itself.",ha="center",fontsize=9)
+    fig.subplots_adjust(left=.15,right=.97,top=.9,bottom=.17,hspace=.65)
+    save_figure(fig,prefix)
+    plt.close(fig)
+    frame.to_csv(str(prefix)+"_source.tsv",sep="\t",index=False)
+    return str(prefix)+".png"
+
+
+def write_candidate_card(locus_image, samplots, phase_image, assembly_image, row, prefix):
+    """One printable page; the full-resolution source figures remain available."""
+    fig = plt.figure(figsize=(16.5,23.4))  # A2 portrait: one page with readable source panels.
+    grid = fig.add_gridspec(3,2,height_ratios=[1.6,1,.8])
+    axes = [fig.add_subplot(grid[0,:]),fig.add_subplot(grid[1,:]),fig.add_subplot(grid[2,0]),fig.add_subplot(grid[2,1])]
+    panels = [("Locus, depth and methylation (when measured)", [locus_image]),
+              ("Reads: existing Samplot", samplots[:2]),
+              ("Gene phase: verified pair evidence", [phase_image] if phase_image else []),
+              ("Existing local assembly alignment", [assembly_image] if assembly_image else [])]
+    sources = []
+    for ax, (label, paths) in zip(axes,panels):
+        ax.axis("off")
+        ax.set_title(label,loc="left",fontsize=11)
+        if not paths:
+            ax.text(.5,.5,"Evidence unavailable",transform=ax.transAxes,ha="center",fontsize=13,color="#777777")
+        elif len(paths) == 1:
+            ax.imshow(plt.imread(paths[0]))
+        else:
+            for i, path in enumerate(paths):
+                inset = ax.inset_axes([0, .51 if i == 0 else 0, 1, .48])
+                inset.imshow(plt.imread(path))
+                inset.axis("off")
+        for path in paths:
+            sources.append({"SV_ID":row["SV_ID"],"GENE":row.get("GENE",row.get("GENES",".")),"PANEL":label,"SOURCE_IMAGE":path})
+    fig.suptitle(f"Candidate review · {row.get('GENE',row.get('GENES','.'))} · {row['SV_ID']}",fontweight="bold",fontsize=16)
+    fig.text(.5,.015,"A review summary of available evidence; missing panels are not negative findings. Open the separate original figures for full detail.\nCandidate selection, computational support and phase are not proof of disease causality.",ha="center",fontsize=10)
+    fig.subplots_adjust(left=.025,right=.98,top=.93,bottom=.07,hspace=.15,wspace=.08)
+    save_figure(fig,prefix,dpi=200)
+    plt.close(fig)
+    pd.DataFrame(sources).to_csv(str(prefix)+"_sources.tsv",sep="\t",index=False)
+
+
 def main():
     args = parse_args()
     set_thesis_style()
     df = read_tsv(args.input)
     genes = load_gene_bed(args.gene_bed)
+    samplot_images = load_samplot_images(args.samplot_manifest)
+    assemblies = {}
+    if args.assembly_manifest:
+        assembly_table = read_tsv(args.assembly_manifest, required=["SV_ID", "PAF_PATH"])
+        if assembly_table["SV_ID"].duplicated().any():
+            raise ValueError("Assembly manifest must have one PAF per master SV ID")
+        assemblies = dict(zip(assembly_table["SV_ID"].astype(str), assembly_table["PAF_PATH"].astype(str)))
 
     id_col = first_existing(df, ["SV_ID", "ID"])
     gene_col = first_existing(df, ["GENES", "ANNotsv_Gene", "Gene", "GENE"])
@@ -236,6 +333,7 @@ def main():
     rank_col = first_existing(
         df,
         [
+            "DIAGNOSTIC_REVIEW_RANK",
             "FINAL_EVENT_RANK_GLOBAL",
             "EVENT_RANK_GLOBAL",
             "FINAL_EVENT_RANK_WITHIN_PANEL_STATUS",
@@ -384,9 +482,27 @@ def main():
     work["SV_ID"] = work[id_col]
     work["GENE"] = work["_gene"]
     work = enrich_events(work, args.evidence_table)
+    phase_images = {}
+    if args.phase_pairs:
+        from plot_phasing_qc import draw_gene_phase
+        pairs = read_tsv(args.phase_pairs)
+        pairs = pairs[pairs["GENE"].astype(str).isin(set(work["GENE"].astype(str)))]
+        phase_dir = outdir / "gene_phase"
+        draw_gene_phase(pairs, work, phase_dir, max(1,args.top_n))
+        phase_manifest = read_tsv(phase_dir / "phase_gene_manifest.tsv")
+        phase_images = dict(zip(phase_manifest["GENE"].astype(str),phase_manifest["FIGURE_PREFIX"].astype(str)+".png"))
     exons = load_selected_exons(args.gene_gtf, set(work["_gene"]))
     exons.to_csv(outdir / "candidate_exon_annotations.tsv", sep="\t", index=False)
     depth = read_tsv(args.depth_bins) if args.depth_bins else pd.DataFrame()
+    measured_depth = pd.DataFrame()
+    if args.depth_bed:
+        measured_depth = pd.read_csv(args.depth_bed,sep="\t",header=None,comment="#")
+        measured_depth = pd.DataFrame({"CHROM":measured_depth.iloc[:,0].map(normalize_chrom),
+                                      "START0":pd.to_numeric(measured_depth.iloc[:,1],errors="raise"),
+                                      "END0":pd.to_numeric(measured_depth.iloc[:,2],errors="raise"),
+                                      "MEAN_DEPTH":pd.to_numeric(measured_depth.iloc[:,-1],errors="raise")})
+        if measured_depth["MEAN_DEPTH"].lt(0).any() or measured_depth["END0"].le(measured_depth["START0"]).any():
+            raise ValueError("Invalid measured mosdepth bins")
     manifest = []
 
     for rank, (_, row) in enumerate(work.iterrows(), 1):
@@ -494,11 +610,17 @@ def main():
         methyl = methylation_records(args.methylation_bed, chrom, locus_start, locus_end, args.methylation_units)
         shown_exons, transcript, transcript_basis = representative_exons(exons, gene, chrom, evidence_value(row, ["VEP_CANONICAL_TRANSCRIPTS"]))
         depth_here = pd.DataFrame()
+        raw_depth_track = False
         if not depth.empty and {"SV_ID", "CHROM", "PLOT_START", "PLOT_END", "NORMALIZED_DEPTH"}.issubset(depth.columns):
             depth_here = depth[depth["SV_ID"].astype(str).eq(sv_id) & depth["CHROM"].map(normalize_chrom).eq(chrom)].copy()
             depth_here["_pos"] = (numeric(depth_here["PLOT_START"]) + numeric(depth_here["PLOT_END"])) / 2
             depth_here["_depth"] = numeric(depth_here["NORMALIZED_DEPTH"])
             depth_here = depth_here[depth_here["_pos"].between(locus_start, locus_end)].dropna(subset=["_pos", "_depth"]).sort_values("_pos")
+        if depth_here.empty and not measured_depth.empty and svtype in {"DEL","DUP"}:
+            depth_here = measured_depth[measured_depth["CHROM"].eq(chrom) & measured_depth["END0"].gt(locus_start) & measured_depth["START0"].lt(locus_end)].copy()
+            depth_here["_pos"] = (depth_here["START0"]+depth_here["END0"])/2 + 1
+            depth_here["_depth"] = depth_here["MEAN_DEPTH"]
+            raw_depth_track = True
         heights = [1.0, 1.55] + ([0.85] if not depth_here.empty else []) + ([0.85] if methyl else []) + [2.2]
         fig, axes = plt.subplots(len(heights), 1, figsize=(16.5, 10.8 + (len(heights)-3)*1.8), gridspec_kw={"height_ratios": heights})
         ax_sv, ax_gene, ax_ev = axes[0], axes[1], axes[-1]
@@ -586,9 +708,10 @@ def main():
 
         if ax_depth is not None:
             ax_depth.plot(depth_here["_pos"], depth_here["_depth"], color="#0072B2", linewidth=1)
-            ax_depth.axhline(1, color="#777777", linestyle="--", linewidth=0.8)
+            if not raw_depth_track:
+                ax_depth.axhline(1, color="#777777", linestyle="--", linewidth=0.8)
             ax_depth.set_xlim(locus_start, locus_end)
-            ax_depth.set_ylabel("Depth / flanks", fontsize=9)
+            ax_depth.set_ylabel("Mean depth (reads)" if raw_depth_track else "Depth / flanks", fontsize=9)
             ax_depth.grid(axis="y", color="#EEEEEE", linewidth=0.6)
             ax_depth.set_title("Existing depth bins from the same BAM; no copy-number state inferred", loc="left", fontsize=9)
 
@@ -608,7 +731,7 @@ def main():
             ax_methyl.tick_params(labelsize=8)
             ax_methyl.grid(axis="y", color="#EEEEEE", linewidth=0.6)
 
-        observations = event_evidence(row)
+        observations = event_evidence(row,platform=args.platform)
         evidence = [
             ("Overlapping gene", gene),
             ("Final event rank", (
@@ -629,13 +752,13 @@ def main():
             ("Panel status", evidence_value(row, ["PANEL_STATUS"])),
             ("Phenotype scope", compact_text(evidence_value(row, ["FINAL_PHENOTYPE_RANKING_SCOPE", "PHENOTYPE_SCORE_SCOPE"]), 48, 2)),
             ("Mechanism", compact_text(evidence_value(row, ["FINAL_INHERITANCE_MECHANISM_CLASS", "INHERITANCE_MECHANISM_CLASS"]), 48, 2)),
-            ("Depth pattern / ratio", observations["Local depth"][1].replace("\n", " ")),
+            ("Depth evidence", observations["CNVpytor depth" if args.platform == "srs" else "Local depth"][1].replace("\n", " ")),
             ("Transcript shown", compact_text(transcript, 48, 2)),
             ("Exon display basis", "VEP canonical" if transcript_basis.startswith("VEP") else "Largest exon length" if not shown_exons.empty else "Unavailable"),
-            ("LongPhase", evidence_value(row, ["LONGPHASE_PHASED", "LONGPHASE", "LONGPHASE_MATCH"])),
-            ("Straglr / TLDR", evidence_value(row, ["STRAGLR", "STRAGLR_MATCH"]) + " / " + evidence_value(row, ["TLDR", "TLDR_MATCH"])),
-            ("SNV + SV pairing", compact_text(evidence_value(row, ["RECESSIVE_PAIR_STATUS"]), 48, 2)),
-            ("Methylation context", observations["Methylation"][1]),
+            ("GRIDSS" if args.platform == "srs" else "LongPhase", evidence_value(row, ["GRIDSS_SUPPORT"] if args.platform == "srs" else ["LONGPHASE_PHASED", "LONGPHASE", "LONGPHASE_MATCH"])),
+            ("Repeat locus / MELT" if args.platform == "srs" else "Straglr / TLDR", evidence_value(row, ["EXPANSIONHUNTER_LOCUS_OVERLAP"] if args.platform == "srs" else ["STRAGLR", "STRAGLR_MATCH"]) + " / " + evidence_value(row, ["MELT_SUPPORT"] if args.platform == "srs" else ["TLDR", "TLDR_MATCH"])),
+            ("SV phase" if args.platform == "srs" else "SNV + SV pairing", "Unavailable: small-variant phase only" if args.platform == "srs" else compact_text(evidence_value(row, ["RECESSIVE_PAIR_STATUS"]), 48, 2)),
+            ("Methylation context", "Unavailable from SRS" if args.platform == "srs" else observations["Methylation"][1]),
         ]
         ax_ev.axis("off")
         left = evidence[:11]
@@ -647,7 +770,8 @@ def main():
                 ax_ev.text(col_x + 0.19, y, compact_text(value, 48, 2), fontsize=8.2, transform=ax_ev.transAxes, va="top", wrap=True)
                 y -= 0.088
 
-        formatter = FuncFormatter(lambda x, _: f"{x / 1e6:.3f}")
+        use_bp = locus_end-locus_start < 10000
+        formatter = FuncFormatter(lambda x, _: f"{x:,.0f}" if use_bp else f"{x / 1e6:.3f}")
         ax_sv.xaxis.set_major_formatter(formatter)
         ax_gene.xaxis.set_major_formatter(formatter)
         if ax_depth is not None:
@@ -659,9 +783,9 @@ def main():
             ax_gene.tick_params(axis="x", labelbottom=False)
             if ax_depth is not None:
                 ax_depth.tick_params(axis="x", labelbottom=False)
-            ax_methyl.set_xlabel(f"{chrom} position (Mb)", fontsize=8.5)
+            ax_methyl.set_xlabel(f"{chrom} position ({'bp' if use_bp else 'Mb'})", fontsize=8.5)
         else:
-            (ax_depth if ax_depth is not None else ax_gene).set_xlabel(f"{chrom} position (Mb)")
+            (ax_depth if ax_depth is not None else ax_gene).set_xlabel(f"{chrom} position ({'bp' if use_bp else 'Mb'})")
 
         fig.suptitle(f"{args.title_prefix} {rank}: {gene}", fontsize=16, fontweight="bold", y=0.995)
         fig.text(
@@ -681,7 +805,15 @@ def main():
 
         stem = f"{rank:02d}_{safe_name(gene)}_{safe_name(sv_id)}"
         outputs = save_figure(fig, outdir / stem, dpi=300)
+        depth_here.to_csv(outdir / (stem+"_depth_source.tsv"),sep="\t",index=False)
         plt.close(fig)
+
+        assembly_image = None
+        if sv_id in assemblies:
+            assembly_image = plot_assembly_alignment(assemblies[sv_id], outdir / (stem+"_assembly"))
+        card_prefix = outdir / "candidate_cards" / stem
+        card_prefix.parent.mkdir(exist_ok=True)
+        write_candidate_card(str(outdir / stem)+".png",samplot_images.get(sv_id,[]),phase_images.get(gene),assembly_image,row,card_prefix)
 
         manifest.append(
             {
@@ -704,6 +836,7 @@ def main():
                 "large_gene_centered_view": "YES" if large_gene_centered else "NO",
                 "sv_span_bp": sv_span,
                 "figure_prefix": str(outdir / stem),
+                "candidate_card_prefix": str(card_prefix),
                 "methylation_records_plotted": len(methyl),
                 "depth_bins_plotted": len(depth_here),
                 "transcript_shown": transcript,

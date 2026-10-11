@@ -116,6 +116,7 @@ def normalize_svtype(series: pd.Series) -> pd.Series:
     out = pd.Series("OTHER", index=raw.index, dtype=object)
     for svtype in ["DEL", "INS", "DUP", "INV", "BND", "CNV"]:
         out.loc[raw.str.contains(svtype, regex=False, na=False)] = svtype
+    out.loc[raw.isin(["TRA", "CTX", "TRANSLOCATION"])] = "BND"
     return out
 
 
@@ -130,7 +131,15 @@ def abs_svlen(df: pd.DataFrame) -> pd.Series:
     end_col = first_existing(df, ["END", "SV_end", "End"])
     if start_col and end_col:
         fallback = (numeric(df[end_col]) - numeric(df[start_col])).abs()
+        type_col = first_existing(df,["SVTYPE","SV_type","Type"])
+        if type_col:
+            kind = normalize_svtype(df[type_col])
+            fallback = fallback.where(kind.isin(["DEL","DUP","INV","CNV"]))
         values = values.fillna(fallback)
+    type_col = first_existing(df,["SVTYPE","SV_type","Type"])
+    if type_col:
+        # A remote BND coordinate is not a length, even if a caller supplied SVLEN.
+        values = values.mask(normalize_svtype(df[type_col]).eq("BND"))
     return values
 
 

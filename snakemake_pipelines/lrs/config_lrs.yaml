@@ -339,6 +339,17 @@ candidate_locus_top_n: 10
 # Optional matching GRCh38 GTF; a gene BED alone cannot provide exon structure.
 candidate_plot_gene_gtf: null
 
+# Optional GRCh38 BED tracks; leave null when unavailable. The reference index,
+# panel BED, DELLY exclusion BED and existing mosdepth bins are reused.
+genome_plot_centromere_bed: null
+genome_plot_gap_bed: null
+# Example entries: Tandem_repeats: /path/to/the/shipped/trf.bed
+# Add Segmental_duplications, LINE and SINE as separate BED resources if wanted.
+genome_plot_repeat_beds: {}
+genome_plot_random_draws: 200       # More draws give a steadier random comparison.
+# Only for key candidates with an existing assembly: TSV columns SV_ID, PAF_PATH.
+candidate_assembly_manifest: null
+
 # Publication-style R figures.
 r_plot_top_candidates: 30
 r_plot_top_hpo: 20

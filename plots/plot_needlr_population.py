@@ -24,6 +24,8 @@ def parse_args():
     p.add_argument("--input", required=True, help="needLR *_RESULTS.tsv")
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--title", default="needLR population-frequency evidence")
+    p.add_argument("--integrated", action="store_true", help="Input is the complete integrated master SV table")
+    p.add_argument("--candidate-table", help="Review shortlist to overlay using exact master IDs")
     return p.parse_args()
 
 
@@ -49,12 +51,60 @@ def infer_overall_af(df: pd.DataFrame) -> tuple[str, pd.Series]:
     return ";".join(fields) or "unavailable", values
 
 
+def plot_integrated_population(df, args):
+    from candidate_review import event_frequency_table
+    work = event_frequency_table(df)
+    selected = set(read_tsv(args.candidate_table)["SV_ID"].astype(str)) if args.candidate_table else set()
+    work["IS_REVIEW_CANDIDATE"] = work["SV_ID"].astype(str).isin(selected)
+    prefix = Path(args.out_prefix)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    work.to_csv(str(prefix)+"_candidate_overlay.tsv", sep="\t", index=False)
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5.4))
+    statuses = ["MEASURED_AT_OR_BELOW_CUTOFF", "AF_UNKNOWN", "MEASURED_ABOVE_CUTOFF", "INVALID_AF_REVIEW"]
+    labels = ["Measured ≤1%", "AF unknown", "Measured >1%", "Invalid: review"]
+    counts = work["AF_STATUS"].value_counts().reindex(statuses, fill_value=0)
+    axes[0].bar(range(4), counts, color=["#0072B2", "#999999", "#D55E00", "#CC79A7"])
+    candidates = work[work["IS_REVIEW_CANDIDATE"]]["AF_STATUS"].value_counts().reindex(statuses, fill_value=0)
+    axes[0].scatter(range(4), candidates, marker="D", color="black", label="Review candidates")
+    axes[0].set_xticks(range(4), labels, rotation=25, ha="right", fontsize=9)
+    axes[0].set_ylabel("Unique master SVs")
+    axes[0].set_title("≤1% + unknown retained together")
+    axes[0].legend(frameon=False, fontsize=8)
+    for ax, field, label in zip(axes[1:], ["MAX_POPULATION_AF", "NEEDLR_AF_FOR_PLOT"], ["Maximum reported population AF", "needLR AF"]):
+        positive = work.loc[work[field].gt(0), field]
+        top = work.loc[work["IS_REVIEW_CANDIDATE"] & work[field].gt(0), field]
+        if not positive.empty:
+            logs = np.log10(positive)
+            low = min(-3, float(logs.min()))
+            bins = np.linspace(low-.1, .05, 30)
+            ax.hist(logs, bins=bins, color="#56B4E9", alpha=.8, label="All master SVs")
+            ax.plot(np.log10(top), np.full(len(top), -.025), "|", markersize=11, color="black", transform=ax.get_xaxis_transform(), clip_on=False, label="Review candidates")
+            ax.axvline(-2, color="#D55E00", linestyle="--", lw=1, label="1%")
+            ax.legend(frameon=False, fontsize=8)
+        else:
+            ax.text(.5,.5,"No positive measured AF",transform=ax.transAxes,ha="center")
+        zeros = int(work[field].eq(0).sum())
+        missing = int(work[field].isna().sum())
+        ax.set_title(f"{label}\nAF=0: {zeros}; unknown: {missing}", fontsize=11)
+        ax.set_xlabel("Population AF (log10; positive measurements only)")
+        ax.set_ylabel("Unique master SVs")
+        style_axis(ax)
+    fig.suptitle("Population frequencies with review candidates", fontweight="bold")
+    fig.text(.5,.01,"Missing AF and measured AF ≤1% form one review group; their source states remain distinct.\nMissing AF is not set to zero and does not demonstrate a novel SV. Maximum AF uses valid needLR/gnomAD matches; histograms exclude zero and unknown values.",ha="center",fontsize=9)
+    fig.tight_layout(rect=[0,.09,1,.93])
+    save_figure(fig, prefix)
+    plt.close(fig)
+
+
 def main():
     args = parse_args()
     set_thesis_style()
     df = read_tsv(args.input)
     if df.empty:
         raise ValueError("needLR table is empty.")
+    if args.integrated:
+        plot_integrated_population(df, args)
+        return
 
     af_col, af = infer_overall_af(df)
     work = df.copy()

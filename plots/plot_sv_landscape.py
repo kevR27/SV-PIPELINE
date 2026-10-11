@@ -27,13 +27,14 @@ from plot_utils import (
 )
 
 
-CANONICAL_RE = re.compile(r"^chr(?:[1-9]|1[0-9]|2[0-2]|X|Y|M|MT)$", re.IGNORECASE)
+CANONICAL_RE = re.compile(r"^(?:chr)?(?:[1-9]|1[0-9]|2[0-2]|X|Y|M|MT)$", re.IGNORECASE)
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Plot the merged SV landscape.")
     p.add_argument("--input", required=True, help="*_integrated_SV_gene_analysis.tsv")
     p.add_argument("--out-prefix", required=True)
+    p.add_argument("--candidate-table", help="Review shortlist; highlight these exact master SV IDs")
     p.add_argument("--title", default="Genome-wide structural-variant landscape")
     return p.parse_args()
 
@@ -112,7 +113,7 @@ def main():
 
     finite = df["LOG10_SVLEN"].dropna()
     if not finite.empty:
-        bins = np.linspace(max(1.5, finite.min()), min(8.5, finite.max()), 42)
+        bins = np.linspace(float(finite.min())-.05, float(finite.max())+.05, 42)
         for svtype in order:
             x = df.loc[df["SVTYPE_NORM"].eq(svtype), "LOG10_SVLEN"].dropna()
             if x.empty:
@@ -198,6 +199,39 @@ def main():
     fig.tight_layout(rect=[0, 0.025, 1, 0.97])
     outputs = save_figure(fig, prefix)
     plt.close(fig)
+
+    # Keep size/support separate from the overview so its trend is easy to read.
+    # A breakend has no interval length; an insertion's END is not its size.
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from sv_evidence_common import sv_length
+    df["PLOT_SIZE_BP"] = [abs(float(x)) if x != "." else np.nan
+                          for x, _source in (sv_length(row) for row in df.to_dict("records"))]
+    selected = set(read_tsv(args.candidate_table)["SV_ID"].astype(str)) if args.candidate_table else set()
+    df["IS_REVIEW_CANDIDATE"] = df["SV_ID"].astype(str).isin(selected)
+    support_fields = [col for col in ["CALLER_COUNT", "EVENT_MAX_CALLER_READ_SUPPORT", "READ_SUPPORT"] if col in df]
+    if support_fields:
+        fig, axes = plt.subplots(1, len(support_fields), figsize=(7*len(support_fields), 5.5), squeeze=False)
+        for ax, field in zip(axes.flat, support_fields):
+            df[field+"_FOR_PLOT"] = pd.to_numeric(df[field], errors="coerce")
+            usable = df[df["PLOT_SIZE_BP"].gt(0) & df[field+"_FOR_PLOT"].ge(0)]
+            for kind, group in usable.groupby("SVTYPE_NORM"):
+                ax.scatter(group["PLOT_SIZE_BP"], group[field+"_FOR_PLOT"], color=SVTYPE_COLORS.get(kind,"#999999"), s=14, alpha=.5, label=kind, rasterized=True)
+            top = usable[usable["IS_REVIEW_CANDIDATE"]]
+            ax.scatter(top["PLOT_SIZE_BP"], top[field+"_FOR_PLOT"], s=75, facecolors="none", edgecolors="black", lw=1.1, label="Review candidate")
+            ax.set_xscale("log")
+            ax.set_xlabel("Reported SV length (bp; log scale)")
+            ax.set_ylabel("Primary callers reporting the SV" if field == "CALLER_COUNT" else "Reported read support (field: "+field+")")
+            ax.legend(frameon=False, fontsize=8)
+            style_axis(ax)
+        fig.suptitle("SV size and reported support", fontweight="bold")
+        fig.text(.5,.01,"Black rings identify review candidates. Breakends and events without a valid length/support are omitted.\nRead counts from different callers are not independent evidence and are not summed; no genotype or VAF is inferred.",ha="center",fontsize=9)
+        fig.tight_layout(rect=[0,.075,1,.95])
+        save_figure(fig, str(prefix)+"_size_support")
+        plt.close(fig)
+    fields = [col for col in ["SV_ID", "SVTYPE_NORM", "PLOT_SIZE_BP", "IS_REVIEW_CANDIDATE", *support_fields,
+                              "ALLELE_GENOTYPE", "GENOTYPE", "GT", "VAF"] if col in df]
+    df[fields].to_csv(str(prefix)+"_size_support.tsv", sep="\t", index=False)
 
     print(f"[OK] unique_master_SVs={len(df)} canonical={len(canonical)} noncanonical={noncanonical_n}")
     print("[OK]", *outputs, sep="\n")
