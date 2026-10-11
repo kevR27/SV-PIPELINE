@@ -41,7 +41,14 @@ vep_assembly: "GRCh38"
 vep_cache_version: 113             # Must match envs/srs_vep.yaml and cache.
 annotsv_annotations_dir: "/DATA/Reference/AnnotSV_annotations"
 annotsv_benign_af: 0.01            # AnnotSV setting; not the final AF filter.
-hpo_terms: null                   # Optional AnnotSV HPO terms.
+# Keep the custom ranking and compare with AnnotSV's Exomiser phenotype score.
+annotsv_exomiser_enabled: true
+# null uses CORE_OCULAR_HON rows in discovery_hpo_file; no syndromic context.
+# A string/list here replaces that shared profile for all samples.
+hpo_terms: null
+# Optional complete patient HPO files; each overrides the shared profile.
+# Example: {"21930": "/path/to/21930.hpo.tsv"}
+patient_hpo_files: {}
 
 monarch_nodes: "/DATA/Reference/monarch/monarch-kg_nodes.tsv"
 monarch_edges: "/DATA/Reference/monarch/monarch-kg_edges.tsv"

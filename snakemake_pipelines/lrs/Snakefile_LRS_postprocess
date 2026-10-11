@@ -523,6 +523,7 @@ def existing_plot_inputs(wc):
 
 rule thesis_plots_sample:
     input:
+        exomiser_comparison=PATH + "{sample}/gene_discovery/{sample}_exomiser_comparison.tsv",
         integrated=rules.merge_integrated_annotations.output.tsv,
         candidate_events=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
         ranked_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",

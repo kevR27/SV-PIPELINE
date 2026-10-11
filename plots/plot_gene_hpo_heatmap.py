@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot human gene-HPO associations retrieved by the offline Monarch branch."""
+"""Plot gene-HPO associations and the separate custom/Exomiser comparison."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 
@@ -17,13 +18,73 @@ from plot_utils import first_existing, read_tsv, save_figure, set_thesis_style
 
 def parse_args():
     p = argparse.ArgumentParser(description="Plot gene-HPO association heatmap.")
-    p.add_argument("--input", required=True, help="*_human_gene_phenotypes.tsv")
+    p.add_argument("--input", help="*_human_gene_phenotypes.tsv")
     p.add_argument("--ranking", default=None, help="Optional *_ranked_candidates.tsv used to select/order genes")
     p.add_argument("--out-prefix", required=True)
     p.add_argument("--top-genes", type=int, default=25)
     p.add_argument("--top-hpo", type=int, default=18)
     p.add_argument("--title", default="Human gene–phenotype associations for SV-overlapping genes")
+    p.add_argument("--exomiser-comparison", help="Separate *_exomiser_comparison.tsv")
+    p.add_argument("--comparison-only", action="store_true", help="Plot the comparison without an HPO heatmap")
     return p.parse_args()
+
+
+def make_exomiser_comparison(table, out_prefix, top_genes=25):
+    """Show rank changes with two colours; never average the two scores."""
+    required = {"GENE", "COMPARISON_STATUS", "CUSTOM_QUERY_RANK", "EXOMISER_QUERY_RANK", "QUERY_SCOPE"}
+    if not required.issubset(table.columns):
+        raise ValueError("Exomiser comparison table is missing required columns.")
+    prefix = Path(out_prefix)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    work = table[table.COMPARISON_STATUS.eq("PAIRED")].copy()
+    for column in ["CUSTOM_QUERY_RANK", "EXOMISER_QUERY_RANK"]:
+        work[column] = pd.to_numeric(work[column], errors="coerce")
+    work = work.dropna(subset=["CUSTOM_QUERY_RANK", "EXOMISER_QUERY_RANK"])
+    work["_best_rank"] = work[["CUSTOM_QUERY_RANK", "EXOMISER_QUERY_RANK"]].min(axis=1)
+    selected = work.sort_values(["_best_rank", "CUSTOM_QUERY_RANK", "GENE"]).head(top_genes)
+    shown = set(selected.GENE)
+    source = table.copy()
+    source["SHOWN_IN_PLOT"] = source.GENE.isin(shown).map({True: "YES", False: "NO"})
+    source.to_csv(prefix.with_name(prefix.name + "_source.tsv"), sep="\t", index=False)
+    scope_labels = {"SHARED_HON_PROFILE": "Shared HON profile",
+                    "PATIENT_HPO_PROFILE": "Patient HPO profile",
+                    "EXOMISER_DISABLED": "Exomiser disabled"}
+    scope = ", ".join(scope_labels.get(value, value) for value in sorted(set(table.QUERY_SCOPE))) if not table.empty else "No candidate genes"
+    fig, ax = plt.subplots(figsize=(11.5, max(5, 0.36 * len(selected) + 2.5)))
+    if selected.empty:
+        explanations = []
+        for label, column in [("Exomiser", "EXOMISER_STATUS"), ("Custom method", "CUSTOM_QUERY_STATUS")]:
+            statuses = ", ".join(sorted(set(table.get(column, pd.Series(dtype=str)))))
+            if statuses:
+                explanations.append(textwrap.fill(label + ": " + statuses.replace("_", " ").lower(), 70))
+        ax.axis("off")
+        ax.text(0.5, 0.55, "No comparable gene–phenotype scores", ha="center", va="center", fontsize=15)
+        ax.text(0.5, 0.40, "\n".join(explanations) or "No candidate genes", ha="center", va="center", fontsize=10)
+    else:
+        y = np.arange(len(selected))
+        # A small vertical offset keeps both methods visible when ranks agree.
+        for i, (_, row) in enumerate(selected.iterrows()):
+            ax.plot([row.CUSTOM_QUERY_RANK, row.EXOMISER_QUERY_RANK], [i - 0.08, i + 0.08], color="#C7CCCF", linewidth=1.3, zorder=1)
+        ax.scatter(selected.CUSTOM_QUERY_RANK, y - 0.08, color="#0B6E69", s=50, label="Custom phenotype method", zorder=2)
+        ax.scatter(selected.EXOMISER_QUERY_RANK, y + 0.08, color="#775DA6", marker="D", s=38, label="Exomiser through AnnotSV", zorder=3)
+        labels = [str(row.GENE) + (" [panel]" if row.get("PANEL_STATUS") == "PANEL_GENE" else "")
+                  for _, row in selected.iterrows()]
+        ax.set_yticks(y, labels)
+        ax.set_ylim(len(selected) - 0.5, -0.5)
+        ax.set_xlim(0.5, max(selected.CUSTOM_QUERY_RANK.max(), selected.EXOMISER_QUERY_RANK.max()) + 0.5)
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.set_xlabel("Phenotype rank among the same comparable genes (1 = highest)")
+        ax.set_ylabel("SV-overlapping gene")
+        ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.02), ncol=2, fontsize=9)
+        ax.grid(axis="x", alpha=0.18)
+    ax.set_title("Custom HON method compared with Exomiser", fontsize=14, fontweight="bold", pad=44 if not selected.empty else 12)
+    fig.text(0.5, 0.01, f"{scope} · {len(work)} comparable genes; showing up to {top_genes}.\n"
+             "Same HPO query; phenotype-only ranks. The original integrated ranking is unchanged.",
+             ha="center", fontsize=9)
+    fig.tight_layout(rect=[0, 0.065, 1, 1])
+    outputs = save_figure(fig, prefix)
+    plt.close(fig)
+    return outputs
 
 
 def make_heatmap(matrix, xlabels, anchor_hpos, out_prefix, title, hpos):
@@ -66,6 +127,18 @@ def make_heatmap(matrix, xlabels, anchor_hpos, out_prefix, title, hpos):
 def main():
     args = parse_args()
     set_thesis_style()
+    if args.top_genes < 1:
+        raise ValueError("--top-genes must be at least 1.")
+    if args.exomiser_comparison:
+        prefix = args.out_prefix if args.comparison_only else args.out_prefix + "_exomiser_comparison"
+        outputs = make_exomiser_comparison(read_tsv(args.exomiser_comparison), prefix, args.top_genes)
+        print("[OK]", *outputs, sep="\n")
+    if args.comparison_only:
+        if not args.exomiser_comparison:
+            raise ValueError("--comparison-only needs --exomiser-comparison.")
+        return
+    if not args.input:
+        raise ValueError("--input is required for the gene-HPO heatmap.")
     df = read_tsv(args.input)
     gene_col = first_existing(df, ["gene_symbol", "gene", "Gene"])
     hpo_col = first_existing(df, ["hpo_id", "HPO", "HPO_ID"])

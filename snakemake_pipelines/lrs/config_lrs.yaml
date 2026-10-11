@@ -191,8 +191,12 @@ patient_hpo_files: {}
 # patient_hpo_files:
 #   "21930": "/path/to/21930.hpo.tsv"
 
-# Optional AnnotSV HPO argument.  Leave null unless you intentionally want to
-# pass patient/analysis HPO terms directly to AnnotSV.
+# Separate Exomiser comparison through AnnotSV; the original ranking is retained.
+# true + null uses the CORE_OCULAR_HON rows of the existing HON seed file.
+# Syndromic context rows are not presented as findings shared by every patient.
+annotsv_exomiser_enabled: true
+# Optional replacement shared profile: comma-separated HPO IDs or a YAML list.
+# A patient_hpo_files entry overrides this profile for that patient only.
 hpo_terms: null
 
 # ============================================================

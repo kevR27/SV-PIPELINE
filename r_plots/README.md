@@ -3,6 +3,11 @@
 These plots are an additional publication-style layer. Existing Python figures
 under `plots/` remain available.
 
+The R and Python HPO/evidence heatmaps are alternative renderings of the same
+analysis, not independent findings. Use one version of each figure in the
+thesis. The R layer is retained because it was explicitly requested and has
+its own optional target; it is not required for the Exomiser comparison.
+
 The R environment is defined in:
 
 ```text

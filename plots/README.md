@@ -8,7 +8,7 @@ This directory contains downstream visualization and conservative intersection s
 - `(SV_ID, gene)` is retained for candidate-prioritization and evidence-integration plots.
 - needLR remains a supplementary population-frequency branch rather than the master SV universe.
 - Straglr, TLDR, methylation and phasing are complementary biological layers and are not forced into the Jasmine caller-concordance calculation.
-- Straglr/TLDR can be attached to the master table only through explicit coordinate-aware matching with `intersect_orthogonal_sv_evidence.py`.
+- Straglr/TLDR can be attached to the master table only through explicit coordinate-aware matching with `intersect_complementary_sv_evidence.py`.
 - Figures are exported as PDF, SVG and PNG: normally 600 dpi for overviews,
   300 dpi for loci and 200 dpi for large candidate cards.
 - Plot scripts also write the summarized TSV used to make the figure when appropriate.
@@ -22,7 +22,7 @@ This directory contains downstream visualization and conservative intersection s
   rainfall spacing, optional measured depth and repeat comparisons.
 - `plot_needlr_population.py`: overall and ancestry-specific needLR population-frequency plots.
 - `plot_candidate_genes.py`: final gene-prioritization figures written separately for panel and non-panel genes; inheritance class and best SV mechanism are shown explicitly when available.
-- `plot_gene_hpo_heatmap.py`: human gene-HPO association heatmap from the offline Monarch branch.
+- `plot_gene_hpo_heatmap.py`: human gene-HPO association heatmap, plus a separate teal/purple custom-versus-Exomiser phenotype-rank comparison. The comparison uses the same HPO query and comparable gene set; it does not replace the integrated ranking. Its source TSV retains unavailable genes and marks which genes are displayed.
 - `plot_candidate_evidence_matrix.py`: integrated SV/gene evidence matrix from the compact final SV-gene table, selected by final panel-specific rank and displaying AD/AR/mechanism evidence.
 - `plot_panel_nonpanel_discovery.py`: explicit panel versus non-panel SV-gene categories, separating HPO and curated disease evidence.
 - `plot_sv_gene_associations.py`: quantitative relationship between technical SV support, phenotype relevance, gene-disease evidence and each explicit SV-gene pair.
@@ -37,7 +37,7 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_methylation.py`: candidate-region modkit methylation track; bedMethyl from `modkit pileup` is preferred for final thesis figures.
 - `plot_phasing_qc.py`: WhatsHap/LongPhase phased-genotype QC.
 - `plot_lrs_vs_srs.py`: Truvari-based LRS-vs-SRS concordance visualization.
-- `intersect_orthogonal_sv_evidence.py`: conservative Straglr/TLDR coordinate matching to the master integrated table.
+- `intersect_complementary_sv_evidence.py`: conservative Straglr/TLDR coordinate matching and SV-aware LongPhase evidence. This is the active LRS implementation; the older duplicate `intersect_orthogonal_sv_evidence.py` has been removed.
 - `run_thesis_plots.py`: launch all applicable LRS or SRS plots for one sample using the current pipeline directory structure.
 - `plot_utils.py`: shared styling, parsing and figure-export helpers.
 
@@ -243,14 +243,14 @@ python plots/plot_sv_landscape.py \
   --out-prefix outs/patient01/plots/patient01_sv_landscape
 ```
 
-## Orthogonal evidence intersection
+## Complementary evidence intersection
 
 ```bash
-python plots/intersect_orthogonal_sv_evidence.py \
+python plots/intersect_complementary_sv_evidence.py \
   --integrated outs/patient01/gene_discovery/patient01_integrated_SV_gene_analysis.tsv \
   --straglr outs/patient01/sv/straglr/patient01_straglr.annotated.tsv \
   --tldr outs/patient01/mei/tldr/patient01.tldr.table.txt \
-  --output outs/patient01/gene_discovery/patient01_integrated_with_orthogonal_evidence.tsv
+  --output outs/patient01/gene_discovery/patient01_integrated_with_complementary_evidence.tsv
 ```
 
 For thesis figures, use PDF or SVG as the primary figure and PNG only when raster output is required.
@@ -267,7 +267,7 @@ cd snakemake_pipelines/lrs
 snakemake -s Snakefile_LRS_update --use-conda --cores 32
 ```
 
-Then build the orthogonal-evidence interpretation tables with:
+Then build the complementary-evidence interpretation tables with:
 
 ```bash
 snakemake -s Snakefile_LRS_postprocess --use-conda --cores 8

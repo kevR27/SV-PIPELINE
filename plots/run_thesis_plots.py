@@ -213,6 +213,7 @@ def main():
     if args.platform == "srs":
         mito_ranking = sample_root / "diagnostic_review" / f"{s}.mitochondrial_gene_ranking.tsv"
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
+    exomiser_comparison = sample_root / "gene_discovery" / f"{s}_exomiser_comparison.tsv"
     gene_summary = sample_root / "gene_discovery" / f"{s}_gene_multimodal_evidence_summary.tsv"
     straglr = sample_root / "sv" / "straglr" / f"{s}_straglr.annotated.tsv"
     tldr = sample_root / "mei" / "tldr" / f"{s}.tldr.table.txt"
@@ -425,6 +426,15 @@ def main():
                     "--top-genes", str(args.top_genes),
                 ],
                 [phenotypes, ranked],
+            ),
+            (
+                [
+                    py, str(HERE / "plot_gene_hpo_heatmap.py"),
+                    "--comparison-only", "--exomiser-comparison", str(exomiser_comparison),
+                    "--out-prefix", str(folders["phenotype"] / f"{s}_exomiser_comparison"),
+                    "--top-genes", str(args.top_genes),
+                ],
+                [exomiser_comparison],
             ),
             (
                 [

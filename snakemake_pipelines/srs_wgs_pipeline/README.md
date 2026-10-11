@@ -292,6 +292,18 @@ paired-end WGS alignments.
    in the configuration. These files are needed to test the nuclear
    mitochondrial hypothesis rather than merely label known panel genes.
 
+   Exomiser is now enabled as a separate gene–phenotype comparison through
+   AnnotSV. Follow the [manual setup and interpretation guide](../../README.md#exomiser-through-annotsv)
+   for the compatible REST JAR, phenotype data and Java. The shared ocular
+   HON profile is used by default; patient HPO files are optional. Run the
+   `exomiser_comparison` target to create the report before plotting. Its
+   CNV classifications and phenotype scores are not fed back into the main
+   ranking. Set `annotsv_exomiser_enabled: false` to write a disabled report.
+
+   `scripts/add_supporting_evidence.py` is the active GRIDSS/MELT/ExpansionHunter
+   integration. The unused older `intersect_srs_orthogonal_evidence.py` has been
+   removed to avoid maintaining two versions of the same matching task.
+
 7. **Optional resources.** MELT remains off until you install its licensed
    package and the correct human GRCh38 transposon/genes files from
    [MELT](https://melt.igs.umaryland.edu/) and fill in the paths. To use population

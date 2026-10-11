@@ -44,7 +44,6 @@ DISCOVERY_HPO_FILE = config.get(
 
 # AnnotSV.
 ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
-HPO_TERMS = config.get("hpo_terms")
 ANNOTSV_ANNOTATIONS_DIR = config.get(
     "annotsv_annotations_dir",
     PATH + "reference/AnnotSV_annotations",
@@ -181,6 +180,8 @@ rule all:
         expand(PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_exomiser_comparison.tsv", sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/{sample}_exomiser_comparison.summary.json", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_allele_disease_hypotheses.tsv", sample=SAMPLES),
@@ -934,7 +935,6 @@ rule annotsv_annotations_check:
         """
         set -euo pipefail
         test -d {ANNOTSV_ANNOTATIONS_DIR}/Annotations_Human
-        test -d {ANNOTSV_ANNOTATIONS_DIR}/Annotations_Exomiser
         python {input.script:q} --annotations-dir {ANNOTSV_ANNOTATIONS_DIR:q}
         touch {output.marker}
         """
@@ -948,8 +948,7 @@ rule annotsv_annotation:
         tsv=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv",
         unannotated=PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.unannotated.tsv"
     params:
-        outdir=PATH + "{sample}/sv/annotsv",
-        hpo_flag=lambda wc: f"-hpo {HPO_TERMS}" if HPO_TERMS else ""
+        outdir=PATH + "{sample}/sv/annotsv"
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
@@ -969,7 +968,7 @@ rule annotsv_annotation:
             -tx ENSEMBL \
             -REreport 1 \
             -benignAF {ANNOTSV_BENIGN_AF} \
-            {params.hpo_flag}
+            -hpo ""
 
         test -s {output.tsv}
         """
