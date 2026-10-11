@@ -583,14 +583,25 @@ This is **not a probability of pathogenicity**.
 
 If GenCC evidence is not available but an OMIM disease relationship is present, a smaller supportive value is used for research prioritization.
 
-The current gene-relevance score is:
+The primary gene ranking uses four relevance tiers: `HIGH`, `MODERATE`,
+`SUPPORTING` and `LIMITED`. A separate 0–10 display score helps compare genes
+within that interpretation; it is not a calibrated diagnostic score.
+
+The code in `scripts/ranking_common.py` calculates this display score as:
 
 ```text
-generic HON anchor context    0-10
-gene-disease evidence         0-4
-                              ----
-maximum                       14
+5 × normalized HON phenotype similarity                0–5
+5 × (context-adjusted gene-disease evidence / 4)         0–5
+                                                       ---
+maximum                                                 10
 ```
+
+`HON_SEMANTIC_SCORE_0_10` separately reports the phenotype component on a
+0–10 scale. Do not add that column to the gene-disease score to reconstruct
+the display score. The context adjustment reduces the contribution of a
+general disease-gene association when HON similarity is weak; conflicting
+curated evidence is also down-weighted. The tier thresholds and weights are
+project choices and have not been validated as clinical cutoffs.
 
 SV count does not contribute points. SV size, mechanism, caller concordance, population evidence and other event-level information remain separate so that large rearrangements or repeatedly called genes do not automatically rise in the gene ranking.
 
@@ -599,6 +610,40 @@ Panel membership remains a separate category and is not added directly to the nu
 `CANDIDATE_CLASS`, `gene_disease_evidence_score`, and the integrated discovery score are prioritization tools. They are not automatic clinical classifications.
 
 **Question answered:** Which affected genes are most compatible with the phenotype and with known human disease evidence, including genes outside the original panel?
+
+### Exomiser through AnnotSV
+
+Both checked-in configurations have `hpo_terms: null`. The LRS and SRS
+AnnotSV rules therefore omit `-hpo`: the workflow does not request Exomiser
+gene–phenotype scoring. Checking that an `Annotations_Exomiser` directory
+exists does not verify that scoring ran successfully.
+
+AnnotSV can report `Exomiser_gene_pheno_score` and human, mouse and fish
+phenotype evidence when HPO terms and working Exomiser resources are supplied.
+This is gene–phenotype prioritization, not a full Exomiser variant analysis
+and not the AnnotSV ACMG/ClinGen CNV classification. See the
+[official AnnotSV manual](https://lbgi.fr/AnnotSV/Documentation/README.AnnotSV_latest.pdf)
+and [Exomiser phenotype-prioritiser documentation](https://exomiser.readthedocs.io/en/stable/advanced_analysis.html).
+
+The existing `hpo_terms` value is shared by every sample in a run. Supply
+comma-separated HPO IDs only if that is intentional; do not pool different
+patients' phenotypes into one list. `patient_hpo_files` currently feeds the
+separate LRS semantic-similarity stage and is not automatically passed to
+AnnotSV. Leaving HPO input unset is appropriate when observed phenotypes
+are unavailable. Broad HON anchors may support a clearly labelled generic
+HON analysis, but mitochondrial/syndromic context terms in the seed file
+must not be presented as findings observed in every patient.
+
+The current ranking scripts do not extract or compare Exomiser scores. A
+future comparison should use gene-specific AnnotSV rows, the same candidate
+genes and the same HPO query for both methods. Compare phenotype-only ranks
+and top-gene overlap, keeping the custom integrated score and SV mechanism
+evidence separate. Missing or invalid Exomiser scores must remain unavailable,
+not become zero. Agreement is useful corroboration of ranking, but is not
+independent validation because phenotype resources can overlap. Choosing a
+better method requires known diagnoses or an appropriate held-out benchmark;
+neither a higher numerical score nor recovery of the input HON panel alone
+establishes superiority.
 
 ---
 
