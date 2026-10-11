@@ -109,7 +109,7 @@ needlr_backend_files: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/needlr
 # Download the official GRCh38 gnomAD v4.1 genome-SV sites VCF and .tbi, then
 # set this path. If null, the final tables explicitly report
 # RESOURCE_NOT_CONFIGURED rather than borrowing AnnotSV's mixed benign AF.
-gnomad_sv_vcf: null
+gnomad_sv_vcf: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/gnomad/gnomad.v4.1.sv.sites.vcf.gz"
 
 # Research-prioritization population thresholds. The ranker uses the maximum
 # explicit AF across exact gnomAD-SV and provisional needLR so one common
@@ -160,7 +160,7 @@ mitocarta_pathways_file: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/mit
 # SAMPLOT READ-LEVEL BREAKPOINT EVIDENCE
 # ============================================================
 
-samplot_top_n: 20
+samplot_top_n: 50
 samplot_min_mapq: 20
 samplot_long_read_min_length: 1000
 samplot_zoom_bp: 20000
@@ -336,10 +336,10 @@ large_sv_depth_min_size: 100000
 
 # Number of top genes/candidate gene-SV rows shown in the main thesis figures.
 # Change this single value to 20 or 30 if you want a shorter/longer display.
-thesis_top_genes: 25
+thesis_top_genes: 50
 # Initial interpretation workload only: these do not alter analysis or ranks.
-candidate_review_top_n: 5
-candidate_locus_top_n: 10
+candidate_review_top_n: 50
+candidate_locus_top_n: 50
 # Optional matching GRCh38 GTF; a gene BED alone cannot provide exon structure.
 candidate_plot_gene_gtf: null
 
@@ -355,8 +355,8 @@ genome_plot_random_draws: 200       # More draws give a steadier random comparis
 candidate_assembly_manifest: null
 
 # Publication-style R figures.
-r_plot_top_candidates: 30
-r_plot_top_hpo: 20
+r_plot_top_candidates: 50
+r_plot_top_hpo: 50
 
 # ============================================================
 # FOR QC PARAMETERS
