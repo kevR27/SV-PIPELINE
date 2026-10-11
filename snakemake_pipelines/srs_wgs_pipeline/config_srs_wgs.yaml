@@ -41,9 +41,12 @@ vep_assembly: "GRCh38"
 vep_cache_version: 113             # Must match envs/srs_vep.yaml and cache.
 annotsv_annotations_dir: "/DATA/Reference/AnnotSV_annotations"
 annotsv_benign_af: 0.01            # AnnotSV setting; not the final AF filter.
+# One seed file for custom ranking and Exomiser. This is a FILE PATH.
+hon_hpo_seed_terms: "../../reference/hon_hpo_seed_terms.tsv"
 # Keep the custom ranking and compare with AnnotSV's Exomiser phenotype score.
 annotsv_exomiser_enabled: true
-# null uses CORE_OCULAR_HON rows in discovery_hpo_file; no syndromic context.
+# null uses only CORE_OCULAR_HON rows in hon_hpo_seed_terms above.
+# hpo_terms accepts HPO IDs, not a file path.
 # A string/list here replaces that shared profile for all samples.
 hpo_terms: null
 # Optional complete patient HPO files; each overrides the shared profile.
@@ -52,7 +55,6 @@ patient_hpo_files: {}
 
 monarch_nodes: "/DATA/Reference/monarch/monarch-kg_nodes.tsv"
 monarch_edges: "/DATA/Reference/monarch/monarch-kg_edges.tsv"
-discovery_hpo_file: "../../reference/hon_hpo_seed_terms.tsv"
 
 # ============================================================
 # 3. BIOLOGICAL FOCUS AND OPTIONAL ANALYSES

@@ -3,11 +3,8 @@
 Retrieve human gene -> phenotype associations from a local Monarch KG
 (KGX TSV) dump instead of the live API.
 
-Download the KG once:
-    curl -L -o monarch-kg.tar.gz \
-        https://data.monarchinitiative.org/monarch-kg/latest/monarch-kg.tar.gz
-    tar -xzf monarch-kg.tar.gz
-This produces monarch-kg_nodes.tsv and monarch-kg_edges.tsv.
+Manual download/setup steps are in README.md: Manual Monarch KG setup.
+This analysis only reads the configured local nodes and edges TSV files.
 
 Design mirrors the API version:
 - input is a list of human gene symbols;

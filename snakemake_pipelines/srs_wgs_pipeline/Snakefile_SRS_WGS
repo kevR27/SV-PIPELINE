@@ -17,6 +17,7 @@
 # ============================================================
 import os
 import shlex
+import sys
 from pathlib import Path
 
 configfile: "config_srs_wgs.yaml"
@@ -40,6 +41,8 @@ REPO_ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
 ENV_DIR = os.path.abspath(os.path.join(workflow.basedir, config["condaenv"]))
 CONDAENV = ENV_DIR + "/"
 SCRIPTS = os.path.join(REPO_ROOT, "scripts")
+sys.path.insert(0, SCRIPTS)
+from sv_evidence_common import hon_hpo_seed_path
 PLOTS = os.path.join(REPO_ROOT, "plots")
 # LRS and SRS use the same central folders. The Snakefiles remain separated,
 # while all helper scripts and environment definitions are easy to find.
@@ -49,7 +52,7 @@ ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)
 ANNOTSV_ANNOTATIONS_DIR = config["annotsv_annotations_dir"]
 MONARCH_NODES = config["monarch_nodes"]
 MONARCH_EDGES = config["monarch_edges"]
-DISCOVERY_HPO_FILE = config["discovery_hpo_file"]
+DISCOVERY_HPO_FILE = hon_hpo_seed_path(config, REPO_ROOT)
 VEP_CACHE_DIR = config["vep_cache_dir"]
 VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 if VEP_ASSEMBLY != "GRCh38":

@@ -286,7 +286,8 @@ paired-end WGS alignments.
    bundle for the pinned tool release using its
    [installation instructions](https://github.com/lgmgeo/AnnotSV/blob/master/README.md),
    and set `annotsv_annotations_dir` to the real bundle. Supply the Monarch
-   nodes/edges from the same KG release at the configured paths. Download
+   nodes/edges from the same KG release at the configured paths; follow the
+   [manual Monarch setup](../../README.md#manual-monarch-kg-setup). Download
    MitoCarta inventory/pathways by following the existing
    [MitoCarta README](../../reference/mitocarta/README.md), then set both paths
    in the configuration. These files are needed to test the nuclear
@@ -295,7 +296,8 @@ paired-end WGS alignments.
    Exomiser is now enabled as a separate gene–phenotype comparison through
    AnnotSV. Follow the [manual setup and interpretation guide](../../README.md#exomiser-through-annotsv)
    for the compatible REST JAR, phenotype data and Java. The shared ocular
-   HON profile is used by default; patient HPO files are optional. Run the
+   HON profile is used by default; its file is explicit under
+   `hon_hpo_seed_terms` in the config. Patient HPO files are optional. Run the
    `exomiser_comparison` target to create the report before plotting. Its
    CNV classifications and phenotype scores are not fed back into the main
    ranking. Set `annotsv_exomiser_enabled: false` to write a disabled report.

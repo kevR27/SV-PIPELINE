@@ -547,6 +547,28 @@ This produces:
 <sample>_ranked_candidates.tsv
 ```
 
+### Manual Monarch KG setup
+
+If the configured nodes and edges TSVs already exist, reuse that release.
+For a new setup, obtain the KGX TSV archive from the
+[official Monarch data directory](https://data.monarchinitiative.org/monarch-kg/latest/index.html).
+Use a separate download folder so an existing analysis keeps its references:
+
+```bash
+MONARCH_KG_DIR="/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/monarch/new_download"
+mkdir -p "$MONARCH_KG_DIR"
+curl --fail --location https://data.monarchinitiative.org/monarch-kg/latest/monarch-kg.tar.gz -o "$MONARCH_KG_DIR/monarch-kg.tar.gz"
+tar -tzf "$MONARCH_KG_DIR/monarch-kg.tar.gz"
+tar -xzf "$MONARCH_KG_DIR/monarch-kg.tar.gz" -C "$MONARCH_KG_DIR"
+```
+
+Set `monarch_nodes` and `monarch_edges` to the actual extracted
+`monarch-kg_nodes.tsv` and `monarch-kg_edges.tsv` paths, including any archive
+subdirectory. Keep both files from the same release. Record the release date
+shown in the official directory and retain the archive: `latest` changes over
+time. This KG is separate from the small, supplied HON seed TSV and from the
+Exomiser phenotype database. No analysis rule downloads it.
+
 ### Gene ranking
 
 The gene-ranking layer uses two explicit components:
@@ -615,10 +637,27 @@ Panel membership remains a separate category and is not added directly to the nu
 
 Both configurations now enable a separate comparison with
 `annotsv_exomiser_enabled: true`. With `hpo_terms: null`, the workflow reads
-only the six `CORE_OCULAR_HON` terms from the existing HON seed file. This
+only the six `CORE_OCULAR_HON` terms from the file explicitly configured as
+`hon_hpo_seed_terms`. This
 is labelled `SHARED_HON_PROFILE`. A shared clinical profile is appropriate
 when these findings describe the cohort; it does not capture differences
 between individual patients. Patient-specific HPO terms are optional.
+
+The supplied file is `reference/hon_hpo_seed_terms.tsv`. For your LRS checkout,
+the config now shows its path directly:
+
+```yaml
+hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
+annotsv_exomiser_enabled: true
+hpo_terms: null
+```
+
+Leave `hpo_terms: null` to use this file's core rows. Do not put the filename
+in `hpo_terms`: that field accepts HPO IDs such as `HP:0000648`. The same seed
+path is used by core ranking, LRS postprocess and the Exomiser comparison.
+SRS uses the same setting with a relative path. The older `discovery_hpo_file`
+key is accepted for compatibility; if both keys name different files, the
+workflow stops rather than mixing profiles.
 
 AnnotSV can report `Exomiser_gene_pheno_score` and human, mouse and fish
 phenotype evidence when HPO terms and working Exomiser resources are supplied.

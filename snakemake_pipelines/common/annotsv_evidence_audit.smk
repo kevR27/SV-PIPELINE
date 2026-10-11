@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, SCRIPTS)
 from audit_annotsv_evidence import resource_paths as audit_resource_paths
 from audit_annotsv_evidence import fingerprint as audit_fingerprint
+from sv_evidence_common import hon_hpo_seed_path
 
 # One HPO query is saved before AnnotSV and reused in the separate comparison.
 # Existing configs without the new switch retain their previous behaviour.
@@ -14,7 +15,7 @@ ANNOTSV_EXOMISER_ENABLED = config.get("annotsv_exomiser_enabled", bool(config.ge
 if not isinstance(ANNOTSV_EXOMISER_ENABLED, bool):
     raise ValueError("annotsv_exomiser_enabled must be true or false, without quotes.")
 ANNOTSV_PATIENT_HPO_FILES = {str(sample): path for sample, path in (config.get("patient_hpo_files", {}) or {}).items()}
-ANNOTSV_HPO_SEEDS = config.get("discovery_hpo_file", os.path.join(REPO_ROOT, "reference", "hon_hpo_seed_terms.tsv"))
+ANNOTSV_HPO_SEEDS = hon_hpo_seed_path(config, REPO_ROOT)
 
 
 def annotsv_patient_hpo_inputs(wc):

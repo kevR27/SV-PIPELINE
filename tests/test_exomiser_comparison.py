@@ -11,6 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from compare_exomiser_hon import check_backend_files, exomiser_by_gene, extract_exomiser, hpo_ids
+from sv_evidence_common import hon_hpo_seed_path
 
 
 def table(path, rows, fields=None):
@@ -27,6 +28,34 @@ def read(path):
 
 
 class ExomiserComparisonTests(unittest.TestCase):
+    def test_one_explicit_seed_path_and_older_configs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "different_hon_profile.tsv"
+            expected = str(path.resolve())
+            self.assertEqual(hon_hpo_seed_path({"hon_hpo_seed_terms": str(path)}, ROOT), expected)
+            self.assertEqual(hon_hpo_seed_path({"discovery_hpo_file": str(path)}, ROOT), expected)
+            self.assertEqual(hon_hpo_seed_path({"hon_hpo_seed_terms": str(path), "discovery_hpo_file": str(path)}, ROOT), expected)
+        self.assertEqual(hon_hpo_seed_path({}, ROOT), str(ROOT / "reference/hon_hpo_seed_terms.tsv"))
+
+    def test_conflicting_or_invalid_seed_paths_stop_before_scoring(self):
+        with self.assertRaisesRegex(ValueError, "different files"):
+            hon_hpo_seed_path({"hon_hpo_seed_terms": "a.tsv", "discovery_hpo_file": "b.tsv"}, ROOT)
+        for raw in ["", " ", True, ["a.tsv"]]:
+            with self.subTest(raw=raw), self.assertRaisesRegex(ValueError, "nonempty path"):
+                hon_hpo_seed_path({"hon_hpo_seed_terms": raw}, ROOT)
+
+    def test_custom_seed_file_changes_the_saved_query(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            seed = path / "different_hon_profile.tsv"
+            table(seed, [{"hpo_id": "HP:0000648", "hpo_label": "Optic atrophy", "hon_seed_role": "CORE_OCULAR_HON"},
+                         {"hpo_id": "HP:0001251", "hpo_label": "Ataxia", "hon_seed_role": "MITO_SYNDROMIC_CONTEXT"}])
+            resolved = hon_hpo_seed_path({"hon_hpo_seed_terms": str(seed)}, ROOT)
+            self.command("prepare-hpo", "--enabled", "--hpo-seeds", resolved,
+                         "--output", path / "query.tsv", "--terms-output", path / "query.txt")
+            self.assertEqual((path / "query.txt").read_text(), "HP:0000648")
+            self.assertEqual(read(path / "query.tsv")[0]["query_source"], str(seed))
+
     def command(self, *arguments, success=True):
         result = subprocess.run([sys.executable, str(ROOT / "scripts/compare_exomiser_hon.py"), *map(str, arguments)],
                                 capture_output=True, text=True)

@@ -178,11 +178,9 @@ sv_gene_breakpoint_tolerance: 10000
 
 monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/monarch/monarch-kg_nodes.tsv"
 monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/monarch/monarch-kg_edges.tsv"
-# Baseline HON anchors default to reference/hon_hpo_seed_terms.tsv in the active checkout.
-
-# Core HON phenotypes are used only as ontology seeds. The semantic-similarity
-# reference itself is generated from Monarch gene-disease-HPO associations.
-# hon_hpo_seed_terms defaults to reference/hon_hpo_seed_terms.tsv in the active checkout.
+# One seed file for the custom ranking, generated HPO reference and Exomiser.
+# This is a FILE PATH. hpo_terms below accepts HPO IDs, not a filename.
+hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
 
 # Optional patient-specific HPO files. Each file may be a one-HPO-ID-per-line
 # file or TSV containing hpo_id/HPO_ID. If absent, the semantic stage reports
@@ -192,7 +190,7 @@ patient_hpo_files: {}
 #   "21930": "/path/to/21930.hpo.tsv"
 
 # Separate Exomiser comparison through AnnotSV; the original ranking is retained.
-# true + null uses the CORE_OCULAR_HON rows of the existing HON seed file.
+# true + null reads only CORE_OCULAR_HON rows from hon_hpo_seed_terms above.
 # Syndromic context rows are not presented as findings shared by every patient.
 annotsv_exomiser_enabled: true
 # Optional replacement shared profile: comma-separated HPO IDs or a YAML list.

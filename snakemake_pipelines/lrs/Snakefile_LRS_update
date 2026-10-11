@@ -1,10 +1,13 @@
 import os
+import sys
 from pathlib import Path
 
 configfile: "config_lrs.yaml"
 
 REPO_ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
 SCRIPTS = os.path.join(REPO_ROOT, "scripts")
+sys.path.insert(0, SCRIPTS)
+from sv_evidence_common import hon_hpo_seed_path
 CONDAENV = os.path.join(REPO_ROOT, "envs") + "/"
 
 SAMPLES = list(config["samples"].keys())
@@ -37,10 +40,7 @@ NEEDLR_BACKEND = config["needlr_backend_files"]
 # Offline Monarch Knowledge Graph / phenotype discovery.
 MONARCH_NODES = config["monarch_nodes"]
 MONARCH_EDGES = config["monarch_edges"]
-DISCOVERY_HPO_FILE = config.get(
-    "discovery_hpo_file",
-    os.path.join(REPO_ROOT, "reference", "hon_hpo_seed_terms.tsv"),
-)
+DISCOVERY_HPO_FILE = hon_hpo_seed_path(config, REPO_ROOT)
 
 # AnnotSV.
 ANNOTSV_BENIGN_AF = config.get("annotsv_benign_af", 0.01)

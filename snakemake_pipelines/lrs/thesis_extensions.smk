@@ -10,10 +10,8 @@ DEPTH_MIN_MAPQ = config.get("depth_min_mapq", 20)
 LARGE_SV_DEPTH_MIN_SIZE = config.get("large_sv_depth_min_size", 100000)
 R_TOP_CANDIDATES = config.get("r_plot_top_candidates", 30)
 R_TOP_HPO = config.get("r_plot_top_hpo", 20)
-HON_HPO_SEEDS = config.get(
-    "hon_hpo_seed_terms",
-    os.path.abspath(os.path.join(workflow.basedir, "../../reference/hon_hpo_seed_terms.tsv")),
-)
+# HON_HPO_SEEDS is resolved by the parent workflow. Reuse that same file
+# rather than overriding it for the generated HPO reference.
 HON_PANEL_FILE = config["candidate_genes_list"]
 MONARCH_NODES_EXT = config["monarch_nodes"]
 MONARCH_EDGES_EXT = config["monarch_edges"]

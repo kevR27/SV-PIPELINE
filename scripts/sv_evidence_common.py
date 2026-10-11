@@ -1,11 +1,33 @@
 """Shared conservative parsers; no database absence or allele identity inferred."""
 import math
 import re
+from pathlib import Path
 
 MISSING = {"", ".", "NA", "N/A", "NAN", "NONE", "NULL"}
 # These are genePred CDS completeness labels, not human gene symbols. Do not
 # reject UNK: unlike these two labels, UNK is also a real human gene symbol.
 INVALID_GENE_LABELS = {"CMPL", "INCMPL"}
+
+
+def hon_hpo_seed_path(config, repo_root):
+    """Use one HON seed file for ranking, the HPO reference and Exomiser.
+
+    hon_hpo_seed_terms is the visible setting in both configs.
+    discovery_hpo_file remains an alias for older configs. Conflicting paths
+    are rejected so different stages cannot silently use different profiles.
+    """
+    paths = {}
+    for key in ["hon_hpo_seed_terms", "discovery_hpo_file"]:
+        raw = config.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, str) or not raw.strip():
+            raise ValueError(f"{key} must be a nonempty path to an HPO seed TSV.")
+        paths[key] = Path(raw).expanduser().resolve()
+    if len(set(paths.values())) > 1:
+        raise ValueError("hon_hpo_seed_terms and the older discovery_hpo_file point to different files. Keep one setting: hon_hpo_seed_terms.")
+    default = Path(repo_root) / "reference" / "hon_hpo_seed_terms.tsv"
+    return str(next(iter(paths.values()), default.resolve()))
 
 
 def gene_symbols(value):

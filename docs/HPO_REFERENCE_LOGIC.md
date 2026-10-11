@@ -6,10 +6,21 @@ The active seed file is:
 
 `reference/hon_hpo_seed_terms.tsv`
 
-It contains only core hereditary optic neuropathy/optic-nerve phenotype anchors.
-These terms are used to identify phenotype proximity in the Monarch knowledge
-graph. They are not intended to enumerate every manifestation of every
-syndromic optic neuropathy.
+Its path is explicit in both configs under `hon_hpo_seed_terms`. The custom
+ranking, LRS HPO-reference generation and Exomiser comparison all use that
+same setting. The older `discovery_hpo_file` key remains an alias; conflicting
+paths are rejected. `hpo_terms` accepts IDs, not a file path.
+
+The supplied file contains 12 rows with two distinct roles:
+
+| Role | Rows | Use |
+|---|---:|---|
+| `CORE_OCULAR_HON` | 6 | Core ocular anchors; these form the default shared Exomiser query. |
+| `MITO_SYNDROMIC_CONTEXT` | 6 | Lower-weight generic mitochondrial context in the existing custom ranking. These are not assumed present in a patient or automatically sent to Exomiser. |
+
+These terms are ontology seeds, not a complete list of the manifestations
+of every syndromic optic neuropathy. The shared core query is cohort-level
+context; it is not an individual patient's clinical phenotype record.
 
 ## Earlier manual term list
 
@@ -20,9 +31,10 @@ in which they occur. That structure is not appropriate for isolated-versus-
 syndromic interpretation.
 
 The only active manually curated seed file is
-`reference/hon_hpo_seed_terms.tsv`. Broader syndromic phenotypes are obtained
-from the generated gene-disease-HPO reference rather than from a second global
-manual list.
+`reference/hon_hpo_seed_terms.tsv`. Its context rows have an explicit role
+instead of being treated as shared patient findings. Broader disease-specific
+syndromic phenotypes are obtained from the generated gene-disease-HPO reference
+rather than from a second global manual list.
 
 ## Isolated and syndromic HON
 

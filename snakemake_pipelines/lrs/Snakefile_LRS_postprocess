@@ -1,5 +1,6 @@
 import os
 import shlex
+import sys
 
 configfile: "config_lrs.yaml"
 
@@ -25,6 +26,8 @@ REF = config["ref"]
 REPO_ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
 CONDAENV = os.path.join(REPO_ROOT, "envs") + "/"
 SCRIPTS = os.path.join(REPO_ROOT, "scripts")
+sys.path.insert(0, SCRIPTS)
+from sv_evidence_common import hon_hpo_seed_path
 PLOTS = os.path.join(REPO_ROOT, "plots")
 
 COMPLEMENTARY_STRAGLR_BP_TOL = config.get(
@@ -46,10 +49,7 @@ GENEBED = GENE_BED
 GENE_LIST = config["candidate_genes_list"]
 MONARCH_NODES = config["monarch_nodes"]
 MONARCH_EDGES = config["monarch_edges"]
-HON_HPO_SEEDS = config.get(
-    "discovery_hpo_file",
-    os.path.join(REPO_ROOT, "reference", "hon_hpo_seed_terms.tsv"),
-)
+HON_HPO_SEEDS = hon_hpo_seed_path(config, REPO_ROOT)
 MITOCARTA_FILE = config.get("mitocarta_file")
 MITOCARTA_PATHWAYS_FILE = config.get("mitocarta_pathways_file")
 GNOMAD_SV_VCF = config.get("gnomad_sv_vcf")
