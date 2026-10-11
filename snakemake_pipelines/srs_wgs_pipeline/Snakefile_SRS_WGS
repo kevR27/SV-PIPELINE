@@ -294,6 +294,7 @@ rule all:
             expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_supporting_evidence.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/diagnostic_review/{sample}.clinical_candidates.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/diagnostic_review/{sample}.mitochondrial_gene_ranking.tsv", sample=SAMPLES),
             SAMPLOT_TARGETS,
             CANDIDATE_BENCHMARK_TARGETS,
@@ -1235,14 +1236,17 @@ rule mitocarta_context_srs:
 rule build_diagnostic_candidates:
     input:
         table=diagnostic_source,
-        script=SCRIPTS + "/build_diagnostic_candidates.py"
+        script=SCRIPTS + "/build_diagnostic_candidates.py",
+        common=SCRIPTS + "/ranking_common.py"
     output:
-        tsv=PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv"
+        tsv=PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv",
+        clinical=PATH + "{sample}/diagnostic_review/{sample}.clinical_candidates.tsv"
     conda:
         CONDAENV + "plots.yaml"
     shell:
         """
-        python {input.script:q} --input {input.table:q} --top-n {DIAGNOSTIC_TOP_N} --output {output.tsv:q}
+        python {input.script:q} --input {input.table:q} --top-n {DIAGNOSTIC_TOP_N} \
+            --output {output.tsv:q} --clinical-output {output.clinical:q}
         """
 
 

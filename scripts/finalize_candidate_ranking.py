@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from build_diagnostic_candidates import build_clinical_table
+
 from ranking_common import (
     GENE_TIER_PRIORITY,
     event_sort_tuple,
@@ -83,7 +85,24 @@ def main():
     p.add_argument("--gene-output", required=True)
     p.add_argument("--sv-output", required=True)
     p.add_argument("--mito-output", default=None)
+    p.add_argument("--clinical-evidence", help="Complete integrated evidence, including unannotated SVs")
+    p.add_argument("--clinical-output", help="Separate joint AnnotSV/HON clinical review ranking")
     args = p.parse_args()
+    if bool(args.clinical_evidence) != bool(args.clinical_output):
+        p.error("clinical-evidence and clinical-output must be supplied together")
+
+    clinical_evidence = (
+        pd.read_csv(args.clinical_evidence, sep="\t", dtype=str, low_memory=False,
+                    usecols=lambda column: not column.endswith("_JSON"))
+        if args.clinical_output else None
+    )
+
+    def write_clinical(context):
+        if clinical_evidence is not None:
+            result = build_clinical_table(clinical_evidence, context)
+            path = Path(args.clinical_output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            result.to_csv(path, sep="\t", index=False)
 
     genes = pd.read_csv(args.genes, sep="	", dtype=str, low_memory=False)
     sv = pd.read_csv(args.sv, sep="	", dtype=str, low_memory=False)
@@ -153,6 +172,7 @@ def main():
         sv["COHORT_SAMPLE_COUNT"] = "."
 
     if sv.empty:
+        write_clinical(sv)
         Path(args.sv_output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.gene_output).parent.mkdir(parents=True, exist_ok=True)
         sv.to_csv(args.sv_output, sep="\t", index=False)
@@ -434,6 +454,7 @@ def main():
 
     gene_output = Path(args.gene_output)
     sv_output = Path(args.sv_output)
+    write_clinical(sv)
     gene_output.parent.mkdir(parents=True, exist_ok=True)
     sv_output.parent.mkdir(parents=True, exist_ok=True)
     genes.to_csv(gene_output, sep="	", index=False)

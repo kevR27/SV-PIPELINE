@@ -686,7 +686,8 @@ def annotsv_row_for_gene(matches: list[dict], gene: str, prepared=None):
     """
     full, by_gene, keys = prepared if prepared is not None else prepare_annotsv_gene_views(matches)
     specific = by_gene.get(gene, [])
-    event_fields = {"ACMG_class", "ACMG class", "AnnotSV_ranking_score", "AnnotSV_ranking_criteria"}
+    event_fields = {"ACMG_class", "ACMG class", "AnnotSV_ranking_score", "AnnotSV ranking score",
+                    "AnnotSV_ranking_criteria", "AnnotSV ranking criteria"}
     def event(key):
         return key.startswith(("P_", "B_", "po_P_", "po_B_", "SV_")) or key in event_fields
     out = {}
@@ -698,6 +699,17 @@ def annotsv_row_for_gene(matches: list[dict], gene: str, prepared=None):
         out[key] = ";".join(values) if key in SOURCE_FIELDS and values else (values[0] if len(values) == 1 else MISSING)
     out["_GENE_ROWS"] = json.dumps(specific, separators=(",", ":"))
     out["_GENE_STATUS"] = "GENE_SPECIFIC" if specific else "NO_GENE_SPECIFIC_ROW"
+    # A large CNV's classification belongs to the event, not to every gene.
+    # Retain the source and disagreement rather than borrowing a split-row class.
+    out["_CLASSIFICATION_SOURCE"] = (
+        "FULL_EVENT_ROW" if full else "GENE_ROW_FALLBACK_REVIEW" if specific else "NO_EVENT_CLASSIFICATION_RECORD"
+    )
+    classification_rows = full if full else specific
+    out["_CLASSIFICATION_CONFLICT"] = "YES" if any(
+        len({str(r[key]) for r in classification_rows
+             if r.get(key) not in (None, "", MISSING)}) > 1
+        for key in event_fields
+    ) else "NO"
     return out
 
 
@@ -1065,6 +1077,8 @@ def main() -> int:
                         "ANNOTSV_ACMG_CLASS_RAW",
                         first(ann_row, ["ACMG_class", "ACMG class"]),
                     ),
+                    ("ANNOTSV_CLASSIFICATION_SOURCE", ann_row.get("_CLASSIFICATION_SOURCE", MISSING)),
+                    ("ANNOTSV_CLASSIFICATION_CONFLICT", ann_row.get("_CLASSIFICATION_CONFLICT", MISSING)),
                     (
                         "ACMG_CNV_CLASS",
                         (
@@ -1138,6 +1152,11 @@ def main() -> int:
                             ],
                         ),
                     ),
+                    ("HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED",
+                     first(ranking_row, ["HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED"])),
+                    ("HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED",
+                     first(ranking_row, ["HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED"])),
+                    ("HON_SEMANTIC_METHOD", first(ranking_row, ["HON_SEMANTIC_METHOD"])),
                     (
                         "GENE_RELEVANCE_TIER",
                         first(ranking_row, ["GENE_RELEVANCE_TIER"]),
@@ -1326,6 +1345,8 @@ def main() -> int:
         "ANNOTSV_RANKING_SCORE",
         "ANNOTSV_RANKING_CRITERIA",
         "ANNOTSV_ACMG_CLASS_RAW",
+        "ANNOTSV_CLASSIFICATION_SOURCE",
+        "ANNOTSV_CLASSIFICATION_CONFLICT",
         "ACMG_CNV_CLASS",
         "ACMG_CNV_SCORE",
         "ANNotsv_Gene",
@@ -1334,6 +1355,9 @@ def main() -> int:
         "ANNOTSV_CLASSIFICATION_SCOPE",
         "PANEL_STATUS",
         "HON_SEMANTIC_SIMILARITY_NORMALIZED",
+        "HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED",
+        "HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED",
+        "HON_SEMANTIC_METHOD",
         "GENE_RELEVANCE_TIER",
         "GENE_RELEVANCE_TIER_RANK",
         "GENE_RELEVANCE_DISPLAY_SCORE",

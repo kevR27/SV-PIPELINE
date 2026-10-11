@@ -40,6 +40,12 @@ categories can be correlated: this is an uncalibrated review aid, not a probabil
 clinical classification, or automatic exclusion rule. Evaluate thresholds and ranking
 on known positives/held-out cases before relying on rank.
 
+The [separate joint clinical table](SCORE_INTERPRETATION.md#joint-clinical-candidate-review)
+reuses these source-backed statuses and details, not the 0–12 sum. It combines
+AnnotSV's reported CNV class with HON relevance and variant evidence without
+rescoring ACMG criteria or creating a diagnostic probability. Missing curated
+disease models remain explicit; gene-level associations do not replace them.
+
 | Domain | Assessment and limits |
 |---|---|
 | Population | An external source-backed exact/sequence-validated allele AF ≤ threshold gives 2; zero observed AF gives 1, with an explicit absence-not-pathogenicity label. AF above threshold gives 0 and a flag. needLR coordinate-only AF remains visible as provisional and gives 0 until allele identity is reviewed. Missing/unmatched/ambiguous is unknown. A benign database overlap AF is not transferred as the patient's exact allele AF. |

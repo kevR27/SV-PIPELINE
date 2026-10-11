@@ -115,6 +115,7 @@ All paths below are inside the configured `path` folder.
 | --- | --- |
 | `qc/<sample>.wgs_qc_summary.tsv` | Coverage/alignment thresholds; `REVIEW` means inspect the sample |
 | `diagnostic_review/<sample>.diagnostic_candidates.tsv` | Main ordered SV–gene review table; all rows by default |
+| `diagnostic_review/<sample>.clinical_candidates.tsv` | Separate joint AnnotSV/HON clinical review order; every integrated SV–gene row retained |
 | `diagnostic_review/<sample>.mitochondrial_gene_ranking.tsv` | Nuclear mitochondrial gene ranking, followed by secondary mtDNA context |
 | `plots/00_start_here/START_HERE.txt` | Guide to the figures and an editable review TSV |
 | `plots/01_qc/` | Short-read coverage figures |
@@ -146,6 +147,14 @@ loss/gain direction to appear as computational support.
 `candidate_locus_top_n` and `samplot_top_n` limit image numbers.
 `diagnostic_candidate_top_n: 0` keeps every candidate row; changing it to a
 positive value also restricts the input available to downstream filtering.
+The clinical table always retains the complete integrated input, independent
+of this top-N setting. It uses AnnotSV's reported DEL/DUP class once and keeps
+its points/criteria for audit, alongside HON relevance, variant effect,
+disease mechanism, genotype, support and AF. The old biological-focus order
+and Exomiser comparison remain separate. Start with `CLINICAL_REVIEW_GROUP`
+and its flags/unknowns; read [the joint ranking and manual CNV review guide](../../docs/SCORE_INTERPRETATION.md#joint-clinical-candidate-review)
+before interpreting a candidate as diagnostic. A VUS is not upgraded by HON
+matching, and a whole-CNV class is not a gene-specific causal conclusion.
 Existing editable review notes are preserved on reruns; generated observations
 are refreshed separately. Check `<sample>/logs/plots/` if plotting fails.
 

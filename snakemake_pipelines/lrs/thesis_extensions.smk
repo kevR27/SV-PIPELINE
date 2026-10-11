@@ -304,12 +304,15 @@ rule finalize_candidate_ranking:
         recurrence=PATH + "cohort_analysis/sv_recurrence.tsv",
         recurrence_members=PATH + "cohort_analysis/sv_recurrence_members.tsv",
         mitochondrial=rules.rank_mitochondrial_genes.output.tsv,
+        clinical_evidence=rules.merge_integrated_annotations.output.tsv,
         script=SCRIPTS + "/finalize_candidate_ranking.py",
+        clinical_script=SCRIPTS + "/build_diagnostic_candidates.py",
         ranking_common=SCRIPTS + "/ranking_common.py"
     output:
         genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
         sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
-        mitochondrial=PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv"
+        mitochondrial=PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv",
+        clinical=PATH + "{sample}/gene_discovery/final/{sample}_clinical_candidates.ranked.tsv"
     conda:
         CONDAENV + "plots.yaml"
     shell:
@@ -323,6 +326,8 @@ rule finalize_candidate_ranking:
             --recurrence-summary {input.recurrence} \
             --recurrence-members {input.recurrence_members} \
             --mitochondrial-ranking {input.mitochondrial} \
+            --clinical-evidence {input.clinical_evidence:q} \
+            --clinical-output {output.clinical:q} \
             --gene-output {output.genes} \
             --sv-output {output.sv} \
             --mito-output {output.mitochondrial}

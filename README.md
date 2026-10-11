@@ -81,6 +81,34 @@ The original gene-discovery score remains available separately.
 
 ---
 
+## Clinical candidate review alongside the research ranking
+
+LRS and SRS also produce a separate **clinical candidate review order**. It
+combines AnnotSV's reported deletion/duplication classification with HON query
+relevance, predicted variant effect, disease mechanism, reliable genotype,
+technical support and population evidence. The original research ranking and
+the separate Exomiser phenotype comparison remain available.
+
+- LRS: `gene_discovery/final/<sample>_clinical_candidates.ranked.tsv`.
+- SRS: `diagnostic_review/<sample>.clinical_candidates.tsv`.
+- Start with `CLINICAL_REVIEW_GROUP`, `CLINICAL_REVIEW_FLAGS` and
+  `CLINICAL_MISSING_OR_CONTEXT_NOTES`; then inspect the source evidence columns.
+
+This is an order for review, not a diagnosis or a diagnostic probability. A VUS
+remains a VUS even when it matches HON. Missing AF remains unknown, alongside
+measured AF ≤1% in the existing combined filtering view. All input associations,
+including unclassified and unannotated events, are retained in the clinical
+table; the SRS `diagnostic_candidate_top_n` limit does not truncate it.
+
+Read [the joint ranking rules and CNV audit guide](docs/SCORE_INTERPRETATION.md#joint-clinical-candidate-review).
+No new installation or configuration is needed. The LRS postprocess default
+target now also requests the existing final-ranking dependencies, including
+depth, HPO and phase context. It may run missing downstream analyses; it does
+not automatically restrict itself to saved tables. Historical integrated files
+need rebuilding with the updated integrator to establish full-event AnnotSV
+classification provenance. A reported class with unverified provenance is
+flagged for review rather than trusted silently.
+
 ## 1. Biological hypothesis and main questions
 
 The working hypothesis is that some unresolved neurological or optic-neuropathy cases may be caused by genomic changes that are difficult to detect or interpret with standard small-variant analysis alone.

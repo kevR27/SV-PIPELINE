@@ -1,6 +1,7 @@
 # Candidate-ranking interpretation
 
-This pipeline uses **research prioritization**, not a single pathogenicity score.
+This pipeline preserves **research prioritization** and adds a separate clinical
+candidate review order. Neither ranking is a diagnostic probability.
 
 The ranking is deliberately divided into evidence axes so that a small numerical
 difference in phenotype relevance cannot automatically outrank a much stronger
@@ -37,6 +38,141 @@ The authoritative integrated evidence table remains:
 ```text
 <sample>_integrated_SV_gene_analysis.final.tsv.gz
 ```
+
+## Joint clinical candidate review
+
+The new clinical table asks two questions together: **what classification was
+reported for this CNV, and does this actual SV–gene finding merit HON review?**
+The answers remain in separate columns. The classification of a large CNV is
+an event-level assessment; it does not classify every overlapping gene as the
+cause of HON. Each gene's transcript effect, disease mechanism and phenotype
+relevance must be reviewed separately.
+
+Outputs inside each sample folder:
+
+| Platform | Clinical table | Existing ranking retained |
+| --- | --- | --- |
+| LRS | `gene_discovery/final/<sample>_clinical_candidates.ranked.tsv` | Both final gene and SV–gene research tables |
+| SRS | `diagnostic_review/<sample>.clinical_candidates.tsv` | The biological-focus `diagnostic_candidates.tsv` table |
+
+Both platforms reuse `build_diagnostic_candidates.py`; LRS calls its shared
+function from `finalize_candidate_ranking.py`. The clinical input is the
+complete integrated evidence, with final LRS HPO/depth/phase context joined by
+exact `SV_ID` + `GENE`. No row is removed, including genes outside the panel,
+VUS, unclassified findings, unannotated events and pathogenic findings with
+weak or unrelated HON relevance. SRS's optional top-N limit affects its old
+review view, not this complete clinical table. Counts of table rows are
+SV–gene associations, not counts of unique SVs.
+
+### How the joint order works
+
+P/LP means pathogenic or likely pathogenic **as reported by AnnotSV**, subject
+to the audit below. Query matching is a research phenotype comparison, not a
+clinical observation or a disease diagnosis.
+
+| Order | `CLINICAL_REVIEW_GROUP` | Meaning |
+| --- | --- | --- |
+| 1 | `P_LP_HON_MECHANISM_SUPPORTED` | Consistent event classification; strong HON query match; compatible effect and QC genotype; read support; a source-backed disease model with Moderate/Strong/Definitive validity and a compatible mechanism |
+| 2 | `P_LP_HON_INCOMPLETE_EVIDENCE` | P/LP with a supporting/strong HON query match, but one or more of those requirements remain unresolved |
+| 3 | `HON_RELEVANT_VUS_OR_UNCLASSIFIED` | Supporting/strong HON query match and uncertain/unclassified finding; retained for review without upgrading its class |
+| 4 | `P_LP_OTHER_OR_UNRESOLVED_HON` | P/LP with limited or unavailable HON matching; potentially important for another diagnosis |
+| 5 | `OTHER_REVIEW` | Other findings, still retained |
+| 6 | `CONFLICT_OR_TECHNICAL_REVIEW` | Classification, genotype, mechanism, phenotype, frequency or technical concerns that require resolution; inspect this group separately even if its rows rank lower |
+| 7 | `BENIGN_OR_LIKELY_BENIGN` | Consistent reported benign/likely benign class; a strong HPO match does not override it |
+
+Conflict/technical flags route a finding to group 6 before ordinary
+prioritisation. A complete, consistent benign class stays in group 7 with any
+other concerns still visible. Within a group, the order uses broad query-match
+tier, reported class, mechanism support, genotype compatibility and curated
+disease-evidence tier, then SV/gene identifiers for deterministic ties. It does
+not add points. Panel membership, MitoCarta membership, the old research score,
+the magnitude of AnnotSV points within a class, and the number of criteria do
+not give extra clinical-ranking bonuses.
+
+For this project, normalized query similarity ≥0.50 is a strong match,
+0.25–<0.50 is supporting, and <0.25 is limited. These are transparent research
+thresholds, not validated diagnostic cutoffs. Available patient-HPO query
+results take precedence, including zero matches; otherwise the shared core
+HON query is used, with the existing combined HON score as a legacy fallback.
+`CLINICAL_HON_QUERY_SCOPE` records the choice. The cohort query does not imply
+that every patient has every queried finding. Exomiser remains a separate
+phenotype comparison; agreement is not a required intersection filter.
+
+Gene-level GenCC/OMIM associations and ClinGen dosage sensitivity are useful,
+but do not by themselves identify the HON disease model. Disease identifiers,
+source, MOI and mechanism from the optional curated allele disease models are
+retained when supplied. Without them, `DISEASE_SPECIFIC_HON_MODEL_NOT_AVAILABLE`
+is explicit and group 1 is unavailable. Even with a model, the gene-based HPO
+match still requires disease-specific clinical review. A heterozygous AR hit
+requires another allele; a possible trans partner remains a review candidate.
+Only the QC-qualified `ALLELE_GENOTYPE` is used; missing genotype provenance
+prevents promotion to group 1. Missing parents do not establish
+de novo status or segregation. Balanced/other SVs can merit HON review, but do
+not receive a formal DEL/DUP class in this table.
+
+### AnnotSV and the ACMG/ClinGen loss/gain audit
+
+The [2020 ACMG/ClinGen constitutional CNV standard](https://doi.org/10.1038/s41436-019-0686-8)
+provides separate copy-number loss and gain frameworks. AnnotSV implements an
+[automated adaptation](https://github.com/lgmgeo/AnnotSV/blob/master/share/doc/AnnotSV/ranking.md),
+including adaptations for recessive findings; consult the scoring workbook
+matching the installed AnnotSV version. This pipeline audits its result; it
+does not implement another CNV score to add on top.
+
+`ACMG_CNV_CLASS`, `ACMG_CNV_SCORE`, `ANNOTSV_ACMG_CLASS_RAW`,
+`ANNOTSV_RANKING_SCORE` and `ANNOTSV_RANKING_CRITERIA` remain visible. The class
+comes from the score and criteria, so these represent one body of evidence.
+The audit checks class/point consistency: ≥0.99 P, ≥0.90 LP, >−0.90 to <0.90
+VUS, ≤−0.90 LB, and ≤−0.99 B. **0.99 points does not mean a 99% diagnostic
+probability.** The reported class is never replaced by a class calculated here.
+The audit also checks that the class came from an AnnotSV full/event row and
+flags disagreeing event records. A gene split-row class is not silently treated
+as the whole-CNV classification. Older tables without that provenance must be
+rebuilt or reviewed; no variant callers need rerunning just to rebuild it.
+
+`CLINICAL_CNV_FRAMEWORK_AUDIT` groups the reported criterion codes by section.
+No reported code means unavailable/unreported evidence, not proof that the
+criterion was evaluated and excluded. `CLINICAL_CNV_MANUAL_OR_UNAVAILABLE`
+identifies the following review work:
+
+| CNV section | Existing evidence to inspect | What still needs review |
+| --- | --- | --- |
+| 1: genomic content | Breakpoints, AnnotSV transcripts/exons/CDS and structural-VEP context | True functional effect, transcript choice and regulatory effects |
+| 2: dosage/region evidence | Loss: ClinGen HI; gain: ClinGen TS; pathogenic/benign region matches | Exact allele/region identity, whole versus partial overlap and gain architecture; AD inheritance alone does not establish triplosensitivity |
+| 3: gene content | AnnotSV event-level criteria and affected genes | Event-wide coding gene count; do not count repeated gene rows as independent evidence |
+| 4: reported cases and population | AnnotSV criteria, available ClinVar/other SV region records and AF sources | Same-allele case/control evidence, phenotype specificity and independent publications; overlapping records can describe different alleles |
+| 5: patient/family evidence | Available reliable genotype and source-backed family assessment | Callable family genotypes, segregation, penetrance and clinically observed findings; missing family data stay unknown |
+
+`CLINICAL_PHENOTYPE_IN_CNV_CRITERIA` marks reported case/phenotype criteria that
+may already contribute to the class. Their patients' phenotypes are not
+automatically this patient's findings. HON matching is used as a separate
+relevance axis, never as another ACMG point bonus or a reason to upgrade a VUS.
+ClinGen, GenCC/OMIM and ClinVar fields are retained for context/audit without
+summing repeated database descriptions of the same underlying evidence.
+Mixed pathogenic/benign region records are flagged as context needing allele
+identity review, not automatically declared contradictory classifications of
+the patient's exact SV. Automated criteria still need an expert audit.
+
+### Flags and practical limits
+
+`CLINICAL_REVIEW_FLAGS` identifies evidence that must be resolved;
+`CLINICAL_MISSING_OR_CONTEXT_NOTES` identifies unknowns and interpretation
+limits. A technically supported call means computational read support, not
+independent validation. Low/ambiguous support, failed caller QC, incompatible
+genotype, unclear expected copy change or disease-mechanism conflict cannot be
+overridden by a strong HPO match.
+
+The clinical frequency view keeps measured AF ≤1% and unknown AF distinct.
+Missing AF is not proof of novelty. needLR coordinate matches remain
+provisional; database region AF is not transferred as an exact-allele AF.
+These checks do not alter the existing combined rare-or-missing filtering
+group, the research ranking or XCI behavior.
+
+This update provides AnnotSV-backed candidate prioritisation. It is not full
+Exomiser variant analysis, a new ACMG classification, a calibrated diagnostic
+probability or clinical validation. No patient analysis is implied by the code
+checks. The OPA1-positive samples 21930 and 25428 are limited controls and do
+not establish overall diagnostic performance.
 
 ## 1. Phenotype and gene relevance
 
