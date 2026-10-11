@@ -28,6 +28,7 @@ def clinical_evidence(**changes):
         "ALLELE_EFFECT": "POSSIBLE_LOF", "ALLELE_GENOTYPE": "HET",
         "ALLELE_GENOTYPE_SOURCE": "synthetic_exact_id_qc_genotype",
         "ALLELE_DISEASE_ID": "SYNTHETIC_HON_MODEL", "ALLELE_DISEASE_SOURCE": "synthetic_test_fixture",
+        "ALLELE_DISEASE_HON_RELEVANCE": "SUPPORTS_HON", "ALLELE_DISEASE_HON_SOURCE": "synthetic_test_fixture",
         "ALLELE_DISEASE_MOI": "AD", "ALLELE_DISEASE_MECHANISM_STATUS": "DISEASE_MECHANISM_POSSIBLE",
         "ALLELE_DISEASE_MECHANISM_DETAIL": "disease=SYNTHETIC_HON_MODEL;mechanism=HAPLOINSUFFICIENCY;validity=DEFINITIVE;source=synthetic_test_fixture",
         "ALLELE_TECHNICAL_STATUS": "MULTICALLER_READ_SUPPORTED",
@@ -64,6 +65,74 @@ class TestClinicalCandidateTables(unittest.TestCase):
         self.assertEqual(out.CLINICAL_REVIEW_GROUP, "P_LP_HON_INCOMPLETE_EVIDENCE")
         self.assertIn("DISEASE_SPECIFIC_HON_MODEL_NOT_AVAILABLE", out.CLINICAL_MISSING_OR_CONTEXT_NOTES)
         self.assertEqual(out.CLINICAL_DISEASE_EVIDENCE_SCOPE, "GENE_LEVEL_ASSOCIATION_NOT_DISEASE_SPECIFIC")
+
+    def test_disease_model_requires_reviewed_hon_link_not_just_gene_match(self):
+        supported = build_clinical_table(pd.DataFrame([clinical_evidence()])).iloc[0]
+        self.assertEqual(supported.CLINICAL_REVIEW_GROUP, "P_LP_HON_MECHANISM_SUPPORTED")
+        cases = [clinical_evidence(SV_ID="unknown_hon_link", ALLELE_DISEASE_HON_RELEVANCE="UNKNOWN"),
+                 clinical_evidence(SV_ID="unverified_hon_link", ALLELE_DISEASE_HON_SOURCE="."),
+                 clinical_evidence(SV_ID="other_disease", ALLELE_DISEASE_HON_RELEVANCE="OTHER_DISEASE",
+                                   ALLELE_DISEASE_HYPOTHESIS_COUNT="2")]
+        out = build_clinical_table(pd.DataFrame(cases)).set_index("SV_ID")
+        self.assertEqual(out.loc["unknown_hon_link", "CLINICAL_REVIEW_GROUP"], "P_LP_HON_INCOMPLETE_EVIDENCE")
+        self.assertEqual(out.loc["unverified_hon_link", "CLINICAL_DISEASE_HON_STATUS"], "UNKNOWN")
+        self.assertEqual(out.loc["other_disease", "CLINICAL_REVIEW_GROUP"], "P_LP_OTHER_OR_UNRESOLVED_HON")
+        self.assertEqual(out.loc["other_disease", "CLINICAL_HON_RELEVANCE"], "STRONG_QUERY_MATCH")
+        self.assertIn("MULTIPLE_DISEASE_MODELS_REVIEW", out.loc["other_disease", "CLINICAL_MISSING_OR_CONTEXT_NOTES"])
+
+    def test_reviewed_population_af_is_used_and_unverified_af_stays_unknown(self):
+        common = clinical_evidence(SV_ID="reviewed_common", ALLELE_POPULATION_STATUS="ABOVE_RESEARCH_AF_THRESHOLD",
+                                   ALLELE_POPULATION_AF="0.2", ALLELE_POPULATION_MATCH="EXACT_ALLELE",
+                                   ALLELE_POPULATION_SOURCE="synthetic_population_release", NEEDLR_AF="0.001")
+        unverified = clinical_evidence(SV_ID="unverified", ALLELE_POPULATION_STATUS="UNKNOWN_UNVERIFIED_EXTERNAL_AF",
+                                       ALLELE_POPULATION_AF="0.2", ALLELE_POPULATION_SOURCE="synthetic_population_release")
+        out = build_clinical_table(pd.DataFrame([common, unverified])).set_index("SV_ID")
+        self.assertEqual(out.loc["reviewed_common", "CLINICAL_MAX_REPORTED_AF"], 0.2)
+        self.assertEqual(out.loc["reviewed_common", "CLINICAL_REVIEW_GROUP"], "CONFLICT_OR_TECHNICAL_REVIEW")
+        self.assertIn("POPULATION_AF_SOURCE_CONFLICT", out.loc["reviewed_common", "CLINICAL_REVIEW_FLAGS"])
+        self.assertIn("reviewed_allele:synthetic_population_release", out.loc["reviewed_common", "CLINICAL_POPULATION_SOURCES"])
+        self.assertEqual(out.loc["unverified", "CLINICAL_POPULATION_STATUS"], "UNKNOWN_AF")
+        legacy = clinical_evidence(ALLELE_POPULATION_STATUS="ABOVE_RESEARCH_AF_THRESHOLD",
+                                   ALLELE_POPULATION_DETAIL="AF=0.2;source=synthetic_population_release;threshold=0.01")
+        out = build_clinical_table(pd.DataFrame([legacy])).iloc[0]
+        self.assertEqual(out.CLINICAL_MAX_REPORTED_AF, 0.2)
+        self.assertEqual(out.CLINICAL_REVIEW_GROUP, "CONFLICT_OR_TECHNICAL_REVIEW")
+        out = build_clinical_table(pd.DataFrame([{**legacy, "ALLELE_POPULATION_DETAIL": "AF=.;source=."}])).iloc[0]
+        self.assertIn("REVIEWED_POPULATION_AF_UNAVAILABLE", out.CLINICAL_REVIEW_FLAGS)
+
+    def test_passing_depth_only_cnv_is_retained_without_rescuing_bad_reads(self):
+        depth = dict(ALLELE_TECHNICAL_STATUS="UNKNOWN_READ_SUPPORT", CALLER_COUNT="0", CALLER_READ_SUPPORT=".",
+                     CNVPYTOR_READ_DEPTH_MATCH="DEPTH_ONLY", CNVPYTOR_STATUS="PASS", CNVPYTOR_LEVEL="0.5",
+                     CNVPYTOR_EVAL1="1e-10", CNVPYTOR_Q0="0.01", CNVPYTOR_PN="0", CNVPYTOR_FLAGS="PASS")
+        cases = [clinical_evidence(SV_ID="depth_only", **depth),
+                 clinical_evidence(SV_ID="bad_reads", **{**depth, "ALLELE_TECHNICAL_STATUS": "LOW_READ_SUPPORT"}),
+                 clinical_evidence(SV_ID="missing_depth_qc", **{**depth, "CNVPYTOR_Q0": "."}),
+                 clinical_evidence(SV_ID="wrong_copy_direction", **{**depth, "CNVPYTOR_LEVEL": "1.5"}),
+                 clinical_evidence(SV_ID="dup_depth", SVTYPE="DUP", ALLELE_EFFECT="POSSIBLE_COPY_GAIN",
+                                   **{**depth, "CNVPYTOR_LEVEL": "1.5"})]
+        out = build_clinical_table(pd.DataFrame(cases)).set_index("SV_ID")
+        self.assertEqual(out.loc["depth_only", "CLINICAL_TECHNICAL_STATUS"], "DEPTH_SUPPORTED_BREAKPOINT_REVIEW")
+        self.assertEqual(out.loc["depth_only", "CLINICAL_REVIEW_GROUP"], "P_LP_HON_INCOMPLETE_EVIDENCE")
+        self.assertEqual(out.loc["dup_depth", "CLINICAL_REVIEW_GROUP"], "P_LP_HON_INCOMPLETE_EVIDENCE")
+        for key in ("bad_reads", "missing_depth_qc", "wrong_copy_direction"):
+            self.assertEqual(out.loc[key, "CLINICAL_REVIEW_GROUP"], "CONFLICT_OR_TECHNICAL_REVIEW")
+
+    def test_unknown_effect_does_not_keep_a_strong_clinical_mechanism_label(self):
+        row = clinical_evidence(ALLELE_EFFECT="UNKNOWN", INHERITANCE_MECHANISM_CLASS="STRONG_DOSAGE_OR_BIALLELIC_COMPATIBILITY")
+        out = build_clinical_table(pd.DataFrame([row])).iloc[0]
+        self.assertEqual(out.CLINICAL_MECHANISM_CLASS, "GENE_EFFECT_UNRESOLVED")
+        self.assertEqual(out.INHERITANCE_MECHANISM_CLASS, "STRONG_DOSAGE_OR_BIALLELIC_COMPATIBILITY")
+        self.assertEqual(out.CLINICAL_MECHANISM_SUPPORTED, "NO_OR_UNRESOLVED")
+        row = clinical_evidence(ALLELE_EFFECT="GOF", INHERITANCE_MECHANISM_CLASS="UNRESOLVED",
+                                ALLELE_DISEASE_MECHANISM_STATUS="DISEASE_MECHANISM_COMPATIBLE")
+        out = build_clinical_table(pd.DataFrame([row])).iloc[0]
+        self.assertEqual(out.CLINICAL_MECHANISM_CLASS, "REPORTED_EFFECT_COMPATIBLE_WITH_REVIEWED_DISEASE_MODEL")
+        self.assertEqual(out.CLINICAL_MECHANISM_SUPPORTED, "YES")
+        row = clinical_evidence(INHERITANCE_MECHANISM_CLASS="STRONG_DOSAGE_OR_BIALLELIC_COMPATIBILITY",
+                                ALLELE_DISEASE_MECHANISM_STATUS="MECHANISM_MISMATCH_REVIEW")
+        out = build_clinical_table(pd.DataFrame([row])).iloc[0]
+        self.assertEqual(out.CLINICAL_MECHANISM_CLASS, "DISEASE_MECHANISM_CONFLICT_REVIEW")
+        self.assertEqual(out.CLINICAL_MECHANISM_SUPPORTED, "NO_OR_UNRESOLVED")
 
     def test_supporting_hon_match_and_unknown_af_are_retained_without_promotion(self):
         cases = [clinical_evidence(SV_ID="supporting_vus", ACMG_CNV_CLASS="VUS", ACMG_CNV_SCORE="0.3",
@@ -143,17 +212,24 @@ class TestClinicalCandidateTables(unittest.TestCase):
             folder = Path(tmp)
             (folder / "input.vcf").write_text(
                 "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
-                "chr3\t1000\tevent\tN\t<DEL>\t.\tPASS\tSVTYPE=DEL;END=3000;SVLEN=-2000\n")
+                "chr3\t1000\tevent\tN\t<DEL>\t.\tPASS\tSVTYPE=DEL;END=3000;SVLEN=-2000;SUPP=1;IDLIST=0_Sniffles2.DEL.1\n")
             pd.DataFrame([
                 {"SV_ID": "event", "Annotation_mode": "full", "Gene_name": "OPA1",
                  "ACMG_class": "4", "AnnotSV ranking score": "0.90", "AnnotSV ranking criteria": "2C-1"},
-                {"SV_ID": "event", "Annotation_mode": "split", "Gene_name": "OPA1", "ACMG_class": "5"},
+                {"SV_ID": "event", "Annotation_mode": "split", "Gene_name": "OPA1", "ACMG_class": "5",
+                 "Overlapped_CDS_percent": "25"},
             ]).to_csv(folder / "ann.tsv", sep="\t", index=False)
+            pd.DataFrame([{"SV_ID": "Sniffles2.DEL.1", "CALLER": "Sniffles2", "CHROM": "chr3",
+                           "START": "1000", "END": "3000", "SVTYPE": "DEL", "SVLEN": "-2000",
+                           "CALLER_SUPPORT": "8", "CALLER_GT": "0/1", "CALLER_GQ": "30", "CALLER_DP": "20",
+                           "EVIDENCE_STATUS": "PASS", "EVIDENCE_FLAGS": "."}]).to_csv(folder / "caller.tsv", sep="\t", index=False)
             pd.DataFrame([{"gene": "OPA1", "HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED": "0.8",
                            "HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED": "0.1",
                            "HON_SEMANTIC_SIMILARITY_NORMALIZED": "0.5"}]).to_csv(folder / "rank.tsv", sep="\t", index=False)
             subprocess.run([sys.executable, str(ROOT / "scripts/build_integrated_sv_gene_tsv.py"),
+                            "--sequencing-type", "LRS", "--jasmine-id-prefixes",
                             "--vcf", str(folder / "input.vcf"), "--annotsv", str(folder / "ann.tsv"),
+                            "--caller-tsv", str(folder / "caller.tsv"),
                             "--ranking", str(folder / "rank.tsv"), "--output", str(folder / "integrated.tsv")],
                            check=True, capture_output=True)
             evidence = pd.read_csv(folder / "integrated.tsv", sep="\t", dtype=str)
@@ -162,6 +238,27 @@ class TestClinicalCandidateTables(unittest.TestCase):
             self.assertEqual(out.ANNOTSV_CLASSIFICATION_SOURCE, "FULL_EVENT_ROW")
             self.assertEqual(out.CLINICAL_HON_QUERY_SIMILARITY, 0.8)
             self.assertEqual(out.ANNOTSV_RANKING_CRITERIA, "2C-1")
+            pd.DataFrame([{"gene": "OPA1", "disease_id": "SYNTHETIC:HON", "moi": "AD",
+                           "mechanism": "LOF", "validity": "STRONG", "source": "synthetic_test_fixture",
+                           "hon_relevance": "SUPPORTS_HON", "hon_relevance_source": "synthetic_test_fixture"}]).to_csv(folder / "models.tsv", sep="\t", index=False)
+            pd.DataFrame([{"sample_id": "SYNTHETIC", "SV_ID": "event", "gene": "OPA1", "disease_id": ".",
+                           "population_af": "0.2", "population_match": "EXACT_ALLELE",
+                           "population_source": "synthetic_population_release", "source": "synthetic_test_fixture"}]).to_csv(folder / "allele_evidence.tsv", sep="\t", index=False)
+            subprocess.run([sys.executable, str(ROOT / "scripts/assess_sv_alleles.py"),
+                            "--integrated", str(folder / "integrated.tsv"), "--sample", "SYNTHETIC",
+                            "--disease-models", str(folder / "models.tsv"), "--allele-evidence", str(folder / "allele_evidence.tsv"),
+                            "--output", str(folder / "assessed.tsv"), "--hypotheses-output", str(folder / "hypotheses.tsv"),
+                            "--manifest", str(folder / "manifest.json")], check=True, capture_output=True)
+            subprocess.run([sys.executable, str(ROOT / "scripts/build_diagnostic_candidates.py"),
+                            "--input", str(folder / "assessed.tsv"), "--output", str(folder / "research.tsv"),
+                            "--clinical-output", str(folder / "clinical.tsv")], check=True, capture_output=True)
+            out = pd.read_csv(folder / "clinical.tsv", sep="\t", dtype=str).iloc[0]
+            self.assertEqual(out.ALLELE_EFFECT, "POSSIBLE_LOF")
+            self.assertEqual(out.ALLELE_GENOTYPE, "HET")
+            self.assertEqual(out.CLINICAL_MECHANISM_SUPPORTED, "YES")
+            self.assertEqual(out.CLINICAL_DISEASE_HON_STATUS, "SUPPORTS_HON")
+            self.assertEqual(float(out.CLINICAL_MAX_REPORTED_AF), 0.2)
+            self.assertEqual(out.CLINICAL_REVIEW_GROUP, "CONFLICT_OR_TECHNICAL_REVIEW")
 
     def test_empty_table_and_duplicate_keys(self):
         empty = build_clinical_table(pd.DataFrame(columns=["SV_ID", "GENES"]))

@@ -109,6 +109,108 @@ need rebuilding with the updated integrator to establish full-event AnnotSV
 classification provenance. A reported class with unverified provenance is
 flagged for review rather than trusted silently.
 
+### Where the clinical changes are implemented
+
+| Existing file | Purpose in this update | Used by |
+| --- | --- | --- |
+| `scripts/build_integrated_sv_gene_tsv.py` | Keeps the full-event AnnotSV class, points and criteria separate from gene-specific transcript evidence; reports conflicting/provisional classification sources | LRS and SRS |
+| `scripts/assess_sv_alleles.py` | Uses existing transcript/CDS predictions and optional reviewed effect/disease inputs; now blocks genotype transfer from failed, flagged or status-less caller records and exports reviewed AF and disease–HON provenance | LRS and SRS through `common/allele_assessment.smk` |
+| `scripts/build_diagnostic_candidates.py` | Shared joint clinical rules and missing/conflicting-evidence flags; uses event class once, alongside HON, mechanism, genotype, read/depth and AF evidence | SRS directly; LRS through the finalizer |
+| `scripts/finalize_candidate_ranking.py` and `lrs/thesis_extensions.smk` | Adds the complete clinical table to existing final HPO/depth/phase context without replacing research tables | LRS postprocess |
+| `srs_wgs_pipeline/Snakefile_SRS_WGS` | Writes research and clinical views in the existing review rule; tracks the integrator and its helper scripts as inputs so updates can trigger rebuilding | SRS |
+| `reference/allele_assessment/disease_models.tsv` | Extends the existing optional template with sourced HON relevance; older seven-column files remain readable | LRS and SRS |
+
+All script paths above are relative to the repository; workflow paths are under
+`snakemake_pipelines/`. No additional scoring, installation or plotting script
+was added. Existing figures still describe their research-ranked source tables;
+the clinical order is the separate TSV, not an automatic replacement of plot
+candidate selection. The original research formulas and Exomiser comparison
+are preserved. A corrected genotype input can legitimately change a research
+result previously based on a failed caller.
+
+### Apply the clinical update to existing results
+
+Update the existing code checkout and **preserve your edited config files**.
+For an ordinary clean Git checkout, use `git pull --ff-only`; if your config has
+local edits, keep a backup and reconcile it before updating rather than
+overwriting patient paths. If using a downloaded copy, replace the changed
+scripts, shared rules and Snakefiles in the existing layout, then preserve or
+restore your working config. Do not move just the Snakefile to another folder:
+it resolves shared scripts and environments from the repository layout.
+
+Keep `samples`, `path`, BAM/reference paths, AnnotSV annotations and the repaired
+gene resource pointing to your working files. In particular, keep your reviewed
+`gene_bed` value; the known local repaired resource is
+`/DATA/casadei7/tools/SV-PIPELINE-main_v3/annotsv_gene_rebuild/Annotations_Human/Genes/GRCh38/genes.ENSEMBL.sorted.bed`.
+This path is specific to that installation; do not substitute it for another
+installation without checking the file. A code update alone does not repair
+old annotation tables. See the existing
+[gene-reference repair guide](docs/ANNOTSV_GENE_REFERENCE_REPAIR.md) if needed.
+
+No new config key is mandatory. To supply evidence that is currently missing,
+use the existing optional `allele_disease_models`, `allele_evidence`,
+`allele_patient_context` and `allele_family_genotypes` paths in either config.
+Use actual reviewed TSVs, not empty templates or invented patient findings.
+The [allele guide](docs/ALLELE_ASSESSMENT.md#what-the-functional-predictions-can-and-cannot-supply)
+explains what can resolve an uncertain functional effect or disease mechanism.
+
+For every command below, first add `--dry-run --printshellcmds` and inspect the
+jobs. Then run the same command without `--dry-run`. Installation/environment
+preparation stays in the existing README sections. The examples assume the
+upstream caller and annotation files already exist. Missing inputs or outdated
+Snakemake metadata can schedule more work: inspect that before executing a
+historical rebuild. A targeted clinical rebuild does not biologically require
+new variant calling, but Snakemake will produce missing dependencies.
+
+**LRS:** run the main assessment rebuild first, then the separate postprocess
+clinical target. Set `SV_RESULTS_LRS` to the exact `path` in `config_lrs.yaml`;
+change the sample ID for each sample you intend to review.
+
+```bash
+SV_REPO="/DATA/casadei7/tools/SV-PIPELINE-main_v3"
+SV_SAMPLE="21930"
+SV_RESULTS_LRS="$SV_REPO/outs_test_CNTRL"
+cd "$SV_REPO/snakemake_pipelines/lrs"
+
+snakemake -s Snakefile_LRS_update --configfile config_lrs.yaml \
+  --use-conda --cores 32 \
+  "$SV_RESULTS_LRS/$SV_SAMPLE/gene_discovery/${SV_SAMPLE}_allele_assessment.tsv" \
+  --forcerun integrated_sv_gene_table assess_sv_alleles
+
+snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml \
+  --use-conda --cores 32 \
+  "$SV_RESULTS_LRS/$SV_SAMPLE/gene_discovery/final/${SV_SAMPLE}_clinical_candidates.ranked.tsv" \
+  --forcerun rank_sv_gene_events finalize_candidate_ranking
+```
+
+The postprocess workflow can rebuild existing downstream HPO, phase, depth and
+cohort context. Its upstream Straglr, TLDR and LongPhase prerequisites must
+exist. Select ready samples with the existing `postprocess_samples` setting;
+an automatic empty ready-sample set is not evidence that a patient was analysed.
+The samples 21930 and 25428 remain limited OPA1 controls, not diagnostic validation.
+
+**SRS:** use your real configured sample ID and the exact `path` from
+`config_srs_wgs.yaml`. The example output folder is its existing default.
+
+```bash
+SV_REPO="/DATA/casadei7/tools/SV-PIPELINE-main_v3"
+SV_SAMPLE="YOUR_SRS_SAMPLE_ID"
+SV_RESULTS_SRS="/DATA/srs_results"
+cd "$SV_REPO/snakemake_pipelines/srs_wgs_pipeline"
+
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --cores 32 \
+  "$SV_RESULTS_SRS/$SV_SAMPLE/diagnostic_review/${SV_SAMPLE}.clinical_candidates.tsv" \
+  --forcerun integrated_sv_gene_table assess_sv_alleles build_diagnostic_candidates
+```
+
+This target uses the existing frequency, supporting-evidence and enabled
+MitoCarta branch between integration and clinical review. Optional curated
+files are tracked by the shared assessment rule. Plotting remains the separate
+`all_thesis_plots` target for either workflow; it is not needed just to regenerate
+the clinical TSV. The clinical result retains all input SV–gene rows; review
+uncertain and conflict groups as well as the first-ranked candidates.
+
 ## 1. Biological hypothesis and main questions
 
 The working hypothesis is that some unresolved neurological or optic-neuropathy cases may be caused by genomic changes that are difficult to detect or interpret with standard small-variant analysis alone.

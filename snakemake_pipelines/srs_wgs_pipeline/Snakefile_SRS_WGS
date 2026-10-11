@@ -994,7 +994,11 @@ rule integrated_sv_gene_table:
         panel=GENE_LIST,
         caller_summary=rules.summarize_caller_support.output.summary,
         manta=rules.filter_manta_sv.output.tsv,
-        delly=rules.filter_delly_sv.output.tsv
+        delly=rules.filter_delly_sv.output.tsv,
+        script=SCRIPTS + "/build_integrated_sv_gene_tsv.py",
+        common=SCRIPTS + "/sv_evidence_common.py",
+        audit_script=SCRIPTS + "/audit_annotsv_evidence.py",
+        reconciliation=SCRIPTS + "/annotsv_reconciliation.py"
     output:
         tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.base.tsv"
     conda:
@@ -1002,7 +1006,7 @@ rule integrated_sv_gene_table:
     shell:
         """
         set -euo pipefail
-        python {SCRIPTS}/build_integrated_sv_gene_tsv.py --sequencing-type SRS \
+        python {input.script:q} --sequencing-type SRS \
             --annotsv-unannotated {input.unannotated:q} --vcf {input.vcf:q} --annotsv {input.annotsv:q} \
             --vep-summary {input.vep_summary:q} --annotsv-audit {input.audit:q} \
             --ranking {input.ranking:q} --panel {input.panel:q} \

@@ -72,10 +72,10 @@ clinical observation or a disease diagnosis.
 
 | Order | `CLINICAL_REVIEW_GROUP` | Meaning |
 | --- | --- | --- |
-| 1 | `P_LP_HON_MECHANISM_SUPPORTED` | Consistent event classification; strong HON query match; compatible effect and QC genotype; read support; a source-backed disease model with Moderate/Strong/Definitive validity and a compatible mechanism |
+| 1 | `P_LP_HON_MECHANISM_SUPPORTED` | Consistent event classification; strong HON query match; compatible effect and QC genotype; read support; a Moderate/Strong/Definitive disease model with a compatible mechanism and a separately sourced disease–HON link |
 | 2 | `P_LP_HON_INCOMPLETE_EVIDENCE` | P/LP with a supporting/strong HON query match, but one or more of those requirements remain unresolved |
 | 3 | `HON_RELEVANT_VUS_OR_UNCLASSIFIED` | Supporting/strong HON query match and uncertain/unclassified finding; retained for review without upgrading its class |
-| 4 | `P_LP_OTHER_OR_UNRESOLVED_HON` | P/LP with limited or unavailable HON matching; potentially important for another diagnosis |
+| 4 | `P_LP_OTHER_OR_UNRESOLVED_HON` | P/LP with limited/unavailable HON matching or a selected disease model reviewed as another disease; potentially important for another diagnosis |
 | 5 | `OTHER_REVIEW` | Other findings, still retained |
 | 6 | `CONFLICT_OR_TECHNICAL_REVIEW` | Classification, genotype, mechanism, phenotype, frequency or technical concerns that require resolution; inspect this group separately even if its rows rank lower |
 | 7 | `BENIGN_OR_LIKELY_BENIGN` | Consistent reported benign/likely benign class; a strong HPO match does not override it |
@@ -102,8 +102,19 @@ Gene-level GenCC/OMIM associations and ClinGen dosage sensitivity are useful,
 but do not by themselves identify the HON disease model. Disease identifiers,
 source, MOI and mechanism from the optional curated allele disease models are
 retained when supplied. Without them, `DISEASE_SPECIFIC_HON_MODEL_NOT_AVAILABLE`
-is explicit and group 1 is unavailable. Even with a model, the gene-based HPO
-match still requires disease-specific clinical review. A heterozygous AR hit
+is explicit and group 1 is unavailable. A valid model for another condition of
+the same gene is not necessarily a HON model. The optional `hon_relevance` and
+`hon_relevance_source` columns in the existing disease-model TSV record that
+review; they add no research or ACMG points. `CLINICAL_DISEASE_HON_STATUS`
+shows `SUPPORTS_HON`, `OTHER_DISEASE` or `UNKNOWN`. Group 1 requires the first
+with a source. An unknown link keeps a relevant P/LP finding in group 2; a
+selected model explicitly describing another disease routes a P/LP finding to
+group 4 despite a strong gene-wide HPO match. Other uncertain findings remain
+in group 5 when the selected model reports another disease. Inspect every
+hypothesis in the existing `*_allele_disease_hypotheses.tsv` when several models
+are available; the clinical table does not silently change the original
+research selection of the best model. Even a sourced HON link still requires
+case-specific clinical review. A heterozygous AR hit
 requires another allele; a possible trans partner remains a review candidate.
 Only the QC-qualified `ALLELE_GENOTYPE` is used; missing genotype provenance
 prevents promotion to group 1. Missing parents do not establish
@@ -162,11 +173,35 @@ independent validation. Low/ambiguous support, failed caller QC, incompatible
 genotype, unclear expected copy change or disease-mechanism conflict cannot be
 overridden by a strong HPO match.
 
+`CLINICAL_MECHANISM_CLASS` is `GENE_EFFECT_UNRESOLVED` when the actual gene
+effect is unavailable, even if an older research label described strong dosage
+compatibility. The original label stays visible as source context. An explicit
+`NO_DISRUPTION` effect is shown separately; neither can enter group 1.
+
+For SRS, `CLINICAL_DEPTH_STATUS` checks the existing CNVpytor match, PASS QC,
+available e-value/q0/reference-N information and direction of normalized depth
+(below 1 for DEL; above 1 for DUP). The configured CNVpytor quality thresholds
+remain those of the producer; this audit does not add a second depth score.
+With passing depth but no breakpoint reads, the technical status is
+`DEPTH_SUPPORTED_BREAKPOINT_REVIEW`. These calls remain eligible for incomplete
+P/LP or uncertain HON review, but not group 1. Depth never rescues failed/low
+breakpoint-read evidence, a failed filter or conflicting copy direction. The
+LRS mosdepth context and its existing unclear-copy-change flags remain separate
+from the CNVpytor audit. Neither method independently validates a variant.
+
 The clinical frequency view keeps measured AF ≤1% and unknown AF distinct.
 Missing AF is not proof of novelty. needLR coordinate matches remain
 provisional; database region AF is not transferred as an exact-allele AF.
-These checks do not alter the existing combined rare-or-missing filtering
-group, the research ranking or XCI behavior.
+The maximum also includes source-backed, exact/sequence-validated external AF
+already assessed by `assess_sv_alleles.py`; its scalar AF/match/source columns
+and `CLINICAL_POPULATION_SOURCES` retain provenance. Historical assessed AF
+details are read when those scalar columns are absent. Unverified external AF
+does not establish rarity, and a reported reviewed AF without usable evidence
+is flagged rather than ignored. Discordant rare/common sources require review.
+These clinical checks do not change the combined rare-or-missing filtering
+group or XCI behavior. The research formulas are preserved; correcting the
+transfer of a genotype from a failed/flagged caller can change the evidence
+and therefore the research rank for that affected row.
 
 This update provides AnnotSV-backed candidate prioritisation. It is not full
 Exomiser variant analysis, a new ACMG classification, a calibrated diagnostic

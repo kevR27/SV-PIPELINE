@@ -57,7 +57,11 @@ disease models remain explicit; gene-level associations do not replace them.
 
 Genotype QC defaults: GQ ≥20, depth ≥5. Missing QC is unknown. Merged Jasmine/SURVIVOR
 genotypes are never used as a patient genotype. Coordinate-only caller links do not
-transfer genotype. Conflicting high-quality caller genotypes remain conflict.
+transfer genotype. Caller genotypes also require an explicit `EVIDENCE_STATUS=PASS`
+and no caller review flags; high GQ/depth cannot rescue a failed record. A BND/TRA
+`NO_SVLEN` flag is descriptive and does not alone block genotype transfer.
+Historical caller records without that QC status must be rebuilt. Conflicting
+high-quality passing caller genotypes remain conflict.
 Parent absence from a VCF is not a reference genotype. Parent genotypes require exact
 master SV IDs, callable reference/alternate genotyping, source and QC.
 
@@ -69,7 +73,7 @@ by this stage. LongPhase/WhatsHap outputs remain complementary context downstrea
 
 ## Configuration
 
-The same keys are supported in `config_lrs.yaml` and `config_srs.yaml`:
+The same keys are supported in `config_lrs.yaml` and `config_srs_wgs.yaml`:
 
 ```yaml
 allele_patient_context: /absolute/path/patient_context.tsv
@@ -108,6 +112,14 @@ stable disease ID and a versioned/source citation. Allowed values:
 - `mechanism`: LOF, HAPLOINSUFFICIENCY, TRIPLOSENSITIVITY, GOF, DOMINANT_NEGATIVE, OTHER, UNKNOWN.
 - `validity`: DEFINITIVE, STRONG, MODERATE, LIMITED, DISPUTED, REFUTED, UNKNOWN.
 
+Two optional columns in this existing template support the clinical review:
+`hon_relevance` (`SUPPORTS_HON`, `OTHER_DISEASE`, `UNKNOWN`) and
+`hon_relevance_source`. A non-unknown value requires the latter: cite the
+disease-specific evidence that connects, or distinguishes, the condition from
+HON. This is a reviewed assertion, not an automatic result of a gene-HPO match.
+Existing seven-column disease-model files still work; their HON link stays
+unknown. These columns do not change the 0–12 research formula.
+
 HPO terms are optional. A missing disease model is not a negative gene–disease result.
 AnnotSV's aggregate GenCC/OMIM strings are retained for review but are not automatically
 zipped together into disease-specific assertions: multi-disease lists do not reliably
@@ -125,12 +137,45 @@ uppercase; SV IDs and sample IDs are exact.
 
 `effect`: LOF, COPY_GAIN, GOF, DOMINANT_NEGATIVE, NO_DISRUPTION, OTHER, UNKNOWN (or `.`).
 A specified effect requires `effect_status` PREDICTED or VALIDATED and a real source.
+An empty, `.` or `UNKNOWN` source is unavailable provenance, not support.
 A validated effect means evidence for that molecular effect, not merely PCR confirmation
 that a structural event exists. Optional genotype uses VCF GT notation and GQ/depth.
 AF is a number from 0 to 1. An AF contribution requires `population_match` EXACT_ALLELE
 or SEQUENCE_VALIDATED and a population source. Record the relevant dataset release,
 ancestry/denominator/callability limitations in the source/review record; the script does
 not independently verify external assertions or independently query databases.
+
+Verified AF is also exported as `ALLELE_POPULATION_AF`, `ALLELE_POPULATION_MATCH`
+and `ALLELE_POPULATION_SOURCE`. The clinical table uses it alongside available
+gnomAD-SV and provisional needLR AF. Measured zero remains a measured value;
+unknown AF remains unknown. Retain the cited release and allele-matching record.
+
+### What the functional predictions can and cannot supply
+
+The existing script predicts `POSSIBLE_LOF` when a deletion removes annotated
+coding sequence and `POSSIBLE_COPY_GAIN` when a duplication encompasses an
+annotated transcript. It records AnnotSV transcript/exon context and structural
+VEP consequences. A breakpoint in a transcript for INV/BND/INS is recorded as
+possible disruption with an unknown molecular effect. These are predictions,
+not functional experiments. No disease mechanism is inferred merely because
+the SV overlaps a gene or the whole event has a pathogenic AnnotSV class.
+
+To resolve a flagged candidate, first inspect its source transcript rows and
+actual breakpoints. Check the relevant transcript, exon/CDS involvement, frame
+and splice consequences, regulatory context and duplication orientation/site
+where available. Breakpoint confirmation does not by itself validate loss of
+function, gain of function or a dominant-negative effect. Use targeted sequence,
+RNA/expression or another relevant assay only when the remaining biological
+question needs that evidence. Record a source-backed `PREDICTED` or `VALIDATED`
+effect in the existing allele-evidence TSV; leave it unknown when unsupported.
+
+Then curate the disease ID, MOI, mechanism, validity and HON link from records
+that preserve those relationships. A validated gene-disease association for one
+disorder cannot be transferred to every disorder of that gene. Patient HPO
+terms refine case relevance when observed; they are not mandatory to run the
+shared HON query. Callable patient/family genotypes and an actual second allele
+can resolve inheritance questions; missing parents never establish de novo.
+These files are evidence inputs, not requirements to invent missing findings.
 
 ### Family genotypes
 
@@ -189,8 +234,14 @@ Example, from `snakemake_pipelines/lrs/`, using your configured sample/output pa
 snakemake -s Snakefile_LRS_update --configfile config_lrs.yaml \
   --use-conda --cores 32 /absolute/output-root/SAMPLE/gene_discovery/SAMPLE_allele_assessment.tsv
 snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml \
-  --use-conda --cores 32 all_thesis_plots
+  --use-conda --cores 32 /absolute/output-root/SAMPLE/gene_discovery/final/SAMPLE_clinical_candidates.ranked.tsv
 ```
+
+Use `--dry-run --printshellcmds` first. Existing results do not acquire new
+columns until the integrator/assessment and final table are rebuilt. The
+[README update instructions](../README.md#apply-the-clinical-update-to-existing-results)
+give explicit forced rebuild targets for both platforms. Plotting remains the
+separate `all_thesis_plots` target.
 
 The assessment can also run directly using `python scripts/assess_sv_alleles.py --help`.
 Use the same reviewed configuration and optional inputs for both platforms. Keep

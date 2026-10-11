@@ -88,6 +88,64 @@ def class_from_points(points):
     return "VUS"
 
 
+def clinical_population_summary(row, flags, cautions):
+    """Use all available event AF, preserving exact versus provisional sources."""
+    population_row = dict(row)
+    for column in ("GNOMAD_SV_AF", "NEEDLR_AF"):
+        af = number(row.get(column))
+        if known(row.get(column)) and (af is None or not 0 <= af <= 1):
+            population_row[column] = "."
+            flags.append("INVALID_POPULATION_AF")
+    population = population_summary(population_row)
+    afs = [number(population[key]) for key in ("min_af", "max_af") if number(population[key]) is not None]
+    sources = [population["sources"]] if known(population["sources"]) else []
+    reviewed_statuses = {
+        "NOT_OBSERVED_IN_REPORTED_POPULATION", "LOW_FREQUENCY_ALLELE_MATCH", "ABOVE_RESEARCH_AF_THRESHOLD",
+    }
+    if value(row, "ALLELE_POPULATION_STATUS") in reviewed_statuses:
+        reviewed_af = number(row.get("ALLELE_POPULATION_AF"))
+        reviewed_source = value(row, "ALLELE_POPULATION_SOURCE")
+        exact_match = value(row, "ALLELE_POPULATION_MATCH") in {"EXACT_ALLELE", "SEQUENCE_VALIDATED"}
+        if "ALLELE_POPULATION_AF" not in row:
+            # Read historical source-backed assessment details without silently
+            # ignoring a high AF. New assessments use the scalar columns above.
+            detail = value(row, "ALLELE_POPULATION_DETAIL")
+            af_match = re.search(r"(?:^|;)AF=([^;]+)", detail)
+            source_match = re.search(r"(?:^|;)source=([^;]+)", detail)
+            reviewed_af = number(af_match.group(1)) if af_match else None
+            reviewed_source = source_match.group(1) if source_match else "."
+            exact_match = True  # These statuses were emitted only for reviewed allele matches.
+        if reviewed_af is not None and 0 <= reviewed_af <= 1 and known(reviewed_source) and exact_match:
+            afs.append(reviewed_af)
+            sources.append("reviewed_allele:" + reviewed_source)
+        else:
+            flags.append("REVIEWED_POPULATION_AF_UNAVAILABLE_OR_UNVERIFIED")
+    elif known(row.get("ALLELE_POPULATION_AF")):
+        cautions.append("EXTERNAL_AF_NOT_VERIFIED_AS_SAME_ALLELE")
+    if afs and min(afs) <= 0.001 and max(afs) > 0.01:
+        flags.append("POPULATION_AF_SOURCE_CONFLICT")
+    return (max(afs) if afs else None), ";".join(sources) or "."
+
+
+def clinical_depth_status(row, kind):
+    """Audit existing CNVpytor QC; depth does not establish precise breakpoints."""
+    if kind not in {"DEL", "DUP"}:
+        return "NOT_APPLICABLE_NON_CNV"
+    if value(row, "CNVPYTOR_READ_DEPTH_MATCH") not in {"YES", "DEPTH_ONLY"}:
+        return "NO_REPORTED_CNVPYTOR_MATCH"
+    level = number(row.get("CNVPYTOR_LEVEL"))
+    eval1 = number(row.get("CNVPYTOR_EVAL1"))
+    q0, pn = number(row.get("CNVPYTOR_Q0")), number(row.get("CNVPYTOR_PN"))
+    depth_flags = value(row, "CNVPYTOR_FLAGS").upper()
+    if (value(row, "CNVPYTOR_STATUS") != "PASS" or depth_flags not in {".", "PASS", "NONE"}
+            or level is None or eval1 is None or eval1 < 0
+            or q0 is None or not 0 <= q0 <= 1 or pn is None or not 0 <= pn <= 1):
+        return "CNVPYTOR_QC_UNAVAILABLE_OR_REVIEW"
+    if (kind == "DEL" and 0 <= level < 1) or (kind == "DUP" and level > 1):
+        return "CNVPYTOR_QC_PASS_COPY_DIRECTION_SUPPORTED"
+    return "CNVPYTOR_COPY_DIRECTION_CONFLICT"
+
+
 def clinical_row(row):
     """Assess one SV–gene row using existing evidence, without adding points."""
     flags, cautions = [], []
@@ -164,6 +222,16 @@ def clinical_row(row):
     disease_scope = "REVIEWED_DISEASE_MODEL_HON_FIT_REQUIRES_REVIEW" if reviewed_model else "GENE_LEVEL_ASSOCIATION_NOT_DISEASE_SPECIFIC"
     if not reviewed_model:
         cautions.append("DISEASE_SPECIFIC_HON_MODEL_NOT_AVAILABLE")
+    disease_hon = value(row, "ALLELE_DISEASE_HON_RELEVANCE", default="UNKNOWN")
+    if not reviewed_model or not known(row.get("ALLELE_DISEASE_HON_SOURCE")):
+        disease_hon = "UNKNOWN"
+    if disease_hon not in {"SUPPORTS_HON", "OTHER_DISEASE"}:
+        disease_hon = "UNKNOWN"
+        cautions.append("DISEASE_SPECIFIC_HON_RELEVANCE_NOT_REVIEWED")
+    elif disease_hon == "OTHER_DISEASE":
+        cautions.append("SELECTED_MODEL_REPORTS_ANOTHER_DISEASE_REVIEW_ALTERNATIVE_HYPOTHESES")
+    if (number(row.get("ALLELE_DISEASE_HYPOTHESIS_COUNT")) or 0) > 1:
+        cautions.append("MULTIPLE_DISEASE_MODELS_REVIEW_ALLELE_DISEASE_HYPOTHESES_TABLE")
     if disease["best"] in {"DISPUTED", "REFUTED"} or model_validity in {"DISPUTED", "REFUTED"}:
         flags.append("DISPUTED_OR_REFUTED_DISEASE_ASSOCIATION")
 
@@ -186,10 +254,17 @@ def clinical_row(row):
     if mechanism_class == "DOSAGE_MECHANISM_CONFLICT_REVIEW" or disease_mechanism in {
         "MECHANISM_MISMATCH_REVIEW", "DISEASE_ASSOCIATION_CONFLICT",
     }:
+        supported_mechanism = False
+        mechanism_class = "DISEASE_MECHANISM_CONFLICT_REVIEW"
         flags.append("DISEASE_MECHANISM_CONFLICT")
+    elif reviewed_model and disease_mechanism == "DISEASE_MECHANISM_COMPATIBLE":
+        mechanism_class = "REPORTED_EFFECT_COMPATIBLE_WITH_REVIEWED_DISEASE_MODEL"
+    elif reviewed_model and disease_mechanism == "DISEASE_MECHANISM_POSSIBLE":
+        mechanism_class = "PREDICTED_EFFECT_COMPATIBLE_WITH_REVIEWED_DISEASE_MODEL"
     if not known(effect) or effect in {"UNKNOWN", "NO_DISRUPTION"}:
         supported_mechanism = False
-        cautions.append("GENE_SPECIFIC_FUNCTIONAL_EFFECT_UNRESOLVED")
+        mechanism_class = "NO_GENE_DISRUPTION_REPORTED" if effect == "NO_DISRUPTION" else "GENE_EFFECT_UNRESOLVED"
+        cautions.append(mechanism_class)
     if not supported_mechanism:
         cautions.append("DISEASE_MECHANISM_NOT_ESTABLISHED")
 
@@ -230,26 +305,31 @@ def clinical_row(row):
 
     technical = technical_summary(row)
     allele_technical = value(row, "ALLELE_TECHNICAL_STATUS")
-    technical_supported = allele_technical in {"MULTICALLER_READ_SUPPORTED", "SINGLE_CALLER_READ_SUPPORTED"}
+    read_supported = allele_technical in {"MULTICALLER_READ_SUPPORTED", "SINGLE_CALLER_READ_SUPPORTED"}
     if not known(allele_technical):
-        technical_supported = technical["tier"] in {"STRONG", "MODERATE"} and number(technical["max_read_support"]) is not None
-    if allele_technical in {"REVIEW_REQUIRED", "LOW_READ_SUPPORT"} or technical["review"] == "YES" or value(row, "FILTER", default="PASS") != "PASS":
+        read_supported = technical["tier"] in {"STRONG", "MODERATE"} and number(technical["max_read_support"]) is not None
+    technical_supported = read_supported
+    technical_status = "READ_SUPPORTED_NOT_INDEPENDENT_VALIDATION" if read_supported else "REVIEW_REQUIRED"
+    depth_status = clinical_depth_status(row, kind)
+    failed_read_qc = (allele_technical in {"REVIEW_REQUIRED", "LOW_READ_SUPPORT"}
+                      or technical["review"] == "YES" or value(row, "FILTER", default="PASS") != "PASS")
+    if depth_status == "CNVPYTOR_QC_PASS_COPY_DIRECTION_SUPPORTED" and not read_supported and not failed_read_qc:
+        technical_supported = True
+        technical_status = "DEPTH_SUPPORTED_BREAKPOINT_REVIEW"
+        cautions.append("READ_DEPTH_SUPPORT_DOES_NOT_RESOLVE_BREAKPOINTS_OR_GENOTYPE")
+    if depth_status == "CNVPYTOR_QC_UNAVAILABLE_OR_REVIEW":
+        cautions.append(depth_status)
+    if failed_read_qc:
         technical_supported = False
         flags.append("CALLER_QC_OR_READ_SUPPORT_REVIEW")
-    if value(row, "DEPTH_SUPPORT_CLASS") == "DOES_NOT_SHOW_EXPECTED_COPY_CHANGE" or value(row, "DEPTH_PATTERN") == "NOT_CLEAR":
+    if depth_status == "CNVPYTOR_COPY_DIRECTION_CONFLICT" or value(row, "DEPTH_SUPPORT_CLASS") == "DOES_NOT_SHOW_EXPECTED_COPY_CHANGE" or value(row, "DEPTH_PATTERN") == "NOT_CLEAR":
         technical_supported = False
         flags.append("COPY_CHANGE_DEPTH_CONFIRMATION_REQUIRED")
     if not technical_supported:
+        technical_status = "REVIEW_REQUIRED"
         flags.append("TECHNICAL_CONFIRMATION_REQUIRED")
 
-    population_row = dict(row)
-    for column in ("GNOMAD_SV_AF", "NEEDLR_AF"):
-        af = number(row.get(column))
-        if known(row.get(column)) and (af is None or not 0 <= af <= 1):
-            population_row[column] = "."
-            flags.append("INVALID_POPULATION_AF")
-    population = population_summary(population_row)
-    af = number(population["max_af"])
+    af, population_sources = clinical_population_summary(row, flags, cautions)
     population_status = "UNKNOWN_AF" if af is None else (
         "REPORTED_AF_LE_1_PERCENT" if af <= 0.01 else "REPORTED_AF_GT_1_PERCENT_REVIEW"
     )
@@ -257,8 +337,6 @@ def clinical_row(row):
         cautions.append("MISSING_AF_IS_NOT_PROOF_OF_NOVELTY")
     if af is not None and af > 0.01:
         flags.append("COMMON_OR_PROVISIONAL_POPULATION_MATCH_REVIEW")
-    if population["conflict"] == "YES":
-        flags.append("POPULATION_AF_SOURCE_CONFLICT")
 
     # Database region overlap is useful context, but may describe another allele.
     # It never adds another ClinVar/pathogenicity bonus on top of AnnotSV.
@@ -280,12 +358,13 @@ def clinical_row(row):
         group = "BENIGN_OR_LIKELY_BENIGN"
     elif flags:
         group = "CONFLICT_OR_TECHNICAL_REVIEW"
-    elif positive_class and relevant:
+    elif positive_class and relevant and disease_hon != "OTHER_DISEASE":
         group = "P_LP_HON_MECHANISM_SUPPORTED" if (
             class_complete and hon_relevance == "STRONG_QUERY_MATCH"
             and supported_mechanism and inheritance_supported and disease_specific_support
+            and disease_hon == "SUPPORTS_HON" and read_supported
         ) else "P_LP_HON_INCOMPLETE_EVIDENCE"
-    elif relevant:
+    elif relevant and disease_hon != "OTHER_DISEASE":
         group = "HON_RELEVANT_VUS_OR_UNCLASSIFIED"
     elif positive_class:
         group = "P_LP_OTHER_OR_UNRESOLVED_HON"
@@ -315,17 +394,20 @@ def clinical_row(row):
         "CLINICAL_DISEASE_EVIDENCE_LEVEL": disease["best"],
         "CLINICAL_DISEASE_EVIDENCE_SCOPE": disease_scope,
         "CLINICAL_DISEASE_MODEL_VALIDITY": model_validity,
+        "CLINICAL_DISEASE_HON_STATUS": disease_hon,
         "CLINICAL_DATABASE_OVERLAP_AUDIT": database_audit,
         "CLINICAL_MECHANISM_CLASS": mechanism_class,
         "CLINICAL_MECHANISM_SUPPORTED": "YES" if supported_mechanism else "NO_OR_UNRESOLVED",
         "CLINICAL_INHERITANCE_STATUS": inheritance,
-        "CLINICAL_TECHNICAL_STATUS": "READ_SUPPORTED_NOT_INDEPENDENT_VALIDATION" if technical_supported else "REVIEW_REQUIRED",
+        "CLINICAL_TECHNICAL_STATUS": technical_status,
+        "CLINICAL_DEPTH_STATUS": depth_status,
         "CLINICAL_POPULATION_STATUS": population_status,
         "CLINICAL_MAX_REPORTED_AF": af if af is not None else ".",
+        "CLINICAL_POPULATION_SOURCES": population_sources,
         "CLINICAL_REVIEW_FLAGS": ";".join(sorted(set(flags))) or ".",
         "CLINICAL_MISSING_OR_CONTEXT_NOTES": ";".join(sorted(set(cautions))) or ".",
         "CLINICAL_MANUAL_REVIEW": "Confirm breakpoints/copy change, transcript effect, disease-specific mechanism, phenotype and segregation; audit AnnotSV automated CNV criteria",
-        "CLINICAL_RANKING_METHOD": "JOINT_REVIEW_GROUPS_V1_NO_ADDITIVE_ACMG_OR_PHENOTYPE_POINTS",
+        "CLINICAL_RANKING_METHOD": "JOINT_REVIEW_GROUPS_V2_NO_ADDITIVE_ACMG_OR_PHENOTYPE_POINTS",
         "CLINICAL_USE_NOTE": "Candidate review only; no diagnostic probability, new ACMG class or validated diagnosis; a multi-gene CNV class is not proof for each gene",
     }
 

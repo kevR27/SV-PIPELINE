@@ -1,1 +1,1 @@
-gene	disease_id	moi	mechanism	validity	hpo_terms	source
+gene	disease_id	moi	mechanism	validity	hpo_terms	source	hon_relevance	hon_relevance_source

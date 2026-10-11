@@ -9,6 +9,15 @@ The layout now follows LRS: one configuration, numbered analysis stages,
 shared `scripts/` and `envs/` folders, and a separate `all_thesis_plots` target.
 The SRS folder still contains only its existing Snakefile, config and README.
 
+The existing review rule now also writes
+`diagnostic_review/<sample>.clinical_candidates.tsv`. It combines the reported
+AnnotSV CNV class with HON relevance and actual variant evidence; the original
+biological research order and separate Exomiser comparison remain available.
+Both technologies use the same clinical assessment code. Passing CNVpytor-only
+CNVs remain visible as depth-supported candidates needing breakpoint/genotype
+review. See the [joint interpretation rules](../../docs/SCORE_INTERPRETATION.md#joint-clinical-candidate-review)
+and [exact existing-result rebuild commands](../../README.md#apply-the-clinical-update-to-existing-results).
+
 The plotting target now also creates a genome position map, SV-spacing view,
 counts/evidence UpSet, size/support comparison, population AF candidate overlay
 and one-page candidate cards. Its existing mosdepth QC step saves measured depth

@@ -20,16 +20,17 @@ from sv_evidence_common import MISSING, number
 # INFO/read-name and transcript JSON fields can exceed the csv default of 128 KiB.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
-VERSION = "sv-allele-evidence-v1.3"
+VERSION = "sv-allele-evidence-v1.4"
 DOMAINS = ("POPULATION", "TECHNICAL", "DISRUPTION", "INHERITANCE", "PHENOTYPE", "DISEASE_MECHANISM")
 EFFECTS = {"LOF", "COPY_GAIN", "GOF", "DOMINANT_NEGATIVE", "NO_DISRUPTION", "OTHER", "UNKNOWN"}
 MOIS = {"AD", "AR", "XLD", "XLR", "MT", "UNKNOWN"}
 MECHANISMS = {"LOF", "HAPLOINSUFFICIENCY", "TRIPLOSENSITIVITY", "GOF", "DOMINANT_NEGATIVE", "OTHER", "UNKNOWN"}
 VALIDITY = {"DEFINITIVE", "STRONG", "MODERATE", "LIMITED", "DISPUTED", "REFUTED", "UNKNOWN"}
+HON_RELEVANCE = {"SUPPORTS_HON", "OTHER_DISEASE", "UNKNOWN"}
 
 
 def known(value):
-    return value is not None and str(value).strip().upper() not in MISSING
+    return value is not None and str(value).strip().upper() not in MISSING | {"UNKNOWN"}
 
 
 def rows(path, required=()):
@@ -100,19 +101,28 @@ def population(row, evidence, rare_af):
     return domain("UNKNOWN", detail=f"needLR={row.get('NEEDLR_STATUS', 'NOT_SUPPLIED')}")
 
 
+def caller_review_flags(record, svtype):
+    """Keep descriptive BND length flags separate from actual caller QC issues."""
+    # UNKNOWN in a QC flag still requires review, even though an UNKNOWN
+    # evidence value/source cannot supply genotype or functional support.
+    flags = {flag.strip().upper() for flag in re.split(r"[;,|]", str(record.get("EVIDENCE_FLAGS", ".")))} - MISSING - {"PASS"}
+    if svtype.upper() in {"BND", "TRA"}:
+        flags.discard("NO_SVLEN")
+    if record.get("EVIDENCE_STATUS") == "FAIL":
+        flags.add("CALLER_RECORD_FAILS_CURRENT_FILTER")
+    return flags
+
+
 def technical(row, min_support):
     data = json.loads(row.get("CALLER_EVIDENCE_JSON", "[]"))
     support = [number(r.get("CALLER_SUPPORT")) for r in data]
     support = [x for x in support if x is not None and x >= 0]
     count = number(row.get("CALLER_COUNT"))
-    all_flags = {flag.strip().upper() for r in data if known(r.get("EVIDENCE_FLAGS"))
-                 for flag in re.split(r"[;,|]", r["EVIDENCE_FLAGS"])} - {"PASS", "NONE", ""}
+    all_flags = {flag.strip().upper() for r in data
+                 for flag in re.split(r"[;,|]", str(r.get("EVIDENCE_FLAGS", ".")))} - MISSING - {"PASS"}
     # A translocation/breakend has no meaningful single SV length. Its absence
     # is descriptive, not a technical failure. Other flags still require review.
-    informational = {"NO_SVLEN"} if row.get("SVTYPE", "").upper() in {"BND", "TRA"} else set()
-    flagged = sorted(all_flags - informational)
-    if any(r.get("EVIDENCE_STATUS") == "FAIL" for r in data):
-        flagged.append("CALLER_RECORD_FAILS_CURRENT_FILTER")
+    flagged = sorted({flag for r in data for flag in caller_review_flags(r, row.get("SVTYPE", ""))})
     filt = row.get("FILTER", ".")
     method = row.get("CALLER_EVIDENCE_MATCH", "NO_MATCH")
     failures = sorted({r.get("EVIDENCE_FAIL_REASONS", "UNSPECIFIED") for r in data if r.get("EVIDENCE_STATUS") == "FAIL"})
@@ -296,6 +306,10 @@ def patient_genotype(row, evidence, family, sample, min_gq, min_dp):
         return "UNKNOWN", "NO_EXACT_CALLER_ID_LINK"
     observations = []
     for r in json.loads(row.get("CALLER_EVIDENCE_JSON", "[]")):
+        # Good GQ/DP cannot rescue a failed or flagged caller record. Legacy
+        # records without a filter status must be rebuilt before transferring GT.
+        if r.get("EVIDENCE_STATUS") != "PASS" or caller_review_flags(r, row.get("SVTYPE", "")):
+            continue
         gq, dp = number(r.get("CALLER_GQ")), number(r.get("CALLER_DP"))
         gt = genotype(r.get("CALLER_GT"))
         if gt != "UNKNOWN" and gq is not None and dp is not None and gq >= min_gq and dp >= min_dp:
@@ -432,6 +446,8 @@ def assess(row, model, patient, evidence, family, gene_hpo, args):
     vep_status, vep_detail = vep_transcript_context(row)
     result = {"ALLELE_ASSESSMENT_VERSION": VERSION, "ALLELE_DISEASE_ID": model.get("disease_id", "."),
               "ALLELE_DISEASE_SOURCE": model.get("source", "."), "ALLELE_GENOTYPE": gt,
+              "ALLELE_DISEASE_HON_RELEVANCE": model.get("hon_relevance", "UNKNOWN"),
+              "ALLELE_DISEASE_HON_SOURCE": model.get("hon_relevance_source", "."),
               "ALLELE_GENOTYPE_SOURCE": gt_source, "ALLELE_EFFECT": effect,
               "ALLELE_FUNCTIONAL_CONTEXT": functional_context(row),
               "ALLELE_VEP_TRANSCRIPT_CONTEXT_STATUS": vep_status,
@@ -439,6 +455,14 @@ def assess(row, model, patient, evidence, family, gene_hpo, args):
     components = [population(row, evidence, args.rare_af), technical(row, args.min_support), disruption_result,
                   inheritance(row, model, patient, gt, family, args.min_gq, args.min_dp),
                   phenotype(gene, model, patient, gene_hpo), disease_mechanism(row, model, effect)]
+    # Keep exact, reviewed population evidence in structured columns so the
+    # clinical table need not lose it when needLR/gnomAD AF is unavailable.
+    verified_af = components[0][0] in {
+        "NOT_OBSERVED_IN_REPORTED_POPULATION", "LOW_FREQUENCY_ALLELE_MATCH", "ABOVE_RESEARCH_AF_THRESHOLD",
+    }
+    result["ALLELE_POPULATION_AF"] = evidence.get("population_af", ".") if verified_af else "."
+    result["ALLELE_POPULATION_MATCH"] = evidence.get("population_match", ".") if verified_af else "."
+    result["ALLELE_POPULATION_SOURCE"] = evidence.get("population_source", ".") if verified_af else "."
     partners = []
     if gt == "HET" and components[5][0] in {"DISEASE_MECHANISM_COMPATIBLE", "DISEASE_MECHANISM_POSSIBLE"}:
         partners = trans_candidates(row, model, patient, family, args)
@@ -545,6 +569,13 @@ def main():
         if model["moi"] not in MOIS or model["mechanism"] not in MECHANISMS or model["validity"] not in VALIDITY or not known(model["source"]) or not known(model["disease_id"]):
             raise ValueError(f"Invalid curated disease model: {model}")
         terms(model.get("hpo_terms", "."))
+        model["hon_relevance"] = model.get("hon_relevance", "UNKNOWN")
+        if not known(model["hon_relevance"]):
+            model["hon_relevance"] = "UNKNOWN"
+        if model["hon_relevance"] not in HON_RELEVANCE:
+            raise ValueError("hon_relevance must be SUPPORTS_HON, OTHER_DISEASE or UNKNOWN")
+        if model["hon_relevance"] != "UNKNOWN" and not known(model.get("hon_relevance_source")):
+            raise ValueError("A reviewed disease HON relevance requires hon_relevance_source")
         by_gene[model["gene"].upper()].append(model)
     evidence = rows(args.allele_evidence, ("sample_id", "SV_ID", "gene", "disease_id", "source"))
     for r in evidence:

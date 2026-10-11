@@ -92,12 +92,17 @@ class CoreTests(unittest.TestCase):
 class AssessmentTests(unittest.TestCase):
     def setUp(self):
         self.args=SimpleNamespace(sample='P',rare_af=.01,min_support=5,min_gq=20,min_dp=5)
-        self.row={'SV_ID':'v','GENES':'A','CHROM':'chr1','START':'100','END':'200','SVTYPE':'DEL','CALLER_COUNT':'2','FILTER':'PASS','CALLER_EVIDENCE_MATCH':'IDLIST','CALLER_EVIDENCE_JSON':json.dumps([{'CALLER':'Sniffles2','CALLER_SUPPORT':'8','CALLER_GT':'0/1','CALLER_GQ':'30','CALLER_DP':'20'}])}
+        self.row={'SV_ID':'v','GENES':'A','CHROM':'chr1','START':'100','END':'200','SVTYPE':'DEL','CALLER_COUNT':'2','FILTER':'PASS','CALLER_EVIDENCE_MATCH':'IDLIST','CALLER_EVIDENCE_JSON':json.dumps([{'CALLER':'Sniffles2','CALLER_SUPPORT':'8','CALLER_GT':'0/1','CALLER_GQ':'30','CALLER_DP':'20','EVIDENCE_STATUS':'PASS','EVIDENCE_FLAGS':'.'}])}
         self.model={'disease_id':'D:1','moi':'AD','mechanism':'LOF','validity':'STRONG','hpo_terms':'HP:0000648','source':'curation'}
 
     def test_header_template_missing_optional_values(self):
         self.assertEqual(allele.disruption(self.row,{'effect':'.','source':'review'})[1], 'UNKNOWN')
         self.assertEqual(allele.population({}, {'population_af':'.'},.01)[0], 'UNKNOWN')
+        self.assertEqual(allele.disruption(self.row,{'effect':'LOF','effect_status':'VALIDATED','source':'UNKNOWN'})[1], 'UNKNOWN')
+        self.assertEqual(allele.population({}, {'population_af':'.001','population_match':'EXACT_ALLELE',
+                                              'population_source':'UNKNOWN'},.01)[0], 'UNKNOWN_UNVERIFIED_EXTERNAL_AF')
+        self.assertEqual(allele.patient_genotype(self.row, {'gt':'0/1','gq':'30','dp':'10','source':'UNKNOWN'},
+                                                {},'P',20,5)[0], 'UNKNOWN')
 
     def test_unknown_never_gets_absence_bonus(self):
         r=allele.assess({'SV_ID':'v','GENES':'A'}, {},{}, {},{}, {},self.args)
@@ -135,6 +140,24 @@ class AssessmentTests(unittest.TestCase):
     def test_coordinate_link_cannot_transfer_genotype(self):
         gt,_=allele.patient_genotype({**self.row,'CALLER_EVIDENCE_MATCH':'COORDINATE_FALLBACK'}, {},{},'P',20,5)
         self.assertEqual(gt,'UNKNOWN')
+
+    def test_failed_flagged_or_legacy_caller_cannot_transfer_genotype(self):
+        record=json.loads(self.row['CALLER_EVIDENCE_JSON'])[0]
+        for change in ({'EVIDENCE_STATUS':'FAIL'}, {'EVIDENCE_FLAGS':'IMPRECISE'}, {'EVIDENCE_FLAGS':'UNKNOWN'}, {'EVIDENCE_STATUS':'.'}):
+            row={**self.row,'CALLER_EVIDENCE_JSON':json.dumps([{**record,**change}])}
+            self.assertEqual(allele.patient_genotype(row, {},{},'P',20,5)[0], 'UNKNOWN')
+        bnd={**self.row,'SVTYPE':'BND','CALLER_EVIDENCE_JSON':json.dumps([{**record,'EVIDENCE_FLAGS':'NO_SVLEN'}])}
+        self.assertEqual(allele.patient_genotype(bnd, {},{},'P',20,5)[0], 'HET')
+
+    def test_reviewed_population_af_survives_assessment_in_scalar_columns(self):
+        ev={'population_af':'0.2','population_match':'EXACT_ALLELE','population_source':'synthetic_population_release'}
+        out=allele.assess(self.row,self.model,{},ev,{}, {},self.args)
+        self.assertEqual(out['ALLELE_POPULATION_AF'],'0.2')
+        self.assertEqual(out['ALLELE_POPULATION_MATCH'],'EXACT_ALLELE')
+        self.assertEqual(out['ALLELE_POPULATION_SOURCE'],'synthetic_population_release')
+        self.assertEqual(out['ALLELE_POPULATION_STATUS'],'ABOVE_RESEARCH_AF_THRESHOLD')
+        out=allele.assess(self.row,self.model,{}, {**ev,'population_match':'COORDINATE'}, {}, {},self.args)
+        self.assertEqual(out['ALLELE_POPULATION_AF'],'.')
 
     def test_genotype_conflict(self):
         records=json.loads(self.row['CALLER_EVIDENCE_JSON'])
@@ -175,6 +198,26 @@ class AssessmentTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
+    def test_cli_keeps_reviewed_hon_link_and_rejects_unsourced_assertion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp)
+            table(d/'input.tsv',[{'SV_ID':'v','GENES':'A'}])
+            model={'gene':'A','disease_id':'SYNTHETIC:1','moi':'AD','mechanism':'LOF','validity':'STRONG',
+                   'source':'synthetic_test_fixture','hon_relevance':'SUPPORTS_HON',
+                   'hon_relevance_source':'synthetic_disease_hon_fixture'}
+            table(d/'models.tsv',[model])
+            cmd=[sys.executable,str(ROOT/'scripts/assess_sv_alleles.py'),'--integrated',str(d/'input.tsv'),
+                 '--sample','P','--disease-models',str(d/'models.tsv'),'--output',str(d/'out.tsv'),
+                 '--hypotheses-output',str(d/'hyp.tsv'),'--manifest',str(d/'manifest.json')]
+            subprocess.run(cmd,check=True,capture_output=True,text=True)
+            row=allele.rows(d/'out.tsv')[0]
+            self.assertEqual(row['ALLELE_DISEASE_HON_RELEVANCE'],'SUPPORTS_HON')
+            self.assertEqual(row['ALLELE_DISEASE_HON_SOURCE'],'synthetic_disease_hon_fixture')
+            table(d/'models.tsv',[{**model,'hon_relevance_source':'.'}])
+            result=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('hon_relevance_source',result.stderr)
+
     def test_cli_preserves_multi_gene_and_intergenic_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp)
