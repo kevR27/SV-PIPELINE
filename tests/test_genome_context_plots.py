@@ -129,7 +129,8 @@ class GenomeContextTests(unittest.TestCase):
 
     def test_common_af_from_another_gene_row_is_not_lost(self):
         raw = events()
-        raw.loc[1,"NEEDLR_AF"] = .1
+        # AF fields arrive as text from the input TSV, including missing values.
+        raw.loc[1,"NEEDLR_AF"] = "0.1"
         self.assertEqual(event_frequency_table(raw).set_index("SV_ID").at["del1","MAX_POPULATION_AF"],.1)
 
     def test_gene_count_uses_actual_coordinates_not_a_nearby_name(self):

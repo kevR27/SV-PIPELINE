@@ -1,5 +1,7 @@
 name: SV evidence regression
-on: [push, pull_request]
+# Optional development checks; patient analysis does not run this workflow.
+on:
+  workflow_dispatch:
 jobs:
   evidence:
     runs-on: ubuntu-latest

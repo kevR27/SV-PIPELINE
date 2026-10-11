@@ -714,9 +714,20 @@ evidence are retained. The AnnotSV log is saved under
 Do not average these scores or add Exomiser points to the existing score.
 They are alternative phenotype methods with overlapping knowledge sources.
 Exomiser is the more established reference for phenotype matching; the custom
-method remains useful as a transparent HON-specific comparison. Neither has
+method remains useful as a transparent HON-specific comparison. Use Exomiser
+as the reference phenotype result in the report, while retaining the custom
+comparison and the existing overall SV ranking. Neither has
 been shown to be superior in this cohort. A diagnosed or held-out benchmark
 is needed to assess accuracy, and neither method establishes SV pathogenicity.
+
+Recovering the expected OPA1–optic-neuropathy association in known-positive
+deletion samples is a useful biological check. The custom method reads known
+gene–phenotype annotations, so recovering that association does not establish
+that the particular deletion caused disease. Two controls involving the same
+gene also do not test accuracy across different HON genes. Their deletion
+coordinates, predicted gene effect and read evidence still need review. If
+the controls were used to choose scoring weights, they are development cases,
+not an independent benchmark.
 
 #### Manual Exomiser setup and running the comparison
 
@@ -1181,6 +1192,20 @@ For each known event, the following should be checked:
 10. whether the additional evidence layers provide useful context.
 
 This step is especially important for very large deletions because caller versions and default parameters can change sensitivity.
+
+Software regression checks are optional development checks and are separate
+from biological validation. Neither patient-analysis Snakefile runs the test
+suite. The GitHub workflow `SV evidence regression` now runs only when requested:
+open **Actions**, select that workflow, then choose **Run workflow**. It no longer
+runs automatically on uploads or pull requests. Existing tests remain available
+to investigate a code change; they do not need to be run before each sample.
+
+The optional local command, from the repository root with the required Python
+packages installed, is:
+
+```bash
+python -m unittest discover -s tests -v
+```
 
 ---
 

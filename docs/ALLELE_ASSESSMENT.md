@@ -192,7 +192,9 @@ configuration files with patient paths/data out of public commits.
 
 ## Verification and remaining research work
 
-Run `python -m unittest discover -s tests -v` with numpy/pandas/matplotlib installed.
+For optional development checks, run `python -m unittest discover -s tests -v`
+with numpy/pandas/matplotlib installed. This suite is not part of a patient-analysis
+run; the GitHub regression workflow is also manual.
 Fixtures cover missingness, ambiguity, multi-gene scope, BND identity, duplicate HPOs,
 units, genotype conflicts, inheritance, phenotype and end-to-end output preservation.
 The CI also parses both main workflows and postprocessing with Snakemake 8.30.0.
