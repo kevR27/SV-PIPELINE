@@ -238,6 +238,7 @@ SV_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/truari", sample=SV_BENC
 # Default target: complete analysis and review tables. Figures have their own target.
 rule all:
     input:
+        atlas=lambda wc: ATLAS_ANNOTATION_TARGETS,
         preflight=[
             PATH + "reference_checks/srs_preflight.tsv",
             PATH + "reference_checks/srs_preflight.json",
@@ -1330,7 +1331,8 @@ rule all_thesis_plots:
     input:
         expand(PATH + "{sample}/plots/.thesis_plots.done", sample=SAMPLES),
         expand(PATH + "{sample}/downstream_filtering/plots/.filter_plots.done", sample=SAMPLES),
-        SAMPLOT_TARGETS
+        SAMPLOT_TARGETS,
+        atlas=lambda wc: ATLAS_OVERVIEW_TARGETS + ATLAS_NATIVE_TARGETS
 
 
 # Overview figures use the complete candidate table, not the filtered subset.
@@ -1465,3 +1467,10 @@ rule benchmark_sv_callset:
           --pctseq 0 --pctsize 0.7
         test -s {output:q}/summary.json
         """
+
+# Same Atlas module as LRS, using original genome-wide DeepVariant alleles.
+ATLAS_SAMPLES = SAMPLES
+ATLAS_SMALL_VCF = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
+ATLAS_VEP_TSV = PATH + "{sample}/snp_deepvariant/{sample}.genomewide.vep.tsv.gz"
+ATLAS_SV_VCF = PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz"
+include: "../common/alphagenome_atlas.smk"

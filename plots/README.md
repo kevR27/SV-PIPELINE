@@ -513,3 +513,18 @@ Candidate locus and Samplot selection are now stratified across event classes
 so small SVs cannot crowd all large and breakpoint-defined events out of
 detailed review.
 
+## Separate AlphaGenome Atlas figures
+
+Both workflows use `plots/17_alphagenome_atlas/`. The offline overview shows
+AVI PHRED scores (blue) and unavailable/unsupported alleles (grey), with a
+source TSV. Selected native plots under `native/` use the official AlphaGenome
+`OverlaidTracks` and `VariantAnnotation` components: grey reference, purple
+alternate, with PDF/SVG/PNG exports. Raw tracks are cached outside the plot
+folder so figures can be redrawn without repeating API requests.
+
+Run `all_atlas_plots` after enabling/configuring Atlas; `all_thesis_plots`
+includes it when enabled. No native tissue plots are fabricated from AVI alone.
+Large-deletion predictions are exploratory, have no SV AVI score, and use an
+alignment convention that assigns zero ALT signal to deleted bases. See the
+[shared setup and interpretation guide](../README.md#alphagenome-atlas-genome-wide-research-annotation-and-separate-plots).
+

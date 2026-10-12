@@ -1,0 +1,16 @@
+# Only selected native model plots need this environment. Offline AVI lookup
+# and its overview figure reuse plots.yaml. Downloads/setup are in README.md.
+name: alphagenome
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - pip
+  - pysam>=0.22
+  - numpy>=1.26,<3
+  - pandas=2.3.3
+  - matplotlib>=3.8
+  - protobuf>=5.28.3,<7
+  - pip:
+      - alphagenome==0.10.0

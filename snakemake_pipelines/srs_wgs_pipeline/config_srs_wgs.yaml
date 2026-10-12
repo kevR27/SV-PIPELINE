@@ -206,3 +206,27 @@ allele_min_dp: 5
 candidate_truth_tsv: null          # Columns: GENE; optional SV_ID.
 sv_truth_vcfs: {}                  # Sample ID: indexed truth SV VCF.
 sv_truth_beds: {}                  # Same sample ID: confident-region BED.
+
+# ============================================================
+# 11. ALPHAGENOME ATLAS — optional RESEARCH context, same as LRS
+# ============================================================
+# Enable after downloading official GRCh38 AVI and its .tbi index. A splicing
+# score file is a different resource; file size does not identify its contents.
+alphagenome_atlas_enabled: false
+alphagenome_avi_file: null          # Absolute path to official AVI .tsv.gz.
+alphagenome_avi_release: null       # Exact download filename/release, for provenance.
+alphagenome_review_phred: 20        # Top 1% of genome-wide substitutions, not probability.
+dna_sample_tissue: "blood"          # DNA collection context, not a prediction tissue.
+dna_sample_tissues: {}              # For future muscle DNA: "sample": "muscle".
+# Selected native RNA/splicing plots require an API key exported on the server.
+# Never write the key in YAML. Choose model tissues for the biological question.
+alphagenome_native_plots_enabled: false
+alphagenome_plot_selection_files: {} # Sample ID: reviewed allele-selection TSV (README).
+alphagenome_prediction_ontology_terms: [] # Actual available tissue IDs; inspect metadata.
+alphagenome_native_max_variants: 10
+alphagenome_sequence_length: 1048576 # 1 Mb context, not validated SV-size support.
+alphagenome_min_flank: 10000
+alphagenome_model_version: "ALL_FOLDS"
+alphagenome_prediction_min_gq: 20
+alphagenome_prediction_min_dp: 10
+alphagenome_native_cache_only: false

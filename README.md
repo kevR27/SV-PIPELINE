@@ -347,8 +347,9 @@ Small-variant VEP annotation also retains noncoding variants: LRS keeps the full
 `snp_deepvariant/<sample>.genomewide.vep.tsv.gz` from its full DeepVariant VCF.
 Both request regulatory annotations and retain all transcript consequences.
 The LRS coding/splice SNV+SV table and SRS nuclear mitochondrial VCF remain
-focused review views. Use the full source VCF and full VEP table for future
-genome-wide Atlas annotation; Atlas querying is not yet implemented. See the
+focused review views. Use the full source VCF and full VEP table for
+genome-wide Atlas annotation. Optional offline AVI lookup and selected native
+AlphaGenome plots are now implemented for both technologies. See the
 [SRS instructions](snakemake_pipelines/srs_wgs_pipeline/README.md#genome-wide-small-variants-and-noncoding-evidence)
 for the replacement output and rerun target.
 
@@ -1456,4 +1457,201 @@ and independent experimental confirmation where required?
 ```
 
 The main purpose of the pipeline is to move from a large genome-wide SV callset to a smaller and more informative set of candidates, while keeping the analysis transparent and without discarding potentially relevant variants simply because one caller or one annotation resource cannot evaluate them.
+
+## AlphaGenome Atlas: genome-wide research annotation and separate plots
+
+Atlas is an **optional molecular-impact research layer** in LRS postprocess
+and SRS WGS. It does not change the original HON research ranking, the offline
+Exomiser comparison, AnnotSV/ACMG clinical ordering, filtering or XCI. Atlas
+cannot replace VEP: VEP explains transcript/regulatory consequences, while
+Atlas adds predictions. These predictions must not guide clinical decisions.
+
+The Atlas paper describes genome-wide in-silico mutagenesis for interpreting
+noncoding variants ([Cheng et al., 2026 preprint,
+DOI 10.64898/2026.09.16.26363192](https://doi.org/10.64898/2026.09.16.26363192)).
+Its usefulness here is to retain molecular context for intronic and intergenic
+SNVs that a coding-only shortlist would miss. This is not clinical validation
+of the pipeline or proof of an HON mechanism.
+
+### What goes into this step
+
+| Information | LRS | SRS | Purpose |
+|---|---|---|---|
+| Actual small-variant alleles | `snp_clair3/<sample>.vcf.gz` | `snp_deepvariant/<sample>.vcf.gz` | Direct genome-wide offline lookup; no panel/coding restriction |
+| Consequence context | `<sample>.longphase.vep.txt` | `<sample>.genomewide.vep.tsv.gz` | Exact-SNV-allele VEP context in the impact review table |
+| Phasing | Existing LongPhase/WhatsHap outputs | Existing WhatsHap outputs | Separate cis/trans evidence; not substituted for caller alleles |
+| SVs | Complete merged Jasmine VCF | Complete integrated SV/CNV VCF | Inventory of unsupported events and manually selected exploratory deletions |
+
+LRS VEP currently annotates the LongPhase small-variant file. If an original
+Clair3 allele is absent there, its AVI lookup is still retained and the review
+row reports `EXACT_ALLELE_NOT_FOUND` for VEP context. It is never assigned a
+different allele's consequence. BED gene overlap describes genomic location;
+it does not establish the target of an enhancer or a splice defect.
+
+**Blood and muscle describe where DNA was collected.** For germline WGS they
+do not determine which regulatory prediction tissue answers the HON question.
+`dna_sample_tissue` and `dna_sample_tissues` record collection context only.
+Offline AVI is a single genome-wide score, not a blood/muscle-specific score.
+For native predictions, choose available model tissue ontology IDs separately;
+retinal/neuronal context may be more relevant to HON. If the exact cell type is
+unavailable, identify any proxy explicitly rather than calling it a retinal
+ganglion-cell prediction. No patient RNA measurements are generated here.
+
+### Download once, then enable offline AVI
+
+1. From the [official downloads page](https://deepmind.google.com/science/alphagenome/downloads),
+   obtain the **GRCh38 AVI** bgzip TSV and its tabix index. Check the actual
+   resource name and portal size before allocating disk space; a download of
+   roughly 20 GB may be a different resource. AVI, merged splicing scores and
+   detailed feature downloads are not interchangeable. This implementation
+   uses AVI; it does not pretend to import the separate splicing/features files.
+2. Wait for completion and check the publisher's checksum if supplied. Keep
+   the file and its matching `.tbi` together on the Bologna server. For an
+   unindexed complete AVI bgzip TSV, create a **1-based point** index with
+   `tabix -s 1 -b 2 -e 2 /absolute/path/AVI.tsv.gz`. Do not use a BED/zero-based
+   index. The official layout is `chrom, pos, ref, alt, raw_score, phred`, as
+   implemented by [Ensembl's AVI VEP plugin](https://github.com/Ensembl/VEP_plugins/blob/release/116/AVI.pm).
+3. In each config, set `alphagenome_atlas_enabled: true`,
+   `alphagenome_avi_file: "/absolute/path/to/the_actual_AVI.tsv.gz"`, and
+   `alphagenome_avi_release: "the exact downloaded filename/release"`.
+   The default is disabled until these paths are known; no download runs from
+   a helper script. The reference must be GRCh38, with its `.fai` present.
+
+AVI lookup and the overview use the existing `envs/plots.yaml`; they need no
+API key or native model requests. Small tabix windows bound lookup memory,
+but genome-wide lookup against a large file is still substantial disk I/O.
+All original ALT alleles are written, including indels, filtered calls,
+reference mismatches and absent scores, with visible statuses. Missing score
+is not zero and is not evidence of low impact. Missing population AF is not
+inferred from Atlas coverage or genotype; the existing SV AF logic is unchanged.
+
+From the relevant workflow folder, the normal analysis target includes offline
+Atlas when enabled. To request only this branch, use:
+
+```bash
+# LRS: run the upstream Snakefile_LRS_update first for new samples.
+snakemake --snakefile Snakefile_LRS_postprocess --configfile config_lrs.yaml \
+  --use-conda --cores 32 -p atlas_annotation
+snakemake --snakefile Snakefile_LRS_postprocess --configfile config_lrs.yaml \
+  --use-conda --cores 32 -p all_atlas_plots
+# SRS: same targets with Snakefile_SRS_WGS and config_srs_wgs.yaml.
+```
+
+LRS uses the configured `postprocess_samples`, or its usual completed-sample
+selection. Required missing downstream inputs may be scheduled. The regular
+`all_thesis_plots` target also requests Atlas plots when enabled.
+
+### Read these results
+
+Both technologies use the same output names under `<sample>/`:
+
+| File | Meaning |
+|---|---|
+| `alphagenome_atlas/<sample>.impact_review.tsv` | AVI PHRED >= the configured threshold, ordered by molecular impact; QC flags, exact VEP consequences and source alleles stay visible |
+| `alphagenome_atlas/<sample>.alleles.tsv.gz` | Complete caller ALT-allele annotation, including unavailable/unsupported variants |
+| `alphagenome_atlas/<sample>.sv_scope.tsv` | All input SVs with unsupported-AVI status, endpoint conflicts and modelling requirements |
+| `alphagenome_atlas/<sample>.summary.json` | Counts, assembly, download label, file identities, quality thresholds and collection context |
+| `plots/17_alphagenome_atlas/atlas_overview.*` | Simple score distribution and lookup coverage: blue scored, grey unavailable; PDF/SVG/PNG and source TSV |
+| `plots/17_alphagenome_atlas/native/` | Official AlphaGenome plotting components for selected REF/ALT RNA and splice-site predictions; grey REF, purple ALT |
+
+The default PHRED 20 threshold denotes the top 1% of possible genome-wide
+substitutions; it is **not 99% probability of disease**. This impact view is not
+an HON candidate ranking. Poor-quality rows remain visible and require review.
+AVI includes AlphaGenome and other predictors, including AlphaMissense,
+loss-of-function annotation and conservation: separate additive bonuses would
+double-count correlated evidence. Check population frequency, clinical evidence
+and mechanism using their existing outputs; this table supplies none of those
+as a new diagnosis. All raw noncoding alleles remain in the complete table even
+if they do not meet the display threshold.
+
+### Native plots and exploratory large deletions
+
+The precomputed AVI file cannot produce tissue-specific REF/ALT tracks. Those
+plots use the **official AlphaGenome Python SDK**, pinned in
+`envs/alphagenome.yaml`, and selected requests to its remote API. Snakemake
+creates that environment with `--use-conda`. Obtain an API key using the
+[official setup instructions](https://www.alphagenomedocs.com/installation.html)
+and export `ALPHAGENOME_API_KEY` on the server; never put credentials in YAML or
+Git. Selected allele/region data go to the service. No API calls are made by
+the offline annotation step.
+
+Inspect the model's actual available tissue IDs before selecting them:
+
+```python
+import os
+from alphagenome.models import dna_client
+model = dna_client.create(os.environ["ALPHAGENOME_API_KEY"], timeout=30)
+metadata = model.output_metadata()
+print(metadata.rna_seq)  # Includes biosample names and ontology CURIEs.
+```
+
+Create one reviewed tab-separated selection file per sample. The required
+columns are `SOURCE`, `CHROM`, `POS`, `REF`, `ALT`, `SV_ID`; copy exact caller
+alleles and use **1-based VCF POS**. `SOURCE` is `SMALL` or `SV`. For a small
+variant, `SV_ID` is `.`. For a symbolic deletion, use the exact SV ID, original
+REF and `<DEL>` ALT, and add `CONFIRMED_BREAKPOINTS` and
+`CONFIRMED_ALT_PRESENT`, both `YES` only after checking the actual evidence.
+These confirmations are analysis selections, not inferred clinical findings.
+
+Set `alphagenome_plot_selection_files` to a map of sample IDs to these paths,
+set `alphagenome_prediction_ontology_terms` to the selected model IDs, then
+enable `alphagenome_native_plots_enabled`. Run `all_atlas_plots`. The default
+limit is ten selected alleles per sample, not millions of API requests. Small
+variants need a PASS call, observed ALT genotype and configured GQ/DP. Variants
+failing these checks remain in the master, but the selection must be resolved
+before predictions run. Merged caller columns do not establish a reliable
+patient SV genotype; the SV selection also requires manual ALT confirmation.
+
+Only reviewed `<DEL>` events are reconstructed automatically. POS is the
+retained anchor, and END is the last deleted base. The script checks explicit
+END against SVLEN, rejects imprecise/conflicting breakpoints and unknown
+sequence, and requires the whole allele plus flanks within one supported
+context, at most 1,048,576 bp. Near contig ends or for larger events it reports
+why prediction cannot proceed. DUP insertion site/orientation, INV structure,
+BND junctions and complex events need a resolved altered sequence; their SV
+inventory rows remain available instead of receiving invented AVI scores.
+
+Large deletion plots are labelled `EXPLORATORY_DEL_UNVALIDATED_NO_AVI`.
+AlphaGenome was evaluated primarily on small changes; accepting a larger
+sequence change does not validate its prediction. Its indel alignment assigns
+zero ALT signal to deleted positions: that is a coordinate convention, not
+independent proof of reduced whole-gene expression. Predictions represent one
+allele, not the patient's total heterozygous expression or cis/trans effects.
+See the [official limitations](https://www.alphagenomedocs.com/faqs.html) and
+[alignment explanation](https://www.alphagenomedocs.com/variant_scoring.html).
+
+Raw tracks and request/tissue metadata are cached under
+`alphagenome_atlas/prediction_cache/<request-hash>/`, outside the plot folder.
+The cache identifies allele, interval, reference file identity, tissues, SDK
+and explicit model version. It permits redraws with
+`alphagenome_native_cache_only: true` without an API key. Changing those inputs
+requires new predictions; upstream server model updates within the same version
+also require manual cache invalidation. Predicted tracks are saved as NPZ and
+track metadata TSVs, alongside PDF/SVG/PNG exports with four tracks per page
+for readability. Native splice-site class tracks can be tissue-independent;
+inspect the returned metadata and `native_manifest.tsv` for unavailable RNA
+tissues. No successful patient or
+live API analysis is assumed by enabling these rules.
+
+One necessary shared script, `scripts/annotate_alphagenome_atlas.py`, supplies
+annotation and plotting subcommands; one shared include,
+`snakemake_pipelines/common/alphagenome_atlas.smk`, wires both workflows.
+There is no duplicate VEP annotation, parallel clinical score or new diagnostic
+probability model. Source VCFs, existing VEP and existing rankings are reused.
+
+The LRS configuration also contained `14496` in `xci_samples` without a matching
+sample/BAM entry, which stopped parsing. That invalid entry has been removed;
+check the person's intended ID and XX/XCI eligibility before adding them. The
+XCI rules, masks and thresholds have not changed.
+
+Focused verification used synthetic caller VCFs and a small indexed AVI fixture:
+seven checks cover allele retention, exact VEP matching, negative/zero/missing
+scores, conflicting and incorrectly indexed resources, caller-column genotype
+ambiguity, deletion coordinates and native SDK/cache plotting. Enabled,
+disabled and native-plot DAGs were checked for both technologies; offline
+annotation and overview rules were also executed through both Snakefiles on
+saved synthetic inputs. Native plot rendering used mocked model tracks, not
+live service predictions. No real patient, OPA1-control, Bologna-server or full
+genome-wide download analysis was performed. These checks establish software
+behaviour, not diagnostic accuracy or performance on a multi-GB resource.
 

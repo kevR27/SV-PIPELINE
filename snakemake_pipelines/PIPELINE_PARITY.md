@@ -15,6 +15,8 @@ signal-level information, or a caller model trained for one technology.
 | Is caller agreement visible without deleting single-caller events? | Complete Jasmine VCF plus multi-caller companion | Complete integrated SRS VCF plus multi-caller companion | Shared |
 | Are small variants retained genome-wide? | Clair3 | DeepVariant | Same question; platform-specific caller |
 | Are small variants annotated genome-wide, including noncoding variants? | Full LongPhase small-variant VCF to VEP in postprocess | Full DeepVariant VCF to VEP | Both retain intronic/intergenic rows and request regulatory annotation; focused views do not restrict the masters |
+| Is molecular-impact research context available genome-wide? | Original Clair3 VCF to offline AVI | Original DeepVariant VCF to offline AVI | Same optional Atlas script/include, exact SNV lookup, visible unavailable alleles; no ranking/classification changes |
+| Can selected AlphaGenome effects be plotted? | Native SDK REF/ALT tracks; reviewed DEL exploration | Same | Separate `17_alphagenome_atlas` folder; API/tissue choices explicit; large SVs unvalidated, no SV AVI score |
 | Are variants phased where the data allow it? | WhatsHap and LongPhase | WhatsHap | Shared core; LongPhase is LRS-specific |
 | Are SVs annotated genome-wide? | AnnotSV and VEP | AnnotSV and VEP | Shared |
 | Are panel and non-panel genes both retained? | Genome-wide table plus panel-only view | Genome-wide table plus panel-only view | Shared |

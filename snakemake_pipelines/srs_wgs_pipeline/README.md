@@ -122,29 +122,28 @@ jobs. Genome-wide annotation needs more time and disk space than the former
 restricted table. Small variants are retained for complementary review; this
 change does not create a genome-wide small-variant clinical ranking.
 
-### Preparation for AlphaGenome Atlas
+### AlphaGenome Atlas
 
-Atlas querying has not been implemented or enabled by this update. The preserved
-full VCF is the appropriate source of exact variant alleles for a future
-genome-wide Atlas annotation; the VEP master supplies consequence context.
-Do not use only the nuclear mitochondrial VCF or a coding/splice shortlist.
-Likewise, the LRS coding/splice SNV+SV table is a review subset, not a complete
-Atlas input.
+Config section **11** enables the same optional research module as LRS.
+Offline genome-wide AVI lookup reads the original DeepVariant VCF, preserving
+intronic/intergenic variants and unsupported indels with visible statuses.
+The full VEP master supplies exact-allele consequence context; the restricted
+nuclear mitochondrial VCF is not the Atlas input. Existing clinical/HON ranks
+and the offline Exomiser comparison remain unchanged.
 
-Genome-wide Atlas analysis would mean looking up observed sample SNVs across
-the genome, including deep-intronic and intergenic SNVs. It would not mean
-scanning every possible human substitution or running the AlphaGenome model
-millions of times. Batch lookups should preserve lookup status, cache results,
-respect service quotas and retain the source version. Quality and observed
-genotype must be assessed from the source VCF; lower-quality variants remain
-in the master even when excluded from a scoring/review subset. Check actual
-service support before including indels. Regulatory target genes require
-specific evidence; proximity alone is insufficient.
+Set the official GRCh38 AVI file, index and release after downloading; the
+module is disabled until then. `atlas_annotation` runs only its annotation
+branch; `all_atlas_plots` makes its separate
+`plots/17_alphagenome_atlas/` folder. Both join the usual analysis/plot targets
+when enabled. Selected native REF/ALT plots need the official SDK, an API key,
+actual model tissue IDs and a reviewed allele-selection file. Blood/muscle
+DNA source is separate from the prediction tissue. Large deletions can be
+explored only with reviewed endpoints and sufficient model context; other SV
+types remain explicitly unsupported, without invented SV AVI scores.
 
-Atlas scores would remain separate research evidence. They must not be used
-to reclassify an SV, replace ACMG/ClinGen evidence or alter the clinical ranking.
-See the [official Atlas API documentation](https://www.alphagenomedocs.com/api/atlas.html)
-and [AlphaGenome limitations and research-use terms](https://github.com/google-deepmind/alphagenome).
+Follow the [shared download, configuration, selection-file and interpretation
+instructions](../../README.md#alphagenome-atlas-genome-wide-research-annotation-and-separate-plots).
+These predictions cannot alter ACMG classification or support clinical decisions.
 
 ## Run the analysis and plots
 

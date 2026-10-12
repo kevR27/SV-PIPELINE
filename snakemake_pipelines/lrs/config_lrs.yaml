@@ -277,8 +277,9 @@ methylation_units: "percent"  # modkit bedMethyl column 11
 xci_samples: 
   - "21930"
   - "25428"
-  - "14496"
   - "13048"
+# 14496 was listed here but has no entry in samples. Add the intended sample
+# only after checking its identity, BAM and XX/XCI eligibility.
 
 # GRCh38 CpG-island BED used for read-level methylation clustering.
 # Required only when xci_samples is non-empty.
@@ -396,3 +397,25 @@ dorado_summary_bams:
 # all reads. N50 itself is a QC metric; this threshold is what separates the
 # short-read tail from the long-read QC subset.
 n50_min_length: 1000
+
+# AlphaGenome Atlas — optional RESEARCH context, separate from all rankings.
+# Enable once the official GRCh38 AVI file and its .tbi index are available.
+# Size alone does not identify a download: AVI is not the splicing-score file.
+alphagenome_atlas_enabled: false
+alphagenome_avi_file: null          # Absolute path to official AVI .tsv.gz.
+alphagenome_avi_release: null       # Exact download filename/release, for provenance.
+alphagenome_review_phred: 20        # Top 1% of genome-wide substitutions, not probability.
+dna_sample_tissue: "blood"          # DNA collection context, not a prediction tissue.
+dna_sample_tissues: {}              # Optional per-sample overrides, e.g. "sample": "muscle".
+# Native AlphaGenome RNA/splicing plots: selected alleles only; need API key.
+# API key is exported as ALPHAGENOME_API_KEY, never saved in this config.
+alphagenome_native_plots_enabled: false
+alphagenome_plot_selection_files: {} # Sample ID: reviewed allele-selection TSV (README).
+alphagenome_prediction_ontology_terms: [] # Actual available model tissue IDs; inspect metadata.
+alphagenome_native_max_variants: 10
+alphagenome_sequence_length: 1048576 # 1 Mb context; not a validated maximum SV size.
+alphagenome_min_flank: 10000
+alphagenome_model_version: "ALL_FOLDS"
+alphagenome_prediction_min_gq: 20
+alphagenome_prediction_min_dp: 10
+alphagenome_native_cache_only: false # true redraws existing cached predictions without API.

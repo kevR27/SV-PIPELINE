@@ -240,7 +240,8 @@ rule all:
         expand(
             PATH + "{sample}/gene_discovery/final/{sample}_clinical_candidates.ranked.tsv",
             sample=POSTPROCESS_SAMPLES,
-        )
+        ),
+        atlas=lambda wc: ATLAS_ANNOTATION_TARGETS
 
 
 ############################################################
@@ -767,7 +768,8 @@ rule all_thesis_plots:
         expand(
             PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
             sample=POSTPROCESS_SAMPLES,
-        )
+        ),
+        atlas=lambda wc: ATLAS_OVERVIEW_TARGETS + ATLAS_NATIVE_TARGETS
 
 
 include: "../common/allele_assessment.smk"
@@ -775,4 +777,11 @@ include: "../common/allele_assessment.smk"
 
 # Optional additive thesis-analysis layer. Existing rules/outputs are preserved.
 include: "thesis_extensions.smk"
+
+# Atlas reads original Clair3 alleles; LongPhase/VEP remain separate context.
+ATLAS_SAMPLES = POSTPROCESS_SAMPLES
+ATLAS_SMALL_VCF = PATH + "{sample}/snp_clair3/{sample}.vcf.gz"
+ATLAS_VEP_TSV = PATH + "{sample}/snp_clair3/{sample}.longphase.vep.txt"
+ATLAS_SV_VCF = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"
+include: "../common/alphagenome_atlas.smk"
 
