@@ -370,14 +370,16 @@ paired-end WGS alignments.
    in the configuration. These files are needed to test the nuclear
    mitochondrial hypothesis rather than merely label known panel genes.
 
-   Exomiser is now enabled as a separate gene–phenotype comparison through
-   AnnotSV. Follow the [manual setup and interpretation guide](../../README.md#exomiser-through-annotsv)
-   for the compatible REST JAR, phenotype data and Java. The shared ocular
+   Exomiser is enabled as a separate OFFLINE CLI gene–phenotype comparison.
+   Follow the [manual setup and interpretation guide](../../README.md#offline-exomiser-cli)
+   for CLI 15.1.0, extracted hg38/phenotype data 2512 and Java 21. The shared ocular
    HON profile is used by default; its file is explicit under
    `hon_hpo_seed_terms` in the config. Patient HPO files are optional. Run the
    `exomiser_comparison` target to create the report before plotting. Its
-   CNV classifications and phenotype scores are not fed back into the main
-   ranking. Set `annotsv_exomiser_enabled: false` to write a disabled report.
+   phenotype-only scores are not fed back into the main ranking or AnnotSV
+   CNV classification. Set `exomiser_enabled: false` to write a disabled report.
+   Identical HPO queries share one CLI result. No REST service is started and
+   no scientific database is downloaded automatically.
 
    `scripts/add_supporting_evidence.py` is the active GRIDSS/MELT/ExpansionHunter
    integration. The unused older `intersect_srs_orthogonal_evidence.py` has been

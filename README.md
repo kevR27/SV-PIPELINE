@@ -773,153 +773,164 @@ Panel membership remains a separate category and is not added directly to the nu
 
 **Question answered:** Which affected genes are most compatible with the phenotype and with known human disease evidence, including genes outside the original panel?
 
-### Exomiser through AnnotSV
+### Offline Exomiser CLI
 
-Both configurations now enable a separate comparison with
-`annotsv_exomiser_enabled: true`. With `hpo_terms: null`, the workflow reads
-only the six `CORE_OCULAR_HON` terms from the file explicitly configured as
-`hon_hpo_seed_terms`. This
-is labelled `SHARED_HON_PROFILE`. A shared clinical profile is appropriate
-when these findings describe the cohort; it does not capture differences
-between individual patients. Patient-specific HPO terms are optional.
+The separate Exomiser comparison now runs the installed **CLI 15.1.0** locally,
+using its **PHENOTYPE_ONLY** preset. It no longer launches AnnotSV's REST
+prioritiser, opens server ports or runs AnnotSV a second time. The REST version
+also used local data; moving to the CLI removes the service/startup dependency,
+not an internet dependency. Offline execution is not evidence of higher
+prediction accuracy.
 
-The supplied file is `reference/hon_hpo_seed_terms.tsv`. For your LRS checkout,
-the config now shows its path directly:
+This preserves the original purpose: compare established Exomiser gene–phenotype
+matching with the custom HON method. **Patient variants are not loaded by this
+comparison.** The CLI still needs the hg38 data bundle to load its reference
+transcripts/genes, plus the phenotype bundle. This is not full Exomiser SV or
+SNV/indel variant prioritisation, and it does not create a diagnostic probability.
+AnnotSV continues to provide the independent SV annotations and CNV evidence.
+Its main run receives an empty HPO query so Exomiser scores do not alter its
+CNV classification. Research and clinical ranking rules are unchanged.
+
+Both LRS and SRS use `scripts/compare_exomiser_hon.py` and the shared rules in
+`snakemake_pipelines/common/annotsv_evidence_audit.smk`. No second analysis
+script is needed. A small dedicated `envs/exomiser.yaml` supplies Python and
+Java 21 when using `--use-conda`; the AnnotSV/MELT environments are unchanged.
+The pipeline does not download the CLI or scientific data bundles.
+
+#### Configuration and the HPO query
+
+Both configs contain these settings. The paths follow the existing server CLI
+installation; edit `exomiser_data_dir` if you extract the downloads elsewhere.
 
 ```yaml
+exomiser_enabled: true
+exomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
+exomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
+exomiser_genome_data_version: "2512"
+exomiser_phenotype_data_version: "2512"
+exomiser_java: "java"
+exomiser_memory_gb: 8
 hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
-annotsv_exomiser_enabled: true
 hpo_terms: null
+patient_hpo_files: {}
 ```
 
-Leave `hpo_terms: null` to use this file's core rows. Do not put the filename
-in `hpo_terms`: that field accepts HPO IDs such as `HP:0000648`. The same seed
-path is used by core ranking, LRS postprocess and the Exomiser comparison.
-SRS uses the same setting with a relative path. The older `discovery_hpo_file`
-key is accepted for compatibility; if both keys name different files, the
-workflow stops rather than mixing profiles.
+`hpo_terms: null` selects only the six `CORE_OCULAR_HON` rows from the explicit
+seed file. It is labelled `SHARED_HON_PROFILE`, a cohort query rather than proof
+that every listed finding was observed in each patient. Syndromic context rows
+remain in the original research ranking; they are not sent as shared patient
+findings. `hpo_terms` may replace the shared query with a string/list of HPO IDs,
+not a filename. `patient_hpo_files` optionally supplies a complete replacement
+query for a sample; the file can contain one ID per line or a TSV with
+`hpo_id`/`HPO_ID`. In LRS it also feeds the existing patient semantic stage.
 
-AnnotSV can report `Exomiser_gene_pheno_score` and human, mouse and fish
-phenotype evidence when HPO terms and working Exomiser resources are supplied.
-This branch uses the HiPhive phenotype prioritiser with human, mouse, fish
-and protein-interaction evidence. It is not a full Exomiser variant analysis.
-See the
-[official AnnotSV manual](https://lbgi.fr/AnnotSV/Documentation/README.AnnotSV_latest.pdf)
-and [Exomiser phenotype-prioritiser documentation](https://exomiser.readthedocs.io/en/stable/advanced_analysis.html).
+The new switch is `exomiser_enabled`. Older server configs containing only
+`annotsv_exomiser_enabled` are accepted as an enablement alias, but now run the
+CLI with no REST fallback. Remove that old key when adding the new one; conflicting
+values stop the workflow. Set `exomiser_enabled: false` for explicit disabled
+reports without requiring Java, the CLI or downloaded databases.
 
-There is an important reason to run a second AnnotSV analysis: AnnotSV
-3.5.10 can use an Exomiser score of at least 0.7 in CNV ranking criteria.
-The main AnnotSV analysis explicitly receives an empty HPO query; the
-HPO-enabled branch is used only for the comparison. Its CNV classifications
-are not imported into the main results. Your existing gene ranking, weights,
-tiers and event-ranking method remain unchanged.
+#### Files and interpretation
 
-`hpo_terms` can optionally replace the default shared profile with a
-comma-separated string or YAML list. `patient_hpo_files` can override it for
-an individual sample in either workflow. Each patient file must contain the
-complete query, including the shared features that were observed in that
-patient. It may be a one-ID-per-line file or a TSV with `hpo_id`/`HPO_ID`.
-In LRS it also continues to feed the existing patient semantic stage. The
-mitochondrial/syndromic context terms remain in your original discovery
-ranking, but are not automatically sent to Exomiser as patient findings.
+A distinct HPO query is scored once per workflow results directory, across all
+reference genes. Samples with the same terms share that result. Patient-specific
+queries with different terms use different results. Cached native files live in
+`reference_checks/exomiser_profiles/hpo_<query hash>/` under the configured
+results root. The hash identifies the term set; it is not a biological score.
+Data/JAR changes are tracked so the result is regenerated when resources change.
 
-The single new helper, `scripts/compare_exomiser_hon.py`, saves the query and
-creates a separate comparison using only gene-specific AnnotSV split rows.
-It recalculates the custom phenotype method using exactly the same query;
-the original core gene relevance score remains a separate column. The
-`CUSTOM_GENE_*` columns come from `*_ranked_candidates.tsv`, not the later
-final SV/event ranking. Full-SV summary
-scores are not transferred to every gene in a large event. Missing, negative,
-nonfinite and conflicting Exomiser scores remain unavailable. A valid zero
-is retained as zero. If Exomiser is enabled but no valid scores are returned
-for a nonempty gene list, the comparison stops with an explanatory error.
-
-For each sample, the useful outputs are:
-
-| File under `<sample>/gene_discovery/` | What to read |
+| File | Purpose |
 |---|---|
-| `<sample>_exomiser_hpo.tsv` | Exact HPO terms, source and shared/patient scope |
-| `<sample>_exomiser_comparison.tsv` | Original gene ranks, custom same-query phenotype score, Exomiser score, human/mouse/fish evidence and availability |
-| `<sample>_exomiser_comparison.summary.json` | Number of comparable genes, rank correlation, top-10/top-20 overlap and input checksums |
+| `phenotype.genes.tsv` in the query folder | Native CLI TSV_GENE result; all returned genes, not a top-N shortlist |
+| `phenotype.job.json` and `application.properties` | Exact reproducible query/preset and hg38-only local data settings |
+| `run.json` and `exomiser.log` | Versions, command, Java, resource file identities, checksums and execution status/log |
+| `<sample>/gene_discovery/<sample>_exomiser_hpo.tsv` | Exact terms, source and shared/patient query scope |
+| `<sample>/gene_discovery/<sample>_exomiser_comparison.tsv` | Original ranks, custom same-query phenotype score, native Exomiser phenotype score/evidence, backend and data versions |
+| `<sample>/gene_discovery/<sample>_exomiser_comparison.summary.json` | Comparable genes, phenotype rank correlation/overlap, checksums and CLI provenance |
 
-The existing plot script produces a teal/purple comparison of phenotype
-ranks in `plots/06_phenotype/<sample>_exomiser_comparison.{pdf,svg,png}`,
-plus a source TSV. Lower rank is better. Comparison ranks are computed over
-the same genes with usable scores from both methods; unavailable genes stay
-in the report. Ties share the best rank and can enlarge top-10/top-20 sets.
-The large second AnnotSV table is temporary; its checksum and the phenotype
-evidence are retained. The AnnotSV log is saved under
-`<sample>/logs/annotsv/<sample>.exomiser.log`.
+Only the native **EXOMISER_GENE_PHENO_SCORE** is used for phenotype comparison.
+Native combined/variant scores or P-values are not substituted for it. The
+custom phenotype score is recalculated using the identical query. Original
+`CUSTOM_GENE_*` columns still come from `*_ranked_candidates.tsv`, not the
+later final SV/event ranking. The comparison reads that ranking without changing
+its scores, weights, tiers or ordering. Missing genes/scores remain unavailable;
+a valid zero remains zero, and inconsistent gene-specific scores are flagged.
+Shared event classifications are never distributed as gene phenotype scores.
 
-Do not average these scores or add Exomiser points to the existing score.
-They are alternative phenotype methods with overlapping knowledge sources.
-Exomiser is the more established reference for phenotype matching; the custom
-method remains useful as a transparent HON-specific comparison. Use Exomiser
-as the reference phenotype result in the report, while retaining the custom
-comparison and the existing overall SV ranking. Neither has
-been shown to be superior in this cohort. A diagnosed or held-out benchmark
-is needed to assess accuracy, and neither method establishes SV pathogenicity.
+The existing plot still compares phenotype ranks with teal and purple. Its
+legend now identifies the offline CLI. Unavailable genes stay in the TSV, and
+only comparable genes enter rank statistics. Ties can enlarge top-k sets.
+The CLI/data releases differ from the old AnnotSV backend, and the native TSV
+rounds scores: do not expect identical old and new numbers or treat them as
+interchangeable without considering provenance.
 
-Recovering the expected OPA1–optic-neuropathy association in known-positive
-deletion samples is a useful biological check. The custom method reads known
-gene–phenotype annotations, so recovering that association does not establish
-that the particular deletion caused disease. Two controls involving the same
-gene also do not test accuracy across different HON genes. Their deletion
-coordinates, predicted gene effect and read evidence still need review. If
-the controls were used to choose scoring weights, they are development cases,
-not an independent benchmark.
+The run-specific properties file is generated from these config settings and
+passed explicitly to Java. It enables **hg38 only**, avoiding accidental hg19
+loading or old server-port placeholders. The external CLI installation's
+`application.properties` is not rewritten. No CADD/ReMM download is needed for
+this phenotype-only preset; preserving noncoding variants in VEP is a separate
+step, not a claim that Exomiser assessed those variants.
 
-#### Manual Exomiser setup and running the comparison
+#### Finish the manual setup and run
 
-The pipeline does not download or install Exomiser. AnnotSV 3.5.10's source
-uses the REST prioritiser 14.1.0, phenotype data release 2406 and Java 17 or
-newer. Keep this compatible combination unless a future AnnotSV release
-documents a different one. See its
-[installation definitions](https://github.com/lgmgeo/AnnotSV/blob/v3.5.10/Makefile)
-and [Exomiser release notes](https://github.com/exomiser/Exomiser/releases/tag/14.1.0).
+Your current downloads are `2512_hg38.zip` and `2512_phenotype.zip`. Finish both
+and extract them into the configured data root, preserving the archive folder
+layout. Do not point `exomiser_data_dir` at one release subfolder or at a ZIP.
+Keep the complete CLI distribution, including `lib/`, beside its JAR.
 
-1. Activate the existing AnnotSV environment on the server and run
-   `java -version`. If Java is missing or older than 17, install it manually
-   in that environment: `conda install -c conda-forge openjdk=17`.
-2. Check the annotation directory configured in your YAML. It needs the
-   REST JAR under `jar/` and the unzipped phenotype database under
-   `Annotations_Exomiser/2406/`. If these are missing, run the following
-   commands manually, replacing the directory with your configured path:
+For the configured server directory, extraction commands are:
 
-   ```bash
-   EXOMISER_ANNOTATIONS_DIR="/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations"
-   mkdir -p "$EXOMISER_ANNOTATIONS_DIR/jar" "$EXOMISER_ANNOTATIONS_DIR/Annotations_Exomiser/2406"
-   curl --fail --location https://github.com/exomiser/Exomiser/releases/download/14.1.0/exomiser-rest-prioritiser-14.1.0.jar -o "$EXOMISER_ANNOTATIONS_DIR/jar/exomiser-rest-prioritiser-14.1.0.jar"
-   curl --fail --location https://data.monarchinitiative.org/exomiser/data/2406_phenotype.zip -o "$EXOMISER_ANNOTATIONS_DIR/2406_phenotype.zip"
-   unzip -n "$EXOMISER_ANNOTATIONS_DIR/2406_phenotype.zip" -d "$EXOMISER_ANNOTATIONS_DIR/Annotations_Exomiser/2406"
-   ```
+```bash
+EXOMISER_CLI_DIR="/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0"
+mkdir -p "$EXOMISER_CLI_DIR/data"
+# Run these where your completed ZIP files are located:
+unzip -n 2512_hg38.zip -d "$EXOMISER_CLI_DIR/data"
+unzip -n 2512_phenotype.zip -d "$EXOMISER_CLI_DIR/data"
+```
 
-3. AnnotSV also needs `application.properties`. Its installation normally
-   provides a template at `$CONDA_PREFIX/etc/AnnotSV/application.properties`.
-   AnnotSV reads that file first; otherwise it reads the file in the selected
-   phenotype-data directory. The official template uses `XXXX` for the port,
-   `YYYY` for the data directory and `ZZZZ` for the data release; AnnotSV
-   fills these values at runtime. If neither file exists, obtain the
-   [matching template](https://github.com/lgmgeo/AnnotSV/blob/v3.5.10/etc/AnnotSV/application.properties)
-   and place it in `Annotations_Exomiser/2406/`. Do not replace an existing
-   server configuration without checking whether it has fixed paths/version
-   values. Keep one compatible REST JAR and check which numeric data-release
-   directory AnnotSV selects in the log.
-4. From the LRS workflow folder, run the dedicated target:
+The root should contain `2512_hg38/` and `2512_phenotype/`. The script checks
+nonempty expected genome, transcript, ClinVar, phenotype and random-walk files.
+This detects missing/incomplete extraction, not every possible corruption or
+scientific database error. It also checks Java 21+ and the returned TSV header,
+usable phenotype scores, query identity and output checksum. The existing
+AnnotSV `2406` database is not silently reused. No completion is assumed while
+a download is still in progress.
 
-   ```bash
-   snakemake --snakefile Snakefile_LRS_update --configfile config_lrs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 -p exomiser_comparison
-   ```
+Run with `--use-conda` to supply the dedicated Java 21 runtime. If you already
+have Java 21 in your manually created `exomiser15` environment, you may set
+`exomiser_java` to that environment's actual absolute `bin/java` path. Do not
+assume the Java 8 executable in the MELT environment will work. The CLI step
+reserves the configured thread count and records its heap; raising total
+Snakemake cores above that count can allow multiple distinct queries concurrently,
+so account for each JVM's configured memory.
 
-   For SRS, use `Snakefile_SRS_WGS` and `config_srs_wgs.yaml` from its workflow
-   folder. The target is also included in the main `all` analysis. Existing
-   required upstream outputs are reused. Then run the existing
-   `all_thesis_plots` target; for LRS this is in `Snakefile_LRS_postprocess`.
-   Running postprocess plots alone cannot create the new comparison table.
+After updating the checkout, run from the LRS workflow folder:
 
-Set `annotsv_exomiser_enabled: false` to skip the backend and write an explicit
-disabled report. No HPO profile is required in this mode. Configuration without
-the new switch retains the old enablement choice inferred from `hpo_terms`.
+```bash
+snakemake --snakefile Snakefile_LRS_update --configfile config_lrs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 -p exomiser_comparison
+```
+
+For SRS, use `Snakefile_SRS_WGS` and `config_srs_wgs.yaml` from its workflow
+folder. The comparison remains included in each main `all` target. Existing
+upstream files are reused. Then run the usual `all_thesis_plots` target; in LRS
+that target belongs to `Snakefile_LRS_postprocess`. Plotting alone does not run
+the upstream Exomiser analysis. Old comparison files are regenerated when their
+new CLI inputs/dependencies are required; old REST logs on your server are not
+deleted automatically.
+
+Exomiser is an established phenotype method, but agreement with the custom HON
+method is not independent validation because their knowledge sources overlap.
+Do not average the scores, add duplicate points or require an intersection.
+Two OPA1-positive controls can check a familiar association; they do not validate
+performance across HON genes or establish the effect of every SV. Use actual
+variant consequences, technical support, inheritance, population and disease
+mechanism evidence for clinical review.
+
+See the [official CLI installation instructions](https://exomiser.readthedocs.io/en/stable/installation.html),
+[phenotype preset configuration](https://exomiser.readthedocs.io/en/stable/advanced_analysis.html#preset)
+and [15.1.0 phenotype-only preset](https://github.com/exomiser/Exomiser/blob/15.1.0/exomiser-cli/src/main/resources/examples/preset-phenotype-only-analysis.yml).
 
 ---
 

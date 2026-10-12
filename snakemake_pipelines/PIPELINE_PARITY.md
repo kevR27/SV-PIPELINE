@@ -19,6 +19,7 @@ signal-level information, or a caller model trained for one technology.
 | Are SVs annotated genome-wide? | AnnotSV and VEP | AnnotSV and VEP | Shared |
 | Are panel and non-panel genes both retained? | Genome-wide table plus panel-only view | Genome-wide table plus panel-only view | Shared |
 | Is gene relevance assessed with the same HON context? | Monarch/HPO and shared ranking scripts | Monarch/HPO and shared ranking scripts | Shared |
+| Is Exomiser compared separately without a REST service? | Offline CLI 15.1.0 PHENOTYPE_ONLY | Same shared offline CLI rules | Identical HPO queries share a native result; no patient variant analysis or ranking changes |
 | Is allele-level evidence kept separate from pathogenicity? | Shared allele-assessment layer | Shared allele-assessment layer | Shared |
 | Are nuclear mitochondrial genes and pathways identified? | MitoCarta and mitochondrial-gene ranking | MitoCarta and the same mitochondrial-gene ranking | Shared primary focus |
 | Can top candidates be inspected in the reads? | Samplot long-read mode | Samplot short-read mode | Shared purpose; platform-specific display |

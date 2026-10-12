@@ -1,0 +1,8 @@
+# Java is separate from MELT/AnnotSV, which may use an older runtime.
+# Exomiser CLI/data installation steps remain in the README.
+name: exomiser
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - openjdk=21

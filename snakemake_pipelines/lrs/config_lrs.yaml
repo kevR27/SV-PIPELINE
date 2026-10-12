@@ -190,10 +190,21 @@ patient_hpo_files: {}
 # patient_hpo_files:
 #   "21930": "/path/to/21930.hpo.tsv"
 
-# Separate Exomiser comparison through AnnotSV; the original ranking is retained.
+# Separate OFFLINE Exomiser CLI phenotype comparison; original ranking retained.
 # true + null reads only CORE_OCULAR_HON rows from hon_hpo_seed_terms above.
 # Syndromic context rows are not presented as findings shared by every patient.
-annotsv_exomiser_enabled: true
+exomiser_enabled: true
+# Existing CLI installation; keep its lib/ folder beside the JAR.
+exomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
+# Root containing the EXTRACTED 2512_hg38/ and 2512_phenotype/ folders.
+# Change this path if you extract your current downloads somewhere else.
+exomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
+exomiser_genome_data_version: "2512"
+exomiser_phenotype_data_version: "2512"
+exomiser_java: "java"            # Java 21 from envs/exomiser.yaml (--use-conda).
+exomiser_memory_gb: 8             # Java heap per distinct HPO query.
+# PHENOTYPE_ONLY preset: no patient variant/genotype/inheritance analysis.
+# Identical HPO queries share one result. Setup steps are in README.md.
 # Optional replacement shared profile: comma-separated HPO IDs or a YAML list.
 # A patient_hpo_files entry overrides this profile for that patient only.
 hpo_terms: null

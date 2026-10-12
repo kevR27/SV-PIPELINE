@@ -7,10 +7,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from compare_exomiser_hon import check_backend_files, exomiser_by_gene, extract_exomiser, hpo_ids
+from compare_exomiser_hon import backend_resource_paths, check_backend_files, exomiser_by_gene, extract_exomiser, hpo_ids
 from sv_evidence_common import hon_hpo_seed_path
 
 
@@ -114,18 +115,111 @@ class ExomiserComparisonTests(unittest.TestCase):
     def test_backend_preflight_rejects_missing_or_incompatible_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
+            jar = path / "exomiser-cli-15.1.0.jar"
             with self.assertRaises(ValueError):
-                check_backend_files(path)
-            (path / "jar").mkdir()
-            (path / "jar/exomiser-rest-prioritiser-14.1.0.jar").write_text("synthetic fixture")
-            (path / "Annotations_Exomiser/2406").mkdir(parents=True)
-            with self.assertRaises(ValueError):
-                check_backend_files(path)
-            (path / "Annotations_Exomiser/2406/2406_phenotype.mv.db").write_text("synthetic fixture")
-            check_backend_files(path)
-            (path / "jar/exomiser-rest-prioritiser-13.3.0.jar").write_text("synthetic incompatible fixture")
-            with self.assertRaises(ValueError):
-                check_backend_files(path)
+                check_backend_files(jar, path / "data", "2512", "2512")
+            for resource in backend_resource_paths(jar, path / "data", "2512", "2512"):
+                resource.parent.mkdir(parents=True, exist_ok=True)
+                resource.write_text("synthetic fixture, not a real database")
+            with self.assertRaisesRegex(ValueError, "valid ZIP/JAR"):
+                check_backend_files(jar, path / "data", "2512", "2512")
+            with zipfile.ZipFile(jar, "w") as handle:
+                handle.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n")
+            check_backend_files(jar, path / "data", "2512", "2512")
+            with self.assertRaisesRegex(ValueError, "missing or empty"):
+                check_backend_files(jar, path / "data", "2512", "2406")
+
+    def native_fixture(self, path, java_major=21):
+        jar = path / "exomiser-cli-15.1.0.jar"
+        for resource in backend_resource_paths(jar, path / "data", "2512", "2512"):
+            resource.parent.mkdir(parents=True, exist_ok=True)
+            resource.write_text("synthetic interface fixture, not a real database")
+        with zipfile.ZipFile(jar, "w") as handle:
+            handle.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n")
+        java = path / "fixture_java"
+        # This executable tests our CLI interface and output parsing. It is
+        # deliberately not described as an actual Exomiser scientific run.
+        java.write_text("#!" + sys.executable + "\n" + '''import json, sys
+from pathlib import Path
+if '-version' in sys.argv:
+    print('openjdk version "JAVA_MAJOR.0.1"', file=sys.stderr)
+    raise SystemExit(0)
+assert 'analyse' in sys.argv and '--analysis' in sys.argv
+job = json.loads(Path(sys.argv[sys.argv.index('--analysis') + 1]).read_text())
+assert job['preset'] == 'PHENOTYPE_ONLY'
+assert job['sample']['genomeAssembly'] == 'hg38'
+assert 'vcf' not in job['sample'] and 'ped' not in job['sample'] and 'sex' not in job['sample']
+assert job['outputOptions']['numGenes'] == 0
+assert job['outputOptions']['outputFormats'] == ['TSV_GENE']
+out = Path(job['outputOptions']['outputDirectory']) / 'phenotype.genes.tsv'
+out.write_text('#RANK\\tGENE_SYMBOL\\tEXOMISER_GENE_PHENO_SCORE\\tEXOMISER_GENE_COMBINED_SCORE\\tHUMAN_PHENO_EVIDENCE\\n'
+               '1\\tA\\t0.8\\t0.01\\tA:synthetic evidence\\n'
+               '2\\tB\\t0.4\\t0.99\\tB:synthetic evidence\\n'
+               '3\\tC\\t0\\t0.9\\tC:synthetic evidence\\n'
+               '4\\tNOT_IN_SV_RANKING\\t0.6\\t0.6\\tother\\n')
+'''.replace("JAVA_MAJOR", str(java_major)))
+        java.chmod(0o755)
+        return jar, java
+
+    def run_native(self, path, java_major=21, enabled=True, success=True):
+        jar, java = self.native_fixture(path, java_major)
+        native = path / "native"
+        native.mkdir(exist_ok=True)
+        arguments = ["run-offline", "--hpo-json", '["HP:0000648"]',
+                     "--jar", jar, "--data-dir", path / "data", "--java", java,
+                     "--genome-version", "2512", "--phenotype-version", "2512",
+                     "--genes-output", native / "phenotype.genes.tsv",
+                     "--job-output", native / "job.json", "--properties-output", native / "application.properties",
+                     "--provenance-output", native / "run.json", "--log", native / "run.log"]
+        if enabled:
+            arguments.append("--enabled")
+        return self.command(*arguments, success=success)
+
+    def test_offline_cli_query_and_native_phenotype_comparison(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            self.fixtures(path)
+            before = (path / "rank.tsv").read_bytes()
+            self.run_native(path)
+            args = ["compare", "--ranking", path / "rank.tsv", "--exomiser-genes", path / "native/phenotype.genes.tsv",
+                    "--backend-provenance", path / "native/run.json", "--query", path / "query.tsv",
+                    "--phenotypes", path / "pheno.tsv", "--edges", path / "edges.tsv",
+                    "--output", path / "comparison.tsv", "--summary-output", path / "summary.json", "--require-exomiser"]
+            self.command(*args)
+            rows = read(path / "comparison.tsv")
+            self.assertEqual((path / "rank.tsv").read_bytes(), before)
+            self.assertEqual(len(rows), 3)
+            self.assertEqual([row["EXOMISER_GENE_PHENO_SCORE"] for row in rows], ["0.8", "0.4", "0.0"])
+            self.assertEqual(rows[0]["EXOMISER_BACKEND"], "OFFLINE_CLI_PHENOTYPE_ONLY")
+            self.assertEqual(rows[0]["EXOMISER_PHENOTYPE_DATA_VERSION"], "2512")
+            self.assertEqual(rows[0]["EXOMISER_HUMAN_PHENO_EVIDENCE"], "A:synthetic evidence")
+            properties = (path / "native/application.properties").read_text()
+            self.assertIn("exomiser.hg38.data-version=2512", properties)
+            self.assertNotIn("exomiser.hg19", properties)
+            # A different saved query must not borrow scores from this run.
+            self.prepare(path, "--enabled", "--shared-hpo-json", '"HP:0007663"')
+            result = self.command(*args, success=False)
+            self.assertIn("does not match the saved HPO query", result.stderr)
+            self.prepare(path, "--enabled", "--shared-hpo-json", '"HP:0000648"')
+            with (path / "native/phenotype.genes.tsv").open("a") as handle:
+                handle.write("99\tNEW\t0.5\t0.5\tchanged\n")
+            result = self.command(*args, success=False)
+            self.assertIn("checksum differs", result.stderr)
+
+    def test_offline_cli_rejects_java_8_and_disabled_needs_no_java(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            result = self.run_native(path, java_major=8, success=False)
+            self.assertIn("requires Java 21", result.stderr)
+            self.assertFalse((path / "native/phenotype.genes.tsv").exists())
+            # Delete the Java executable; disabled mode must still succeed.
+            (path / "fixture_java").unlink()
+            self.command("run-offline", "--hpo-json", "[]", "--jar", "missing.jar", "--data-dir", "missing-data",
+                         "--java", "missing-java", "--genome-version", "2512", "--phenotype-version", "2512",
+                         "--genes-output", path / "native/phenotype.genes.tsv", "--job-output", path / "native/job.json",
+                         "--properties-output", path / "native/application.properties", "--provenance-output", path / "native/run.json",
+                         "--log", path / "native/run.log")
+            self.assertEqual(json.loads((path / "native/run.json").read_text())["status"], "DISABLED")
 
     def test_full_and_multigene_rows_never_donate_scores(self):
         grouped = exomiser_by_gene([

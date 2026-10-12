@@ -66,7 +66,9 @@ def make_exomiser_comparison(table, out_prefix, top_genes=25):
         for i, (_, row) in enumerate(selected.iterrows()):
             ax.plot([row.CUSTOM_QUERY_RANK, row.EXOMISER_QUERY_RANK], [i - 0.08, i + 0.08], color="#C7CCCF", linewidth=1.3, zorder=1)
         ax.scatter(selected.CUSTOM_QUERY_RANK, y - 0.08, color="#0B6E69", s=50, label="Custom phenotype method", zorder=2)
-        ax.scatter(selected.EXOMISER_QUERY_RANK, y + 0.08, color="#775DA6", marker="D", s=38, label="Exomiser through AnnotSV", zorder=3)
+        backend = set(selected.get("EXOMISER_BACKEND", pd.Series(dtype=str)).dropna())
+        label = "Exomiser offline CLI" if backend == {"OFFLINE_CLI_PHENOTYPE_ONLY"} else "Exomiser phenotype"
+        ax.scatter(selected.EXOMISER_QUERY_RANK, y + 0.08, color="#775DA6", marker="D", s=38, label=label, zorder=3)
         labels = [str(row.GENE) + (" [panel]" if row.get("PANEL_STATUS") == "PANEL_GENE" else "")
                   for _, row in selected.iterrows()]
         ax.set_yticks(y, labels)

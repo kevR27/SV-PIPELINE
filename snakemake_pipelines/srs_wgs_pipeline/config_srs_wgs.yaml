@@ -47,8 +47,16 @@ annotsv_benign_af: 0.01            # AnnotSV setting; not the final AF filter.
 # One seed file for custom ranking and Exomiser. This is a FILE PATH.
 hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
 
-# Keep the custom ranking and compare with AnnotSV's Exomiser phenotype score.
-annotsv_exomiser_enabled: true
+# Keep the custom ranking and compare with OFFLINE CLI phenotype matching.
+exomiser_enabled: true
+exomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
+# Root containing the EXTRACTED data folders; edit if downloaded elsewhere.
+exomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
+exomiser_genome_data_version: "2512"
+exomiser_phenotype_data_version: "2512"
+exomiser_java: "java"            # Java 21 in envs/exomiser.yaml (--use-conda).
+exomiser_memory_gb: 8             # Heap per distinct HPO query.
+# PHENOTYPE_ONLY preset; no patient variants are analysed by this comparison.
 # null uses only CORE_OCULAR_HON rows in hon_hpo_seed_terms above.
 # hpo_terms accepts HPO IDs, not a file path.
 # A string/list here replaces that shared profile for all samples.
