@@ -3,7 +3,7 @@
 # ============================================================
 
 samples:
-  # Always quote sample IDs that are numeric.
+  # Always quote sample IDs that are numeric
   "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
   "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
 
@@ -14,10 +14,6 @@ threads: 32
 # ============================================================
 # TARGET PANEL AND GENE REFERENCES
 # ============================================================
-# Structural-variant callers and Clair3 are genome-wide. The BED below is
-# retained as the optic-neuropathy panel reference for panel annotation and
-# compatibility with other workflows; the active LRS Clair3 rule does not use it.
-
 bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/PANEL_OA/optic_neuropathy_panel.bed"
 
 # Retained for backward compatibility/reference only; cuteSV is now called
@@ -52,7 +48,7 @@ cpg_region: null
 modkitenv: "/home/casadei7/.cargo/bin/modkit"
 
 # Main modkit processing uses the full Snakemake thread allocation (32).
-# Main processing, I/O, sampling and BGZF compression are all set to 32 threads.
+# Main processing, I/O, sampling, and BGZF compression are all set to 32 threads.
 modkit_io_threads: 32
 modkit_sampling_threads: 32
 modkit_bgzf_threads: 32
@@ -235,7 +231,6 @@ evidence_max_svlen: null
 # source of truth even for single-caller calls.
 high_confidence_min_supp: 2
 
-
 # Allele-level research assessment. Does not filter the master SV universe.
 # Optional TSV paths (or mappings from sample ID to path); see docs/ALLELE_ASSESSMENT.md.
 allele_patient_context: null
@@ -254,7 +249,7 @@ methylation_units: "percent"  # modkit bedMethyl column 11
 
 
 # ============================================================
-# OPTIONAL X-CHROMOSOME INACTIVATION (XCI)
+# X-CHROMOSOME INACTIVATION (XCI) ANALYSIS
 # ============================================================
 # Run only on appropriate XX samples with native-DNA ONT MM/ML methylation
 # tags. Do not add an XY sample simply because chrX reads are present.
@@ -263,12 +258,16 @@ methylation_units: "percent"  # modkit bedMethyl column 11
 # xci_samples:
 #   - "sample_A"
 #   - "sample_B"
-xci_samples: []
+xci_samples: 
+   - "21930"
+   - "25428"
+
+
 
 # GRCh38 CpG-island BED used for read-level methylation clustering.
 # Required only when xci_samples is non-empty.
 # Example: "/DATA/Reference/hg38.cpgIslandExt.chrX.bed"
-xci_cpg_islands_bed: null
+xci_cpg_islands_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/
 
 # Optional BED containing the XIST promoter CpG island. The XIST promoter has
 # the opposite Xa/Xi methylation relationship from the standard rule and is
@@ -320,9 +319,9 @@ xci_threads: 32
 
 
 # ============================================================
-# OPTIONAL FINAL THESIS ANALYSIS
+# FINAL ANALYSIS
 # ============================================================
-# These settings affect only the additive thesis_extensions.smk layer.
+# only for additive thesis_extensions.smk layer.
 # They do not change SV calling, Jasmine merging, AnnotSV or needLR.
 
 # Base coverage resolution used for large deletion/duplication depth support.
@@ -359,18 +358,10 @@ r_plot_top_hpo: 50
 # ============================================================
 # FOR QC PARAMETERS
 # ============================================================
-# Dorado sequencing summary and read-length QC are mandatory LRS QC outputs.
-# Dorado officially defines `dorado summary <bam>` for BAMs produced from
-# Dorado basecalling. These paths currently point to the WGS BAMs used by the
-# pipeline; if a BAM no longer retains the required Dorado metadata, replace
-# that sample path with its original Dorado basecalled BAM.
 dorado_bin: "/home/casadei7/dorado-1.3.0/bin/dorado"
 dorado_summary_bams:
   "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
   "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
 
-# Read-length threshold used to report the long-read subset separately from
-# all reads. N50 itself is a QC metric; this threshold is what separates the
-# short-read tail from the long-read QC subset.
 n50_min_length: 1000
 
