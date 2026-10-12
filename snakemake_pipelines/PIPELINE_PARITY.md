@@ -14,6 +14,7 @@ signal-level information, or a caller model trained for one technology.
 | Which SVs are present genome-wide? | Sniffles2, cuteSV and DELLY, merged with Jasmine | Manta and DELLY, merged with SURVIVOR; CNVpytor adds read-depth CNVs | Same discovery principle; different callers |
 | Is caller agreement visible without deleting single-caller events? | Complete Jasmine VCF plus multi-caller companion | Complete integrated SRS VCF plus multi-caller companion | Shared |
 | Are small variants retained genome-wide? | Clair3 | DeepVariant | Same question; platform-specific caller |
+| Are small variants annotated genome-wide, including noncoding variants? | Full LongPhase small-variant VCF to VEP in postprocess | Full DeepVariant VCF to VEP | Both retain intronic/intergenic rows and request regulatory annotation; focused views do not restrict the masters |
 | Are variants phased where the data allow it? | WhatsHap and LongPhase | WhatsHap | Shared core; LongPhase is LRS-specific |
 | Are SVs annotated genome-wide? | AnnotSV and VEP | AnnotSV and VEP | Shared |
 | Are panel and non-panel genes both retained? | Genome-wide table plus panel-only view | Genome-wide table plus panel-only view | Shared |

@@ -83,10 +83,68 @@ for readability. The numerical section labels are a reading guide.
 | 9. Optional control checks | How do results compare with known positive controls? |
 
 The panel is used for interpretation. Manta/DELLY and DeepVariant discovery
-remain genome-wide. The readable small-variant VEP table is restricted to
-`nuclear_mito_candidate_bed`; the full DeepVariant VCF is preserved.
-MitoCarta annotation of SVs is genome-wide. Consequently, this workflow does
-not yet give equally broad annotation of non-panel small variants and SVs.
+remain genome-wide. Small-variant VEP annotation now also uses the full
+DeepVariant VCF. `nuclear_mito_candidate_bed` selects a focused review VCF;
+it does not restrict the genome-wide annotation. MitoCarta annotation of SVs
+is also genome-wide.
+
+### Genome-wide small variants and noncoding evidence
+
+The master annotation is
+`<sample>/snp_deepvariant/<sample>.genomewide.vep.tsv.gz`. It replaces the older
+`<sample>.nuclear_mito_candidates.vep.tsv`; that restricted annotation is no
+longer generated. Old copies on your server are not removed automatically.
+The compressed master preserves all VEP transcript consequences, including
+intronic, intergenic and available regulatory/motif overlaps. VEP's
+`--flag_pick` marks a preferred consequence while retaining the others.
+No panel, consequence-impact, coding-only or population-frequency filter is
+applied to this master. The full DeepVariant VCF retains genotype, FILTER and
+quality information: annotation does not make a flagged call reliable.
+
+VEP runs once per sample, using the matching human GRCh38 cache and
+`--regulatory`. Check the log at
+`<sample>/logs/<sample>.vep_small_variants.log` for warnings or skipped records.
+A missing regulatory annotation does not demonstrate absence of a regulatory
+effect. Intronic location alone does not establish a splice effect, and an
+intergenic or regulatory overlap does not establish the affected gene.
+
+New samples use the normal `all` command below. To annotate existing genome-wide
+DeepVariant VCFs without requesting the full analysis, run from this folder:
+
+```bash
+snakemake --snakefile Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 -p small_variant_annotation
+```
+
+If a required DeepVariant VCF is missing, Snakemake will schedule its upstream
+jobs. Genome-wide annotation needs more time and disk space than the former
+restricted table. Small variants are retained for complementary review; this
+change does not create a genome-wide small-variant clinical ranking.
+
+### Preparation for AlphaGenome Atlas
+
+Atlas querying has not been implemented or enabled by this update. The preserved
+full VCF is the appropriate source of exact variant alleles for a future
+genome-wide Atlas annotation; the VEP master supplies consequence context.
+Do not use only the nuclear mitochondrial VCF or a coding/splice shortlist.
+Likewise, the LRS coding/splice SNV+SV table is a review subset, not a complete
+Atlas input.
+
+Genome-wide Atlas analysis would mean looking up observed sample SNVs across
+the genome, including deep-intronic and intergenic SNVs. It would not mean
+scanning every possible human substitution or running the AlphaGenome model
+millions of times. Batch lookups should preserve lookup status, cache results,
+respect service quotas and retain the source version. Quality and observed
+genotype must be assessed from the source VCF; lower-quality variants remain
+in the master even when excluded from a scoring/review subset. Check actual
+service support before including indels. Regulatory target genes require
+specific evidence; proximity alone is insufficient.
+
+Atlas scores would remain separate research evidence. They must not be used
+to reclassify an SV, replace ACMG/ClinGen evidence or alter the clinical ranking.
+See the [official Atlas API documentation](https://www.alphagenomedocs.com/api/atlas.html)
+and [AlphaGenome limitations and research-use terms](https://github.com/google-deepmind/alphagenome).
 
 ## Run the analysis and plots
 
@@ -294,7 +352,8 @@ paired-end WGS alignments.
    tar -xzf homo_sapiens_vep_113_GRCh38.tar.gz
    ```
 
-   Set `vep_cache_dir` to that cache root. It must contain
+   Set `vep_cache_dir` to that cache root. The human cache should include
+   regulatory annotations for `--regulatory`. It must contain
    `homo_sapiens/113_GRCh38/`. If you change the release, update both
    `envs/srs_vep.yaml` and `vep_cache_version` together. See the
    [official VEP cache documentation](https://www.ensembl.org/info/docs/tools/vep/script/vep_cache.html).

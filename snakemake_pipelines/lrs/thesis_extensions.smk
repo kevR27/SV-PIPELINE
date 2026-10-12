@@ -243,6 +243,8 @@ rule integrate_depth_into_final_candidates:
         """
 
 
+# This is the complete small-variant annotation, including noncoding rows.
+# The coding/splice SNV+SV table below is a focused review, not the Atlas input.
 rule vep_small_variants:
     input:
         vcf=PATH + "{sample}/phasing_longphase/{sample}.longphase.vcf.gz"
@@ -268,6 +270,9 @@ rule vep_small_variants:
             --symbol \
             --biotype \
             --variant_class \
+            --regulatory \
+            --allele_number \
+            --uploaded_allele \
             --force_overwrite \
             --fork {threads}
         test -s {output.txt}

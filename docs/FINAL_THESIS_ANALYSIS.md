@@ -124,6 +124,21 @@ UNRESOLVED.
 
 This is useful for recessive genes but does not replace segregation analysis.
 
+The complete small-variant VEP table at
+`<sample>/snp_clair3/<sample>.longphase.vep.txt` retains noncoding consequences
+and now requests regulatory/motif annotations from the matching human cache.
+Deep-intronic, intergenic and regulatory variants are not deleted from this
+master or the source VCF. The coding/splice restriction applies only to the
+SNV+SV review table above. Do not treat every noncoding variant in the same gene
+as a functional second hit; preserve it for further assessment instead.
+
+For future Atlas work, use the full small-variant VCF plus this full VEP table,
+not `<sample>_snv_sv_candidates.tsv`. Regulatory variants without an established
+gene link remain available. This update prepares their retention; Atlas scoring
+itself is not yet implemented. The SRS counterpart is its compressed
+`<sample>.genomewide.vep.tsv.gz` master; see the
+[SRS README](../snakemake_pipelines/srs_wgs_pipeline/README.md#genome-wide-small-variants-and-noncoding-evidence).
+
 ## Nanopore run QC
 
 Dorado QC is optional. Configure a basecalling BAM:

@@ -342,6 +342,16 @@ Main outputs:
 
 Clair3 is used as a complementary genome-wide small-variant layer. The optic-neuropathy BED is retained for panel annotation, but the active LRS Clair3 rule is not BED-restricted. These calls support phasing and secondary SNV+SV review; they do not replace the thesis focus on structural variants.
 
+Small-variant VEP annotation also retains noncoding variants: LRS keeps the full
+`snp_clair3/<sample>.longphase.vep.txt` in postprocess, and SRS now writes
+`snp_deepvariant/<sample>.genomewide.vep.tsv.gz` from its full DeepVariant VCF.
+Both request regulatory annotations and retain all transcript consequences.
+The LRS coding/splice SNV+SV table and SRS nuclear mitochondrial VCF remain
+focused review views. Use the full source VCF and full VEP table for future
+genome-wide Atlas annotation; Atlas querying is not yet implemented. See the
+[SRS instructions](snakemake_pipelines/srs_wgs_pipeline/README.md#genome-wide-small-variants-and-noncoding-evidence)
+for the replacement output and rerun target.
+
 This is useful because an unresolved case can still contain relevant SNVs or small indels, and these variants can also help with phasing.
 
 Main output:

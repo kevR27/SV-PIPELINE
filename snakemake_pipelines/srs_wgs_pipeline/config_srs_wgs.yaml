@@ -29,7 +29,8 @@ candidate_genes_list: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/PANEL_OA/optic_n
 gene_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/gencode.genes.hg38.sorted.bed"
 exclude_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/delly_hg38_exclude.bed"
 
-# This BED selects the readable small-variant VEP table, not the full VCF.
+# This BED selects a focused review VCF only. Calling and VEP annotation
+# retain the full genome-wide small-variant set, including noncoding variants.
 # The supplied .tsv also uses BED coordinates: start = 0-based, end = excluded.
 nuclear_mito_candidate_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/PANEL_OA/optic_neuropathy_mito_panel_annotated.tsv"
 expansionhunter_catalog: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/variant_catalog_hg38_repeats.json"
@@ -37,6 +38,8 @@ expansionhunter_catalog: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/var
 vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/vep"
 vep_assembly: "GRCh38"
 vep_cache_version: 113             # Must match envs/srs_vep.yaml and cache.
+# The human GRCh38 cache must include regulatory annotations (--regulatory).
+# No coding-only, gene-panel or VEP-impact filter is used on the master table.
 
 annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations"
 annotsv_benign_af: 0.01            # AnnotSV setting; not the final AF filter.

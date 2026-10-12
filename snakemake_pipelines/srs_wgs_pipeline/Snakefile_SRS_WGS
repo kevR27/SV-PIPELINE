@@ -253,7 +253,7 @@ rule all:
             expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz", sample=SAMPLES),
             expand(PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi", sample=SAMPLES),
             expand(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vcf.gz", sample=SAMPLES),
-            expand(PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vep.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/snp_deepvariant/{sample}.genomewide.vep.tsv.gz", sample=SAMPLES),
             expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz", sample=SAMPLES),
             expand(PATH + "{sample}/phasing/{sample}.phased.vcf.gz.tbi", sample=SAMPLES),
         ],
@@ -710,20 +710,34 @@ rule nuclear_mito_small_variant_candidates:
         """
 
 
-rule vep_nuclear_mito_small_variants:
+# Annotate the full VCF once. Keep intronic, intergenic and regulatory rows;
+# the nuclear mitochondrial BED above selects a review VCF, not this master.
+rule vep_small_variants:
     input:
-        vcf=rules.nuclear_mito_small_variant_candidates.output.vcf
+        vcf=rules.deepvariant_snv_indel_calling.output.vcf
     output:
-        tsv=PATH + "{sample}/snp_deepvariant/{sample}.nuclear_mito_candidates.vep.tsv"
+        tsv=PATH + "{sample}/snp_deepvariant/{sample}.genomewide.vep.tsv.gz"
+    log:
+        PATH + "{sample}/logs/{sample}.vep_small_variants.log"
     threads: THREADS
     conda:
         ENV_DIR + "/srs_vep.yaml"
     shell:
         """
+        set -euo pipefail
         vep --input_file {input.vcf:q} --format vcf --output_file {output.tsv:q} --tab --force_overwrite \
           --cache --offline --dir_cache {VEP_CACHE_DIR:q} --cache_version {VEP_CACHE_VERSION} \
-          --assembly {VEP_ASSEMBLY} --canonical --flag_pick --symbol --biotype --numbers --fork {threads}
+          --assembly {VEP_ASSEMBLY} --canonical --flag_pick --symbol --biotype --numbers \
+          --regulatory --allele_number --uploaded_allele --compress_output gzip --no_stats \
+          --fork {threads} 2> {log:q}
+        test -s {output.tsv:q}
         """
+
+
+# Run this target to annotate existing genome-wide DeepVariant VCFs.
+rule small_variant_annotation:
+    input:
+        expand(PATH + "{sample}/snp_deepvariant/{sample}.genomewide.vep.tsv.gz", sample=SAMPLES)
 
 
 # ============================================================
