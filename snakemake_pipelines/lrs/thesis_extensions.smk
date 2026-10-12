@@ -8,8 +8,8 @@ FINAL_DIR = PATH + "{sample}/gene_discovery/final/"
 DEPTH_BASE_BIN_BP = config.get("depth_base_bin_bp", 10000)
 DEPTH_MIN_MAPQ = config.get("depth_min_mapq", 20)
 LARGE_SV_DEPTH_MIN_SIZE = config.get("large_sv_depth_min_size", 100000)
-R_TOP_CANDIDATES = config.get("r_plot_top_candidates", 30)
-R_TOP_HPO = config.get("r_plot_top_hpo", 20)
+R_TOP_CANDIDATES = config.get("r_plot_top_candidates", 50)
+R_TOP_HPO = config.get("r_plot_top_hpo", 50)
 # HON_HPO_SEEDS is resolved by the parent workflow. Reuse that same file
 # rather than overriding it for the generated HPO reference.
 HON_PANEL_FILE = config["candidate_genes_list"]
