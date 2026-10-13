@@ -32,7 +32,7 @@ exclude_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/delly_hg38_excl
 # This BED selects a focused review VCF only. Calling and VEP annotation
 # retain the full genome-wide small-variant set, including noncoding variants.
 # The supplied .tsv also uses BED coordinates: start = 0-based, end = excluded.
-nuclear_mito_candidate_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/PANEL_OA/optic_neuropathy_mito_panel_annotated.tsv"
+nuclear_mito_candidate_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/PANEL_OA/optic_neuropathy_mito_panel_annotated.tsv"
 expansionhunter_catalog: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/variant_catalog_hg38_repeats.json"
 
 vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/vep"
