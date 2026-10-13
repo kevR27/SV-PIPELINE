@@ -9,7 +9,7 @@ samples:
   "14996": "/DATA/casadei7/nanopore/WGS/14996_HMW_bam/14996_HMW_merged.bam"
   "13048": "/DATA/casadei7/nanopore/WGS/2026_04_02_WGS_13048/bam/WGS_2026_04_02.bam"
 
-path: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/outs_test_CNTRL/"
+path: "/DATA/casadei7/nanopore/WGS/RESULTS/"
 ref: "/DATA/Reference/hg38.fa"
 threads: 32
 
@@ -50,8 +50,8 @@ cpg_region: null
 # modkit 0.6.4 executable installed on the analysis server.
 # modkit itself is an external executable; envs/modkit.yaml supplies
 # htslib/tabix for indexing the BGZF bedMethyl output.
-#modkitenv: "/home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
-modkitenv: "/home/casadei7/.cargo/bin/modkit"
+modkitenv: "/home/casadei7/dist_modkit_v0.6.4_cd85862/modkit"
+#modkitenv: "/home/casadei7/.cargo/bin/modkit"
 
 # Main modkit processing uses the full Snakemake thread allocation (32).
 # Main processing, I/O, sampling and BGZF compression are all set to 32 threads.
@@ -96,7 +96,6 @@ jasmine_caller_order: "Sniffles2,cuteSV,Delly"
 
 reference_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference"
 vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/vep"
-vep_cache_version: 116  # Match envs/vep.yaml and the extracted human GRCh38 cache.
 vep_assembly: "GRCh38"
 
 # ============================================================
@@ -191,9 +190,11 @@ patient_hpo_files: {}
 # patient_hpo_files:
 #   "21930": "/path/to/21930.hpo.tsv"
 
-# Separate OFFLINE Exomiser CLI phenotype comparison; original ranking retained.
-# true + null reads only CORE_OCULAR_HON rows from hon_hpo_seed_terms above.
-# Syndromic context rows are not presented as findings shared by every patient.
+
+# ============================================================
+# EXOMISER
+# ============================================================
+
 exomiser_enabled: true
 # Existing CLI installation; keep its lib/ folder beside the JAR.
 exomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
@@ -203,12 +204,13 @@ exomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_a
 exomiser_genome_data_version: "2512"
 exomiser_phenotype_data_version: "2512"
 exomiser_java: "java"            # Java 21 from envs/exomiser.yaml (--use-conda).
-exomiser_memory_gb: 8             # Java heap per distinct HPO query.
+exomiser_memory_gb: 32             # Java heap per distinct HPO query.
 # PHENOTYPE_ONLY preset: no patient variant/genotype/inheritance analysis.
 # Identical HPO queries share one result. Setup steps are in README.md.
 # Optional replacement shared profile: comma-separated HPO IDs or a YAML list.
 # A patient_hpo_files entry overrides this profile for that patient only.
 hpo_terms: null
+
 
 # ============================================================
 # ANNOTSV
@@ -266,7 +268,7 @@ methylation_units: "percent"  # modkit bedMethyl column 11
 
 
 # ============================================================
-# OPTIONAL X-CHROMOSOME INACTIVATION (XCI)
+#  X-CHROMOSOME INACTIVATION (XCI)
 # ============================================================
 # Run only on appropriate XX samples with native-DNA ONT MM/ML methylation
 # tags. Do not add an XY sample simply because chrX reads are present.
@@ -278,9 +280,8 @@ methylation_units: "percent"  # modkit bedMethyl column 11
 xci_samples: 
   - "21930"
   - "25428"
+  - "14996"
   - "13048"
-# 14496 was listed here but has no entry in samples. Add the intended sample
-# only after checking its identity, BAM and XX/XCI eligibility.
 
 # GRCh38 CpG-island BED used for read-level methylation clustering.
 # Required only when xci_samples is non-empty.
@@ -399,9 +400,12 @@ dorado_summary_bams:
 # short-read tail from the long-read QC subset.
 n50_min_length: 1000
 
-# AlphaGenome Atlas — optional RESEARCH context, separate from all rankings.
+# =========================================================================
+# AlphaGenome Atlas — not included for ranking
+# =========================================================================
 # Enable once the official GRCh38 AVI file and its .tbi index are available.
 # Size alone does not identify a download: AVI is not the splicing-score file.
+
 alphagenome_atlas_enabled: false
 alphagenome_avi_file: null          # Absolute path to official AVI .tsv.gz.
 alphagenome_avi_release: null       # Exact download filename/release, for provenance.
