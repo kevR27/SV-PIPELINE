@@ -392,6 +392,37 @@ paired-end WGS alignments.
    `gnomad_sv_vcf`/`gnomad_sv_index`. The analysis does not download it. With no
    resource configured, frequency is explicitly unavailable, not proven absent.
 
+## DeepVariant runner setup
+
+DeepVariant now runs the official 1.10.0 image, containing the trained WGS
+model and `/opt/deepvariant/bin/run_deepvariant`. The former Bioconda package
+wrappers did not reliably provide this command. `envs/deepvariant.yaml`
+provides Apptainer and tabix; it does not install DeepVariant models itself.
+See the [official runner](https://github.com/google/deepvariant/tree/r1.10)
+and [Apptainer documentation](https://apptainer.org/docs/user/latest/).
+
+On Bologna, first create the selected Conda environments using the command
+below, activate the environment containing Apptainer, then check the image:
+
+```bash
+apptainer exec docker://google/deepvariant:1.10.0 /opt/deepvariant/bin/run_deepvariant --help
+```
+
+For repeated offline runs, prepare a local image while network access is
+available:
+
+```bash
+mkdir -p /DATA/Reference/deepvariant
+apptainer pull /DATA/Reference/deepvariant/deepvariant_1.10.0.sif docker://google/deepvariant:1.10.0
+```
+
+Set `deepvariant_image` to the absolute `.sif` path. Local images are tracked
+as rule inputs. A remote image URI requires image access or a working local
+Apptainer cache. The rule binds the BAM/index, FASTA and output directories,
+passes the sample name and writes a DeepVariant log under
+`<sample>/logs/deepvariant/`. Server container permissions, CPU compatibility
+and a real WGS run still need verification; they were not tested here.
+
 ## Validate and reuse the environments
 
 There is no separate `environment.yaml`. It duplicated the Snakemake runner
@@ -426,6 +457,11 @@ snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
 
 Replace `/DATA/srs_results` above if your configured `path` is different.
 
+Every BAM needs a discoverable index beside it (`sample.bam.bai`, or
+`sample.bai` where supported). If using the optional `bam_indexes` mapping,
+the index beside the BAM must resolve to that same file; a symlink is enough.
+Preflight now rejects an isolated custom BAI that callers would not discover.
+
 Preflight checks actual BAM header contig lengths/names against the FASTA index,
 coordinate-sort metadata, index readability and a sample of paired reads. This
 is a compatibility check, not verification of every aligned base. It also checks
@@ -435,7 +471,17 @@ BWA index, annotation bundle, HPO/Monarch resource, or enabled optional resource
 is missing. Each sample also receives `qc/*.wgs_qc_summary.tsv`; threshold
 failures are marked `REVIEW` instead of silently discarding calls.
 
-## Checks made for this update — 10 October 2026
+## Latest audit — 13 October 2026
+
+See [the shared input/output audit](../../docs/PIPELINE_INPUT_OUTPUT_AUDIT.md).
+245 tests passed, with follow-up SRS checks after the index-discovery fix.
+459 rule/configuration cases across LRS calling, LRS postprocess and SRS
+rendered successfully. Twenty environment definitions resolved in dry solves;
+19 timed out and remain unverified. These checks do not certify a real server
+installation or patient run. DeepVariant's runner changed as described above;
+SRS VEP remains release 113.
+
+## Earlier checks — 10 October 2026
 
 The 176 regression tests passed. Workflow dry runs covered the default analyses,
 disabled optional branches, enabled optional resources/control checks, and the

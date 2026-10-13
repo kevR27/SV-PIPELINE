@@ -132,6 +132,8 @@ def main() -> int:
                 args.min_mapq,
                 args.window,
             )
+            # A stale image must not count as this run's output.
+            image.unlink(missing_ok=True)
             result = subprocess.run(
                 command,
                 text=True,
@@ -175,10 +177,14 @@ def main() -> int:
     )
 
     rendered = sum(row["STATUS"] == "OK" for row in manifest_rows)
+    failures = sum(row["STATUS"] == "FAILED" for row in manifest_rows)
     print(
-        f"[OK] requested={len(selected)} rendered={rendered} "
+        f"[{'ERROR' if failures else 'OK'}] requested={len(selected)} rendered={rendered} failed={failures} "
         f"manifest={manifest}"
     )
+    if failures:
+        print(f"[ERROR] {failures} Samplot requests failed; inspect MESSAGE in {manifest}")
+        return 1
     return 0
 
 

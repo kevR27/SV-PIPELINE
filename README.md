@@ -32,6 +32,16 @@ snakemake_pipelines/lrs/Snakefile_LRS_postprocess
 
 adds complementary computational evidence and generates integrated interpretation tables and plots without rerunning the main variant-calling steps.
 
+## Input, output and environment audit — 13 October 2026
+
+Read [the audit and server checks](docs/PIPELINE_INPUT_OUTPUT_AUDIT.md) before
+running an updated checkout. It lists execution defects corrected in both
+workflows, verified checks and what still needs testing on Bologna.
+In particular, SRS DeepVariant now uses the official image through Apptainer;
+LRS VEP is pinned to release 116, while SRS retains release 113. Each workflow
+needs its matching cache. No patient analysis or clinical validation was run
+for this audit.
+
 ## Analysis without patient phenotype or trio data
 
 To recheck an earlier run, use [the saved-output guide](docs/SAVED_OUTPUT_REANALYSIS.md).
@@ -77,7 +87,12 @@ The original gene-discovery score remains available separately.
   ambiguous matches, AF parsing, HPO duplication and explicit methylation units.
 - SV phasing now uses `.longphase_SV.vcf.gz`; `.longphase.vcf.gz` remains the SNP
   output. The older `Snakefile_LRS` delegates to the canonical update workflow.
-- needLR is a separate Sniffles2-compatible population-frequency branch. The rule reuses an existing complete native `*_RESULTS.tsv` + VCF pair when present to avoid unnecessary whole-genome re-annotation. This reuse is appropriate only while the needLR query/backend configuration is unchanged; query or backend changes require explicit invalidation/recomputation.
+- needLR is a separate Sniffles2-compatible population-frequency branch. Reuse
+  now requires a completed-run manifest matching the query, backend, tool and
+  settings, plus verified output checksums. An unsigned old result is rerun
+  rather than adopted from its filename or timestamp. Failed reruns cannot
+  publish a previous native result as current. needLR 4.1 uses unquoted paths
+  internally: give this branch paths without whitespace or glob characters.
 
 ---
 
@@ -1655,3 +1670,23 @@ live service predictions. No real patient, OPA1-control, Bologna-server or full
 genome-wide download analysis was performed. These checks establish software
 behaviour, not diagnostic accuracy or performance on a multi-GB resource.
 
+
+### Matching the LRS VEP cache to the executable
+
+LRS `envs/vep.yaml` and `config_lrs.yaml: vep_cache_version` now both specify
+116. SRS separately uses 113. Do not point either workflow at a different
+release merely because it is already downloaded. To prepare the LRS cache:
+
+```bash
+mkdir -p /DATA/Reference/vep
+cd /DATA/Reference/vep
+curl --fail --location --remote-name https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz
+tar -xzf homo_sapiens_vep_116_GRCh38.tar.gz
+```
+
+Set the LRS `vep_cache_dir` to the directory containing
+`homo_sapiens/116_GRCh38/`. Follow the
+[official VEP cache guidance](https://www.ensembl.org/info/docs/tools/vep/script/vep_cache.html).
+If you deliberately use another supported release, change the environment
+pin and configuration together. Return to the LRS workflow folder before
+running Snakemake. Installation and extraction remain manual README steps.

@@ -3,4 +3,7 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - bioconda::deepvariant=1.10.0 #newer version
+  # Run the official DeepVariant image with its documented run_deepvariant.
+  # The Bioconda DeepVariant wrappers do not supply that runner reliably.
+  - apptainer>=1.3,<2
+  - htslib>=1.20

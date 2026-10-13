@@ -528,3 +528,25 @@ Large-deletion predictions are exploratory, have no SV AVI score, and use an
 alignment convention that assigns zero ALT signal to deleted bases. See the
 [shared setup and interpretation guide](../README.md#alphagenome-atlas-genome-wide-research-annotation-and-separate-plots).
 
+
+## Did each requested plot actually run?
+
+The shared LRS/SRS launcher now writes
+`<sample>/plots/plot_run_manifest.tsv` alongside its completion marker.
+`COMMAND_COMPLETED` means the plotting command exited successfully;
+`SKIPPED_MISSING_INPUT` identifies an unavailable required input, `FAILED`
+identifies a failed command, and `DRY_RUN` means no command was executed.
+Some optional branch skips are reported only in the launcher log. A command
+can complete with an empty-data notice, so check its figure/source TSV or
+individual manifest before claiming that a figure was produced.
+
+Samplot records each requested event separately. Current requested images are
+removed before running, preventing an old PNG from hiding a failed new run.
+SRS now fails the rule when a requested plot fails; balanced/complex events
+without supported plotting remain explicitly skipped for manual review.
+
+The workflow tracks the launcher manifest and marker, rather than every
+optional PDF/PNG. If you delete a figure while retaining both, regenerate the
+plotting rule with `-R thesis_plots_sample` on your usual Snakemake command.
+This reruns applicable plots from existing tables and can regenerate deleted
+figures; it does not mean the original callers must be rerun.

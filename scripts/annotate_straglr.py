@@ -233,10 +233,19 @@ def main():
     args = parse_args()
     tsv_loci = read_tsv(args.straglr_tsv)
     bed_records = read_bed(args.straglr_bed)
-    if not bed_records:
-        sys.exit("ERROR: No Straglr loci found in BED.")
-
+    columns = ["chrom", "start", "end", "target_repeat", "locus", "coverage", "genotype",
+               "actual_repeat", "copy_number", "size", "supporting_reads", "full_reads",
+               "partial_reads", "skipped_reads", "failed_reads", "overlapping_genes"]
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+    if not bed_records:
+        with open(args.straglr_bed) as handle:
+            data_lines = [line for line in handle if line.strip() and not line.startswith("#")]
+        if tsv_loci or data_lines:
+            sys.exit("ERROR: Straglr BED has no valid loci but its TSV/BED contains data. Check the files.")
+        with open(args.output, "w", newline="", encoding="utf-8") as handle:
+            csv.DictWriter(handle, fieldnames=columns, delimiter="\t").writeheader()
+        print(f"[OK] NO_REPEAT_LOCI; header-only annotation: {args.output}")
+        return
 
     with tempfile.TemporaryDirectory(prefix="straglr_") as tmp:
         locus_bed = os.path.join(tmp, "straglr_loci.bed")
@@ -244,25 +253,6 @@ def main():
         make_locus_bed(bed_records, locus_bed)
         intersect_genes(locus_bed, args.gene_bed, intersections)
         genes = read_gene_annotations(intersections, args.min_overlap)
-
-        columns = [
-            "chrom",
-            "start",
-            "end",
-            "target_repeat",
-            "locus",
-            "coverage",
-            "genotype",
-            "actual_repeat",
-            "copy_number",
-            "size",
-            "supporting_reads",
-            "full_reads",
-            "partial_reads",
-            "skipped_reads",
-            "failed_reads",
-            "overlapping_genes",
-        ]
 
         with open(args.output, "w", newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=columns, delimiter="\t")

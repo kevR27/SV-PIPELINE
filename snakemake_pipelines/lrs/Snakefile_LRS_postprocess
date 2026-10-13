@@ -269,19 +269,19 @@ rule rank_sv_gene_events:
         """
         set -euo pipefail
 
-        python {input.script} \
-            --input {input.integrated} \
-            --gnomad-delta {input.gnomad} \
-            --phenotypes {input.phenotypes} \
-            --hpo-seeds {input.hpo_seeds} \
-            --edges {input.edges} \
-            --output {output.tsv} \
+        python {input.script:q} \
+            --input {input.integrated:q} \
+            --gnomad-delta {input.gnomad:q} \
+            --phenotypes {input.phenotypes:q} \
+            --hpo-seeds {input.hpo_seeds:q} \
+            --edges {input.edges:q} \
+            --output {output.tsv:q} \
             --breakpoint-gene-tolerance {params.breakpoint_tolerance} \
             --rare-af {params.rare_af} \
             --max-af {params.max_af} \
             --compact-output
 
-        test -s {output.tsv}
+        test -s {output.tsv:q}
         """
 
 
@@ -306,22 +306,22 @@ rule integrate_complementary_sv_evidence:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.delta})
+        mkdir -p "$(dirname {output.delta:q})"
 
-        python {input.script} \
-            --integrated {input.integrated} \
-            --straglr {input.straglr} \
-            --tldr {input.tldr} \
+        python {input.script:q} \
+            --integrated {input.integrated:q} \
+            --straglr {input.straglr:q} \
+            --tldr {input.tldr:q} \
             {params.longphase_arg} \
             --straglr-breakpoint-tol {params.straglr_tol} \
             --tldr-breakpoint-tol {params.tldr_tol} \
             --longphase-breakpoint-tol {params.longphase_tol} \
-            --independent-output {output.independent} \
+            --independent-output {output.independent:q} \
             --annotation-only \
-            --output {output.delta}
+            --output {output.delta:q}
 
-        test -s {output.delta}
-        test -e {output.independent}
+        test -s {output.delta:q}
+        test -e {output.independent:q}
         """
 
 
@@ -352,15 +352,15 @@ rule integrate_candidate_context:
         """
         set -euo pipefail
 
-        python {input.script} \
-            --integrated {input.integrated} \
+        python {input.script:q} \
+            --integrated {input.integrated:q} \
             {params.methylation_arg} \
             {params.whatshap_arg} \
             --methylation-units {params.methylation_units} \
             --annotation-only \
-            --output {output.delta}
+            --output {output.delta:q}
 
-        test -s {output.delta}
+        test -s {output.delta:q}
         """
 
 
@@ -380,17 +380,17 @@ rule annotate_mitocarta_context:
         """
         set -euo pipefail
 
-        python {input.script} \
-            --integrated {input.integrated} \
-            --mitocarta {input.mitocarta} \
-            --pathways-gmx {input.pathways} \
-            --ranking {input.ranking} \
+        python {input.script:q} \
+            --integrated {input.integrated:q} \
+            --mitocarta {input.mitocarta:q} \
+            --pathways-gmx {input.pathways:q} \
+            --ranking {input.ranking:q} \
             --annotation-only \
-            --output {output.delta} \
-            --summary-output {output.summary}
+            --output {output.delta:q} \
+            --summary-output {output.summary:q}
 
-        test -s {output.delta}
-        test -s {output.summary}
+        test -s {output.delta:q}
+        test -s {output.summary:q}
         """
 
 
@@ -408,12 +408,12 @@ rule annotate_gnomad_sv_exact:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --input {input.events} \
+        python {input.script:q} \
+            --input {input.events:q} \
             {params.gnomad_arg} \
             --annotation-only \
-            --output {output.delta}
-        test -s {output.delta}
+            --output {output.delta:q}
+        test -s {output.delta:q}
         """
 
 
@@ -432,14 +432,14 @@ rule merge_integrated_annotations:
         """
         set -euo pipefail
 
-        python {input.script} \
-            --base {input.base} \
-            --delta {input.complementary} \
-            --delta {input.multimodal} \
-            --delta {input.mitocarta} \
-            --output {output.tsv}
+        python {input.script:q} \
+            --base {input.base:q} \
+            --delta {input.complementary:q} \
+            --delta {input.multimodal:q} \
+            --delta {input.mitocarta:q} \
+            --output {output.tsv:q}
 
-        test -s {output.tsv}
+        test -s {output.tsv:q}
         """
 
 
@@ -458,13 +458,13 @@ rule rank_mitochondrial_genes:
         """
         set -euo pipefail
 
-        python {input.script} \
-            --input {input.integrated} \
-            --gene-bed {input.gene_bed} \
-            --panel {input.panel} \
-            --output {output.tsv}
+        python {input.script:q} \
+            --input {input.integrated:q} \
+            --gene-bed {input.gene_bed:q} \
+            --panel {input.panel:q} \
+            --output {output.tsv:q}
 
-        test -s {output.tsv}
+        test -s {output.tsv:q}
         """
 
 
@@ -481,13 +481,13 @@ rule build_gene_multimodal_summary:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --integrated {input.integrated} \
-            --ranking {input.ranking} \
-            --phenotypes {input.phenotypes} \
-            --output {output.tsv}
+        python {input.script:q} \
+            --integrated {input.integrated:q} \
+            --ranking {input.ranking:q} \
+            --phenotypes {input.phenotypes:q} \
+            --output {output.tsv:q}
 
-        test -s {output.tsv}
+        test -s {output.tsv:q}
         """
 
 
@@ -570,7 +570,8 @@ rule thesis_plots_sample:
             PLOTS + "/integrate_candidate_context.py",
         ]
     output:
-        marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
+        marker=touch(PATH + "{sample}/plots/.thesis_plots.done"),
+        manifest=PATH + "{sample}/plots/plot_run_manifest.tsv"
     log:
         PATH + "{sample}/logs/plots/{sample}.thesis_plots.log"
     params:
@@ -595,13 +596,13 @@ rule thesis_plots_sample:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {log})
+        mkdir -p "$(dirname {log:q})"
 
-        python {PLOTS}/run_thesis_plots.py \
+        python {PLOTS:q}/run_thesis_plots.py \
             --root {PATH} \
             --sample {wildcards.sample} \
             --platform lrs \
-            --candidate-table {input.candidate_events} \
+            --candidate-table {input.candidate_events:q} \
             --samplot-manifest {input.samplot:q} \
             --top-genes {params.top_genes} \
             --review-top-n {params.review_top_n} \
@@ -611,9 +612,9 @@ rule thesis_plots_sample:
             --methylation-units {params.methylation_units} \
             {params.gene_bed_arg} \
             {params.methylation_arg} \
-            2>&1 | tee {log}
+            2>&1 | tee {log:q}
 
-        touch {output.marker}
+        touch {output.marker:q}
         """
 
 
@@ -630,13 +631,13 @@ rule prepare_samplot_gene_annotation:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.bed})
-        awk 'BEGIN{{OFS="\t"}} NF >= 4 && $1 ~ /^chr([1-9]|1[0-9]|2[0-2]|X|Y|M)$/ {{print}}' {input.bed} \
+        mkdir -p "$(dirname {output.bed:q})"
+        awk 'BEGIN{{OFS="\t"}} NF >= 4 && $1 ~ /^chr([1-9]|1[0-9]|2[0-2]|X|Y|M)$/ {{print}}' {input.bed:q} \
             | sort -k1,1V -k2,2n \
-            | bgzip -c > {output.bed}
-        tabix -f -p bed {output.bed}
-        test -s {output.bed}
-        test -s {output.index}
+            | bgzip -c > {output.bed:q}
+        tabix -f -p bed {output.bed:q}
+        test -s {output.bed:q}
+        test -s {output.index:q}
         """
 
 
@@ -666,24 +667,24 @@ rule samplot_candidate_breakpoints:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
+        mkdir -p {params.outdir:q}
 
-        python {input.script} \
-            --input {input.integrated} \
-            --bam {input.bam} \
-            --reference {REF} \
+        python {input.script:q} \
+            --input {input.integrated:q} \
+            --bam {input.bam:q} \
+            --reference {REF:q} \
             --sample {wildcards.sample} \
-            --out-dir {params.outdir} \
+            --out-dir {params.outdir:q} \
             --top-n {params.top_n} \
             --min-mapq {params.min_mapq} \
             --long-read-min {params.long_read_min} \
             --zoom {params.zoom} \
             --window {params.window} \
             --large-sv-threshold {params.large_threshold} \
-            --gene-annotation {input.genes}
+            --gene-annotation {input.genes:q}
 
-        test -s {output.manifest}
-        touch {output.marker}
+        test -s {output.manifest:q}
+        touch {output.marker:q}
         """
 
 
@@ -734,15 +735,15 @@ rule cohort_thesis_comparison:
         set -euo pipefail
         mkdir -p {PATH}cohort_plots
 
-        python {input.script} \
+        python {input.script:q} \
             {params.sample_args} \
             --out-prefix {PATH}cohort_plots/lrs_sample_comparison
 
-        test -s {output.pdf}
-        test -s {output.svg}
-        test -s {output.png}
-        test -s {output.summary}
-        test -s {output.svtypes}
+        test -s {output.pdf:q}
+        test -s {output.svg:q}
+        test -s {output.png:q}
+        test -s {output.summary:q}
+        test -s {output.svtypes:q}
         """
 
 

@@ -8,6 +8,7 @@ skipped when their inputs are absent.
 from __future__ import annotations
 
 import argparse
+import csv
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,8 @@ from pathlib import Path
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
+RUN_RECORDS = []
+RUN_MANIFEST = None
 
 
 def parse_args():
@@ -63,21 +66,25 @@ def first_glob(root: Path, patterns: list[str]) -> Path | None:
 
 
 def run(command: list[str], required_paths: list[Path], dry_run: bool):
+    label = Path(command[1]).name if len(command) > 1 else command[0]
     missing = [p for p in required_paths if not p.exists()]
     if missing:
+        RUN_RECORDS.append({"PLOT_SCRIPT": label, "STATUS": "SKIPPED_MISSING_INPUT", "DETAIL": ";".join(map(str, missing))})
         print("[SKIP] missing:", ", ".join(str(p) for p in missing), flush=True)
         return
 
-    label = Path(command[1]).name if len(command) > 1 else command[0]
     print(f"[RUN] {label}", flush=True)
     print("      " + " ".join(command), flush=True)
 
     if dry_run:
+        RUN_RECORDS.append({"PLOT_SCRIPT": label, "STATUS": "DRY_RUN", "DETAIL": "No plot command executed"})
         return
 
     try:
         subprocess.run(command, check=True)
+        RUN_RECORDS.append({"PLOT_SCRIPT": label, "STATUS": "COMMAND_COMPLETED", "DETAIL": "See source TSV/figure manifests for available data and plot scope"})
     except subprocess.CalledProcessError as exc:
+        RUN_RECORDS.append({"PLOT_SCRIPT": label, "STATUS": "FAILED", "DETAIL": str(exc.returncode)})
         print(
             f"[ERROR] plot failed: {label}; exit_code={exc.returncode}",
             file=sys.stderr,
@@ -86,7 +93,8 @@ def run(command: list[str], required_paths: list[Path], dry_run: bool):
         raise
 
 
-def main():
+def _main():
+    global RUN_MANIFEST
     args = parse_args()
     if min(args.top_genes, args.review_top_n, args.locus_top_n) < 1:
         raise ValueError("Plot and review counts must be at least 1")
@@ -98,6 +106,7 @@ def main():
     sample_root = root / args.sample
     out = Path(args.out_dir).expanduser().resolve() if args.out_dir else sample_root / "plots"
     out.mkdir(parents=True, exist_ok=True)
+    RUN_MANIFEST = out / "plot_run_manifest.tsv"
 
     folders = {
         "review": out / "00_start_here",
@@ -565,6 +574,20 @@ def main():
         run(command, required, args.dry_run)
 
     print(f"[OK] plot directory: {out}")
+
+
+def main():
+    global RUN_MANIFEST
+    RUN_RECORDS.clear()
+    RUN_MANIFEST = None
+    try:
+        _main()
+    finally:
+        if RUN_MANIFEST is not None:
+            with RUN_MANIFEST.open("w", newline="") as handle:
+                writer = csv.DictWriter(handle, ["PLOT_SCRIPT", "STATUS", "DETAIL"], delimiter="\t")
+                writer.writeheader()
+                writer.writerows(RUN_RECORDS)
 
 
 if __name__ == "__main__":

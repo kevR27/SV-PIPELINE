@@ -304,6 +304,7 @@ def main():
             command += ["--zoom", str(args.zoom)]
         elif not context_only:
             command += ["--window", str(args.window)]
+        output.unlink(missing_ok=True)  # Require an image produced by this attempt.
         try:
             completed = subprocess.run(
                 command,

@@ -46,6 +46,17 @@ class SrsWgsPipelineTests(unittest.TestCase):
                 checks = []
                 script.check_bam_reference(bam_path, bam_path + ".bai", fai, checks)
                 self.assertEqual(checks[-1]["status"], expected)
+            # A separately supplied BAI must also be discoverable by callers.
+            fai.write_text("chr1\t10000\t6\t60\t61\n")
+            custom_index = Path(tmp) / "elsewhere.bai"
+            Path(bam_path + ".bai").rename(custom_index)
+            checks = []
+            script.check_bam_reference(bam_path, str(custom_index), fai, checks)
+            self.assertEqual(checks[-1]["status"], "FAIL")
+            Path(bam_path + ".bai").symlink_to(custom_index)
+            checks = []
+            script.check_bam_reference(bam_path, str(custom_index), fai, checks)
+            self.assertEqual(checks[-1]["status"], "PASS")
             empty_cache = Path(tmp) / "empty_cache"
             empty_cache.mkdir()
             checks = []
@@ -76,8 +87,8 @@ class SrsWgsPipelineTests(unittest.TestCase):
         config = (SRS / "config_srs_wgs.yaml").read_text(encoding="utf-8")
         self.assertIn("reference/hon_hpo_seed_terms.tsv", config)
         self.assertIn("genes=rules.extract_sv_genes.output.genes", snake)
-        self.assertIn("--hpo-seeds {input.hpo}", snake)
-        self.assertIn("--edges {input.edges}", snake)
+        self.assertIn("--hpo-seeds {input.hpo:q}", snake)
+        self.assertIn("--edges {input.edges:q}", snake)
         self.assertIn("ANNOTSV_AUDIT_VCF", snake)
         self.assertIn(".annotsv.panel_only.tsv", snake)
         self.assertIn("_SV_VEP.panel_only.txt", snake)

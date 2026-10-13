@@ -169,7 +169,7 @@ def allele_row(record, sample, alt_index, genes, panel, fasta, min_gq, min_dp, r
     if present != "YES":
         flags.append("ALT_PRESENCE_" + present)
     for value, threshold, label in [(gq, min_gq, "GQ"), (dp, min_dp, "DP")]:
-        if value is None:
+        if value is None or not math.isfinite(float(value)):
             flags.append(label + "_MISSING")
         elif value < threshold:
             flags.append(label + "_LOW")
@@ -212,6 +212,9 @@ def add_vep_context(rows, path):
                 if ":" not in location:
                     continue
                 chrom, pos = location.rsplit(":", 1)
+                if "-" in pos:
+                    endpoints = pos.split("-")
+                    pos = endpoints[0] if len(endpoints) == 2 and endpoints[0] == endpoints[1] else ""
                 if not pos.isdigit():  # Only single-base loci can match offline SNV AVI.
                     continue
                 extra = dict(item.split("=", 1) for item in data.get("Extra", "").split(";") if "=" in item)
@@ -438,7 +441,7 @@ def native_plots(args):
                             call, gt, gt_text = sample_call(rec, args.sample, allow_caller_samples=source == "SV")
                             if list(rec.filter.keys()) != ["PASS"] or (gt and None not in gt and alt_index not in gt):
                                 raise ValueError("Selected allele has failed/unknown FILTER or an explicit non-carrier genotype")
-                            if source == "SMALL" and (alt_index not in gt or any(call.get(field) is None or call.get(field) < threshold for field, threshold in [("GQ", args.min_gq), ("DP", args.min_dp)])):
+                            if source == "SMALL" and (alt_index not in gt or any(call.get(field) is None or not math.isfinite(float(call.get(field))) or call.get(field) < threshold for field, threshold in [("GQ", args.min_gq), ("DP", args.min_dp)])):
                                 raise ValueError("Small-variant prediction needs observed ALT and adequate GQ/DP; the master table still retains this call")
                             found[ix] = (selected_allele(rec, alt_index, s, fasta, args.sequence_length, args.min_flank), gt_text)
     if len(found) != len(selections):
@@ -561,6 +564,8 @@ def main():
     native.add_argument("--min-dp", type=int, default=10)
     native.add_argument("--cache-only", action="store_true")
     args = parser.parse_args()
+    if args.command != "plot" and (not math.isfinite(args.min_gq) or args.min_gq < 0 or args.min_dp < 0):
+        parser.error("Quality thresholds must be finite and nonnegative")
     if args.command == "annotate" and (args.bin_size < 1 or not math.isfinite(args.review_phred) or args.review_phred < 0):
         parser.error("bin-size must be positive and review-phred finite and >=0")
     if args.command == "native-plots" and (args.min_flank < 0 or args.max_variants < 1):

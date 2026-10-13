@@ -24,7 +24,7 @@ def open_text(path: str):
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path, "r", encoding="utf-8")
 
 
-def read_phase(path: str):
+def read_phase(path: str, requested=None):
     phase = {}
     by_position = {}
     with open_text(path) as handle:
@@ -53,8 +53,10 @@ def read_phase(path: str):
                 phased = "NO"  # Do not assign the ALT=1 haplotype to every ALT.
 
             for alt in alts:
+                if requested is not None and (chrom, pos, alt) not in requested:
+                    continue
                 phase[(chrom, pos, alt)] = (gt, ps, phased)
-            if len(alts) == 1:
+            if len(alts) == 1 and (requested is None or (chrom, pos, alts[0]) in requested):
                 by_position[(chrom, pos)] = (gt, ps, phased)
     return phase, by_position
 
@@ -86,10 +88,10 @@ def pair_phase_relation(small_var, sv_row):
     return "UNRESOLVED"
 
 
-def read_vep(path: str) -> pd.DataFrame:
+def read_vep(path: str, genes=None) -> pd.DataFrame:
     header = None
     rows = []
-    with open(path, encoding="utf-8") as handle:
+    with open_text(path) as handle:
         for line in handle:
             if line.startswith("##"):
                 continue
@@ -98,7 +100,16 @@ def read_vep(path: str) -> pd.DataFrame:
                 continue
             if line.startswith("#") or header is None:
                 continue
-            rows.append(dict(zip(header, line.rstrip().split("\t"))))
+            row = dict(zip(header, line.rstrip().split("\t")))
+            if genes is not None:
+                extra = parse_extra(row.get("Extra", ""))
+                gene = row.get("SYMBOL") or extra.get("SYMBOL", ".")
+                impact = (row.get("IMPACT") or extra.get("IMPACT", ".")).upper()
+                if gene not in genes or (impact not in KEEP_IMPACT and not (set(row.get("Consequence", "").split(",")) & KEEP_CONSEQUENCE)):
+                    continue
+            rows.append(row)
+    if header is None:
+        raise ValueError("VEP table has no #Uploaded_variation header")
     return pd.DataFrame(rows)
 
 
@@ -135,8 +146,21 @@ def main():
 
     sv = pd.read_csv(args.sv_candidates, sep="\t", dtype=str, low_memory=False)
     genes = set(sv["GENE"].dropna().astype(str))
-    phase, phase_by_position = read_phase(args.phased_vcf)
-    vep = read_vep(args.vep)
+    # Stream the full VEP master, storing only this existing focused view.
+    # Noncoding variants remain in the source VCF/VEP and the Atlas master.
+    vep = read_vep(args.vep, genes)
+    requested = set()
+    for _, row in vep.iterrows():
+        parsed = parse_uploaded_variant(row.get("Uploaded_variation", "."))
+        if parsed:
+            requested.add(parsed)
+        else:
+            try:
+                chrom, pos = parse_location(row.get("Location", "."))
+                requested.add((chrom, pos, str(row.get("Allele", "."))))
+            except (ValueError, TypeError):
+                pass
+    phase, phase_by_position = read_phase(args.phased_vcf, requested)
 
     output_columns = [
         "GENE", "SMALL_VARIANT", "CHROM", "POS", "ALT", "CONSEQUENCE",

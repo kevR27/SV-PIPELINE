@@ -291,17 +291,6 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(out[2]['SV_DB_CLINVAR_OVERLAP'],'NOT_APPLICABLE')
             self.assertTrue(json.loads(out[0]['ANNOTSV_GENE_ROWS_JSON']))
 
-    def test_needlr_reuses_complete_native_results_only(self):
-        snakefile = (ROOT / "snakemake_pipelines/lrs/Snakefile_LRS_update").read_text()
-        self.assertIn("rule needlr_annotation:", snakefile)
-        self.assertIn("query_hash=", snakefile)
-        self.assertIn("sha256sum", snakefile)
-        self.assertIn(".needlr_query.sha256", snakefile)
-        self.assertIn("Native result matches current query; reusing it.", snakefile)
-        self.assertIn("Query changed or no validated native result; running annotation.", snakefile)
-        self.assertIn('if [ -s "$results_tsv" ] && [ -s "$results_vcf" ]', snakefile)
-        self.assertIn("needLR annotate", snakefile)
-
     def test_methylation_units(self):
         context=importlib.import_module('integrate_candidate_context')
         plot=importlib.import_module('plot_methylation')

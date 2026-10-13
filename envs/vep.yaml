@@ -3,4 +3,4 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - bioconda::ensembl-vep
+  - bioconda::ensembl-vep=116

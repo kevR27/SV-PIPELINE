@@ -128,14 +128,14 @@ rule xci_extract_haplotags:
         set -euo pipefail
         mkdir -p {PATH}{wildcards.sample}/xci
 
-        python {SCRIPTS}/extract_xci_haplotags.py \
-            --bam {input.bam} \
+        python {SCRIPTS:q}/extract_xci_haplotags.py \
+            --bam {input.bam:q} \
             --chrom {XCI_CHROM} \
-            --output {output.reads} \
-            --summary-output {output.summary}
+            --output {output.reads:q} \
+            --summary-output {output.summary:q}
 
-        test -s {output.reads}
-        test -s {output.summary}
+        test -s {output.reads:q}
+        test -s {output.summary:q}
         """
 
 
@@ -156,15 +156,15 @@ rule xci_compare_phasing:
         set -euo pipefail
         mkdir -p {PATH}{wildcards.sample}/xci
 
-        python {input.script} \
-            --whatshap-vcf {input.whatshap} \
-            --longphase-vcf {input.longphase} \
+        python {input.script:q} \
+            --whatshap-vcf {input.whatshap:q} \
+            --longphase-vcf {input.longphase:q} \
             --chrom {XCI_CHROM} \
-            --blocks-output {output.blocks} \
-            --summary-output {output.summary}
+            --blocks-output {output.blocks:q} \
+            --summary-output {output.summary:q}
 
-        test -s {output.blocks}
-        test -s {output.summary}
+        test -s {output.blocks:q}
+        test -s {output.summary:q}
         """
 
 
@@ -173,7 +173,9 @@ rule xci_modkit_phased_chrX:
         bam=PATH + "{sample}/phasing/{sample}.phased.bam",
         bai=PATH + "{sample}/phasing/{sample}.phased.bam.bai",
         ref=REF,
-        haplotag_summary=rules.xci_extract_haplotags.output.summary
+        haplotag_summary=rules.xci_extract_haplotags.output.summary,
+        cache_script=SCRIPTS + "/check_run_cache.py",
+        environment=CONDAENV + "modkit.yaml"
     output:
         hp1=PATH + "{sample}/xci/methylation/{sample}.chrX.hp1.5mC.bedmethyl.gz",
         hp2=PATH + "{sample}/xci/methylation/{sample}.chrX.hp2.5mC.bedmethyl.gz",
@@ -192,7 +194,7 @@ rule xci_modkit_phased_chrX:
         tmpdir="$outdir/.{wildcards.sample}.modkit_phased_tmp"
 
         mkdir -p "$outdir"
-        mkdir -p $(dirname {log})
+        mkdir -p "$(dirname {log:q})"
         mkdir -p "$tmpdir"
 
         # Check that WhatsHap produced usable chrX haplotags before asking
@@ -201,13 +203,13 @@ rule xci_modkit_phased_chrX:
         # extract_xci_haplotags.py writes one data row with the fixed columns:
         # chrom, primary_mapped_reads, HP1_reads, HP2_reads,
         # haplotagged_reads, reads_with_PS, haplotag_fraction.
-        hp1_reads=$(sed -n '2p' {input.haplotag_summary} | cut -f3)
-        hp2_reads=$(sed -n '2p' {input.haplotag_summary} | cut -f4)
-        ps_reads=$(sed -n '2p' {input.haplotag_summary} | cut -f6)
+        hp1_reads=$(sed -n '2p' {input.haplotag_summary:q} | cut -f3)
+        hp2_reads=$(sed -n '2p' {input.haplotag_summary:q} | cut -f4)
+        ps_reads=$(sed -n '2p' {input.haplotag_summary:q} | cut -f6)
 
         if [[ -z "$hp1_reads" || -z "$hp2_reads" || -z "$ps_reads" ]]; then
             echo "[ERROR] Could not read HP1_reads, HP2_reads or reads_with_PS from {input.haplotag_summary}" >&2
-            cat {input.haplotag_summary} >&2
+            cat {input.haplotag_summary:q} >&2
             exit 1
         fi
 
@@ -224,10 +226,17 @@ rule xci_modkit_phased_chrX:
         # hand-off. This avoids recomputing modkit when only the expected
         # filename suffix caused the previous rule to fail.
         reuse_tmp=0
+        tool_binary=$(command -v {XCI_MODKIT:q})
+        snapshot="$outdir/.current_modkit_inputs.json"
+        manifest="$tmpdir/.completed_run.json"
+        python {input.cache_script:q} snapshot --inputs {input.bam:q} {input.bai:q} {input.ref:q} {input.environment:q} "$tool_binary" \
+            --content-inputs {input.haplotag_summary:q} \
+            --tags-json '{{"chrom":"{XCI_CHROM}","mark":"5mC","cpg":true,"combine_strands":true,"phased":true,"threads":{threads},"io":{XCI_MODKIT_IO_THREADS},"sampling":{XCI_MODKIT_SAMPLING_THREADS},"bgzf_threads":{XCI_MODKIT_BGZF_THREADS}}}' \
+            --snapshot "$snapshot"
         if (
             [[ -s "$tmpdir/hp1.bedmethyl.gz" && -s "$tmpdir/hp2.bedmethyl.gz" && -s "$tmpdir/combined.bedmethyl.gz" ]] ||
             [[ -s "$tmpdir/hp1.bed.gz" && -s "$tmpdir/hp2.bed.gz" && -s "$tmpdir/combined.bed.gz" ]]
-        ); then
+        ) && python {input.cache_script:q} check --snapshot "$snapshot" --manifest "$manifest"; then
             reuse_tmp=1
             echo "[XCI] Reusing complete phased modkit output already present in $tmpdir"
         fi
@@ -239,10 +248,10 @@ rule xci_modkit_phased_chrX:
             # Primary XCI methylation analysis uses 5mCG only, matching the
             # methylation mark used in the published nanopore XCI workflow.
             # --phased partitions the HP-tagged WhatsHap modBAM into HP1/HP2.
-            {XCI_MODKIT} pileup \
-                {input.bam} \
+            {XCI_MODKIT:q} pileup \
+                {input.bam:q} \
                 "$tmpdir" \
-                --reference {input.ref} \
+                --reference {input.ref:q} \
                 --region {XCI_CHROM} \
                 --cpg \
                 --modified-bases 5mC \
@@ -253,7 +262,7 @@ rule xci_modkit_phased_chrX:
                 --io-threads {XCI_MODKIT_IO_THREADS} \
                 --sampling-threads {XCI_MODKIT_SAMPLING_THREADS} \
                 --bgzf-threads {XCI_MODKIT_BGZF_THREADS} \
-                --log-filepath {log}
+                --log-filepath {log:q}
         fi
 
         # modkit versions differ in the compressed phased-output suffix.
@@ -297,14 +306,17 @@ rule xci_modkit_phased_chrX:
         echo "      HP2: $hp2_src"
         echo "      combined: $combined_src"
 
-        mv "$hp1_src" {output.hp1}
-        mv "$hp2_src" {output.hp2}
-        mv "$combined_src" {output.combined}
+        python {input.cache_script:q} complete --snapshot "$snapshot" --manifest "$manifest" \
+            --outputs "$hp1_src" "$hp2_src" "$combined_src"
+
+        mv "$hp1_src" {output.hp1:q}
+        mv "$hp2_src" {output.hp2:q}
+        mv "$combined_src" {output.combined:q}
         rm -rf "$tmpdir"
 
-        test -s {output.hp1}
-        test -s {output.hp2}
-        test -s {output.combined}
+        test -s {output.hp1:q}
+        test -s {output.hp2:q}
+        test -s {output.combined:q}
         """
 
 
@@ -331,20 +343,20 @@ rule xci_cluster_methylation:
         set -euo pipefail
         mkdir -p {PATH}{wildcards.sample}/xci
 
-        Rscript {input.script} \
+        Rscript {input.script:q} \
             {wildcards.sample} \
-            {input.bam} \
-            {input.cpg} \
-            {input.haplotags} \
-            {output.clustered} \
-            {output.raw_blocks} \
+            {input.bam:q} \
+            {input.cpg:q} \
+            {input.haplotags:q} \
+            {output.clustered:q} \
+            {output.raw_blocks:q} \
             {XCI_MIN_CLUSTER_READS} \
             {threads} \
             {params.xist} \
             {params.exclude}
 
-        test -s {output.clustered}
-        test -s {output.raw_blocks}
+        test -s {output.clustered:q}
+        test -s {output.raw_blocks:q}
         """
 
 
@@ -366,12 +378,12 @@ rule xci_calculate_skew:
         """
         set -euo pipefail
 
-        python {input.script} \
-            --block-skew {input.blocks} \
-            --mosdepth-summary {input.coverage} \
-            --haplotag-summary {input.haplotags} \
-            --phase-summary {input.phase} \
-            --phase-blocks {input.phase_blocks} \
+        python {input.script:q} \
+            --block-skew {input.blocks:q} \
+            --mosdepth-summary {input.coverage:q} \
+            --haplotag-summary {input.haplotags:q} \
+            --phase-summary {input.phase:q} \
+            --phase-blocks {input.phase_blocks:q} \
             --chrom {XCI_CHROM} \
             --min-chrx-coverage {XCI_MIN_CHRX_COVERAGE} \
             --min-block-reads {XCI_MIN_BLOCK_READS} \
@@ -383,13 +395,13 @@ rule xci_calculate_skew:
             --threshold-90-10-minor {XCI_THRESHOLD_90_10_MINOR} \
             --orientation-min-log10-odds {XCI_ORIENTATION_MIN_LOG10_ODDS} \
             --sensitivity-min-reads "{XCI_SENSITIVITY_MIN_READS}" \
-            --blocks-output {output.blocks} \
-            --summary-output {output.summary} \
-            --sensitivity-output {output.sensitivity}
+            --blocks-output {output.blocks:q} \
+            --summary-output {output.summary:q} \
+            --sensitivity-output {output.sensitivity:q}
 
-        test -s {output.blocks}
-        test -s {output.summary}
-        test -s {output.sensitivity}
+        test -s {output.blocks:q}
+        test -s {output.summary:q}
+        test -s {output.sensitivity:q}
         """
 
 
@@ -419,34 +431,34 @@ rule xci_plot_analysis:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
+        mkdir -p {params.outdir:q}
 
-        Rscript {input.script} \
-            {input.blocks} \
-            {input.summary} \
-            {input.sensitivity} \
-            {input.phase_blocks} \
-            {input.phase_summary} \
-            {input.hp1} \
-            {input.hp2} \
-            {input.cpg} \
+        Rscript {input.script:q} \
+            {input.blocks:q} \
+            {input.summary:q} \
+            {input.sensitivity:q} \
+            {input.phase_blocks:q} \
+            {input.phase_summary:q} \
+            {input.hp1:q} \
+            {input.hp2:q} \
+            {input.cpg:q} \
             {params.exclude} \
-            {params.outdir} \
+            {params.outdir:q} \
             {wildcards.sample} \
             {XCI_METHYLATION_BIN_BP} \
             {input.clustered:q} \
             {input.haplotags:q}
 
-        test -s {params.outdir}/{wildcards.sample}_xci_block_skew_distribution.pdf
-        test -s {params.outdir}/{wildcards.sample}_xci_chrX_block_skew.pdf
-        test -s {params.outdir}/{wildcards.sample}_xci_orientation_log_odds.pdf
-        test -s {params.outdir}/{wildcards.sample}_xci_haplotype_methylation.pdf
-        test -s {params.outdir}/{wildcards.sample}_xci_methylation_delta.pdf
-        test -s {params.outdir}/{wildcards.sample}_xci_sensitivity.pdf
-        test -s {params.outdir}/{wildcards.sample}_xci_phase_concordance.pdf
-        test -s {params.outdir}/{wildcards.sample}_xci_plot_manifest.tsv
+        test -s {params.outdir:q}/{wildcards.sample}_xci_block_skew_distribution.pdf
+        test -s {params.outdir:q}/{wildcards.sample}_xci_chrX_block_skew.pdf
+        test -s {params.outdir:q}/{wildcards.sample}_xci_orientation_log_odds.pdf
+        test -s {params.outdir:q}/{wildcards.sample}_xci_haplotype_methylation.pdf
+        test -s {params.outdir:q}/{wildcards.sample}_xci_methylation_delta.pdf
+        test -s {params.outdir:q}/{wildcards.sample}_xci_sensitivity.pdf
+        test -s {params.outdir:q}/{wildcards.sample}_xci_phase_concordance.pdf
+        test -s {params.outdir:q}/{wildcards.sample}_xci_plot_manifest.tsv
 
-        touch {output.done}
+        touch {output.done:q}
         """
 
 

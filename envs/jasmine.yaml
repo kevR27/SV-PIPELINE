@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  - python=3.11
   - bioconda::jasminesv=1.1.5
   - bioconda::bcftools=1.20
   - bioconda::htslib=1.20

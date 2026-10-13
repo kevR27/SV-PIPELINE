@@ -26,6 +26,7 @@ def patient_hpo_path(sample):
 
 VEP_CACHE_DIR_EXT = config.get("vep_cache_dir")
 VEP_ASSEMBLY_EXT = config.get("vep_assembly", "GRCh38")
+VEP_CACHE_VERSION_EXT = int(config.get("vep_cache_version", 116))
 
 # LongPhase is a mandatory LRS-update output. Use the same ready samples as the
 # postprocess workflow rather than testing file existence at Snakefile parse
@@ -48,15 +49,15 @@ rule build_hon_hpo_reference:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.tsv})
-        python {input.script} \
-            --panel {input.panel} \
-            --nodes {input.nodes} \
-            --edges {input.edges} \
-            --hon-seeds {input.seeds} \
-            --mitopathways-gmx {input.pathways} \
-            --output {output.tsv}
-        test -s {output.tsv}
+        mkdir -p "$(dirname {output.tsv:q})"
+        python {input.script:q} \
+            --panel {input.panel:q} \
+            --nodes {input.nodes:q} \
+            --edges {input.edges:q} \
+            --hon-seeds {input.seeds:q} \
+            --mitopathways-gmx {input.pathways:q} \
+            --output {output.tsv:q}
+        test -s {output.tsv:q}
         """
 
 
@@ -87,14 +88,14 @@ rule hpo_semantic_similarity:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --genes {input.genes} \
-            --reference {input.reference} \
-            --gene-phenotypes {input.gene_phenotypes} \
-            --edges {input.edges} \
+        python {input.script:q} \
+            --genes {input.genes:q} \
+            --reference {input.reference:q} \
+            --gene-phenotypes {input.gene_phenotypes:q} \
+            --edges {input.edges:q} \
             {params.patient_arg} \
-            --output {output.tsv}
-        test -s {output.tsv}
+            --output {output.tsv:q}
+        test -s {output.tsv:q}
         """
 
 
@@ -122,15 +123,15 @@ rule build_final_candidate_tables:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.genes})
-        python {input.script} \
-            --gene-ranking {input.genes} \
-            --sv-gene-events {input.events} \
-            --gene-output {output.genes} \
-            --sv-output {output.sv} \
+        mkdir -p "$(dirname {output.genes:q})"
+        python {input.script:q} \
+            --gene-ranking {input.genes:q} \
+            --sv-gene-events {input.events:q} \
+            --gene-output {output.genes:q} \
+            --sv-output {output.sv:q} \
             --breakpoint-near-bp {params.breakpoint_near}
-        test -s {output.genes}
-        test -s {output.sv}
+        test -s {output.genes:q}
+        test -s {output.sv:q}
         """
 
 
@@ -151,16 +152,16 @@ rule binned_read_depth:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.regions})
+        mkdir -p "$(dirname {output.regions:q})"
         mosdepth \
             --threads {threads} \
             --no-per-base \
             --by {params.bin_bp} \
             --mapq {params.mapq} \
-            {params.prefix} \
-            {input.bam}
-        test -s {output.regions}
-        test -s {output.summary}
+            {params.prefix:q} \
+            {input.bam:q}
+        test -s {output.regions:q}
+        test -s {output.summary:q}
         """
 
 
@@ -179,14 +180,14 @@ rule summarize_large_sv_depth:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --candidates {input.candidates} \
-            --coverage {input.coverage} \
-            --summary-output {output.summary} \
-            --bins-output {output.bins} \
+        python {input.script:q} \
+            --candidates {input.candidates:q} \
+            --coverage {input.coverage:q} \
+            --summary-output {output.summary:q} \
+            --bins-output {output.bins:q} \
             --min-size {params.min_size}
-        test -e {output.summary}
-        test -e {output.bins}
+        test -e {output.summary:q}
+        test -e {output.bins:q}
         """
 
 
@@ -203,12 +204,12 @@ rule build_large_sv_gene_context:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --candidates {input.candidates} \
-            --depth-summary {input.depth} \
-            --gene-bed {input.gene_bed} \
-            --output {output.tsv}
-        test -e {output.tsv}
+        python {input.script:q} \
+            --candidates {input.candidates:q} \
+            --depth-summary {input.depth:q} \
+            --gene-bed {input.gene_bed:q} \
+            --output {output.tsv:q}
+        test -e {output.tsv:q}
         """
 
 
@@ -230,16 +231,16 @@ rule integrate_depth_into_final_candidates:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --gene-candidates {input.genes} \
-            --sv-candidates {input.sv} \
-            --depth-summary {input.depth} \
-            --hpo-similarity {input.hpo} \
-            --gene-output {output.genes} \
-            --sv-output {output.sv} \
+        python {input.script:q} \
+            --gene-candidates {input.genes:q} \
+            --sv-candidates {input.sv:q} \
+            --depth-summary {input.depth:q} \
+            --hpo-similarity {input.hpo:q} \
+            --gene-output {output.genes:q} \
+            --sv-output {output.sv:q} \
             --min-size {params.min_size}
-        test -s {output.genes}
-        test -s {output.sv}
+        test -s {output.genes:q}
+        test -s {output.sv:q}
         """
 
 
@@ -258,12 +259,13 @@ rule vep_small_variants:
         """
         set -euo pipefail
         vep \
-            --input_file {input.vcf} \
+            --input_file {input.vcf:q} \
             --format vcf \
-            --output_file {output.txt} \
+            --output_file {output.txt:q} \
             --cache \
             --offline \
             --dir_cache {VEP_CACHE_DIR_EXT} \
+            --cache_version {VEP_CACHE_VERSION_EXT} \
             --assembly {VEP_ASSEMBLY_EXT} \
             --canonical \
             --flag_pick \
@@ -275,7 +277,7 @@ rule vep_small_variants:
             --uploaded_allele \
             --force_overwrite \
             --fork {threads}
-        test -s {output.txt}
+        test -s {output.txt:q}
         """
 
 
@@ -292,12 +294,12 @@ rule build_snv_sv_candidates:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --vep {input.vep} \
-            --phased-vcf {input.phased} \
-            --sv-candidates {input.sv} \
-            --output {output.tsv}
-        test -e {output.tsv}
+        python {input.script:q} \
+            --vep {input.vep:q} \
+            --phased-vcf {input.phased:q} \
+            --sv-candidates {input.sv:q} \
+            --output {output.tsv:q}
+        test -e {output.tsv:q}
         """
 
 
@@ -323,22 +325,22 @@ rule finalize_candidate_ranking:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --genes {input.genes} \
-            --sv {input.sv} \
-            --snv-sv {input.snv_sv} \
+        python {input.script:q} \
+            --genes {input.genes:q} \
+            --sv {input.sv:q} \
+            --snv-sv {input.snv_sv:q} \
             --sample {wildcards.sample} \
-            --recurrence-summary {input.recurrence} \
-            --recurrence-members {input.recurrence_members} \
-            --mitochondrial-ranking {input.mitochondrial} \
+            --recurrence-summary {input.recurrence:q} \
+            --recurrence-members {input.recurrence_members:q} \
+            --mitochondrial-ranking {input.mitochondrial:q} \
             --clinical-evidence {input.clinical_evidence:q} \
             --clinical-output {output.clinical:q} \
-            --gene-output {output.genes} \
-            --sv-output {output.sv} \
-            --mito-output {output.mitochondrial}
-        test -s {output.genes}
-        test -s {output.sv}
-        test -e {output.mitochondrial}
+            --gene-output {output.genes:q} \
+            --sv-output {output.sv:q} \
+            --mito-output {output.mitochondrial:q}
+        test -s {output.genes:q}
+        test -s {output.sv:q}
+        test -e {output.mitochondrial:q}
         """
 
 
@@ -354,12 +356,12 @@ rule build_population_gene_effect:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --candidates {input.candidates} \
-            --output {output.table} \
-            --gene-summary {output.genes}
-        test -s {output.table}
-        test -s {output.genes}
+        python {input.script:q} \
+            --candidates {input.candidates:q} \
+            --output {output.table:q} \
+            --gene-summary {output.genes:q}
+        test -s {output.table:q}
+        test -s {output.genes:q}
         """
 
 
@@ -472,12 +474,12 @@ rule cohort_sv_recurrence:
         """
         set -euo pipefail
         mkdir -p {PATH}cohort_analysis
-        python {input.script} \
+        python {input.script:q} \
             {params.sample_args} \
-            --output {output.summary} \
-            --members-output {output.members}
-        test -s {output.summary}
-        test -s {output.members}
+            --output {output.summary:q} \
+            --members-output {output.members:q}
+        test -s {output.summary:q}
+        test -s {output.members:q}
         """
 
 

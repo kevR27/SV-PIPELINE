@@ -58,6 +58,7 @@ VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 if VEP_ASSEMBLY != "GRCh38":
     raise ValueError("This SRS workflow uses GRCh38 interval/reference resources; vep_assembly must be GRCh38")
 VEP_CACHE_VERSION = int(config.get("vep_cache_version", 113))
+DEEPVARIANT_IMAGE = str(config.get("deepvariant_image", "docker://google/deepvariant:1.10.0"))
 CANONICAL_ONLY = config.get("canonical_chromosomes_only", True)
 CANONICAL_FLAG = "--canonical-only" if CANONICAL_ONLY else ""
 QC_MIN_MEAN_COVERAGE = float(config.get("qc_min_mean_coverage", 25))
@@ -316,6 +317,8 @@ rule all:
 rule srs_preflight:
     input:
         script=SCRIPTS + "/preflight_srs_wgs.py",
+        reference=REF,
+        reference_index=REF + ".fai",
         bams=list(BAMS.values()),
         bais=[bam_index_for(sample) for sample in SAMPLES]
     output:
@@ -323,8 +326,8 @@ rule srs_preflight:
         json=PATH + "reference_checks/srs_preflight.json"
     params:
         gridss=str(GRIDSS_ENABLED).lower(), mt=str(MTDNA_ENABLED).lower(), mito=str(MITOCARTA_ENABLED).lower(),
-        mito_file=(f"--mitocarta {MITOCARTA_FILE}" if MITOCARTA_FILE else ""),
-        pathways=(f"--pathways-gmx {MITOCARTA_PATHWAYS}" if MITOCARTA_PATHWAYS else "")
+        mito_file=("--mitocarta " + shlex.quote(str(MITOCARTA_FILE)) if MITOCARTA_FILE else ""),
+        pathways=("--pathways-gmx " + shlex.quote(str(MITOCARTA_PATHWAYS)) if MITOCARTA_PATHWAYS else "")
     conda:
         ENV_DIR + "/qc.yaml"
     shell:
@@ -360,10 +363,10 @@ rule mosdepth_coverage:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.global_dist})
-        mosdepth -t {threads} --no-per-base --by {params.bin_bp} {params.prefix} {input.bam}
-        test -s {output.global_dist}
-        test -s {output.summary}
+        mkdir -p "$(dirname {output.global_dist:q})"
+        mosdepth -t {threads} --no-per-base --by {params.bin_bp} {params.prefix:q} {input.bam:q}
+        test -s {output.global_dist:q}
+        test -s {output.summary:q}
         """
 
 
@@ -381,11 +384,11 @@ rule alignment_qc:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.flagstat})
-        samtools flagstat -@ {threads} {input.bam} > {output.flagstat}
-        samtools stats -@ {threads} {input.bam} > {output.stats}
-        test -s {output.flagstat}
-        test -s {output.stats}
+        mkdir -p "$(dirname {output.flagstat:q})"
+        samtools flagstat -@ {threads} {input.bam:q} > {output.flagstat:q}
+        samtools stats -@ {threads} {input.bam:q} > {output.stats:q}
+        test -s {output.flagstat:q}
+        test -s {output.stats:q}
         """
 
 
@@ -430,17 +433,17 @@ rule manta_sv_calling:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.vcf})
-        rm -rf {params.rundir}
-        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir {params.rundir}
-        {params.rundir}/runWorkflow.py -m local -j {threads}
-        cp {params.rundir}/results/variants/diploidSV.vcf.gz {output.original:q}
+        mkdir -p "$(dirname {output.vcf:q})"
+        rm -rf {params.rundir:q}
+        configManta.py --bam {input.bam:q} --referenceFasta {input.ref:q} --runDir {params.rundir:q}
+        {params.rundir:q}/runWorkflow.py -m local -j {threads}
+        cp {params.rundir:q}/results/variants/diploidSV.vcf.gz {output.original:q}
         # Manta 1.6 reports inversion junctions as BND. Its supplied converter
         # exposes INV3/INV5 for type-aware comparison with DELLY.
         converter=$(find "$CONDA_PREFIX" -type f -path '*/libexec/convertInversion.py' -print -quit)
         test -n "$converter"
         python2 "$converter" "$(command -v samtools)" {input.ref:q} {output.original:q} | bgzip -c > {output.vcf:q}
-        tabix -f -p vcf {output.vcf}
+        tabix -f -p vcf {output.vcf:q}
         """
 
 
@@ -461,10 +464,10 @@ rule delly_sv_calling:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.vcf})
-        delly call -x {input.exclude} -g {input.ref} -o {output.bcf} {input.bam}
-        bcftools view {output.bcf} -Oz -o {output.vcf}
-        tabix -f -p vcf {output.vcf}
+        mkdir -p "$(dirname {output.vcf:q})"
+        delly call -x {input.exclude:q} -g {input.ref:q} -o {output.bcf:q} {input.bam:q}
+        bcftools view {output.bcf:q} -Oz -o {output.vcf:q}
+        tabix -f -p vcf {output.vcf:q}
         """
 
 
@@ -480,7 +483,7 @@ rule gridss_sv_calling:
         tbi=PATH + "{sample}/sv/gridss/{sample}.gridss.vcf.gz.tbi"
     params:
         workdir=PATH + "{sample}/sv/gridss/work",
-        exclude=lambda wc: ("-b " + GRIDSS_EXCLUDE_BED) if GRIDSS_EXCLUDE_BED else "",
+        exclude=lambda wc: ("-b " + shlex.quote(str(GRIDSS_EXCLUDE_BED))) if GRIDSS_EXCLUDE_BED else "",
         skip=lambda wc: "--skipsoftcliprealignment" if GRIDSS_SKIP_SOFTCLIP else ""
     threads: GRIDSS_THREADS
     resources:
@@ -490,13 +493,13 @@ rule gridss_sv_calling:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.workdir} $(dirname {output.vcf})
+        mkdir -p {params.workdir:q} "$(dirname {output.vcf:q})"
         GRIDSS_JAR=$(find "$CONDA_PREFIX/share" -type f -name '*gridss*jar-with-dependencies.jar' | head -n 1)
         test -n "$GRIDSS_JAR"
-        gridss -s preprocess,assemble,call -r {input.ref} -j "$GRIDSS_JAR" -o {params.workdir}/{wildcards.sample}.gridss.vcf \
-            --workingdir {params.workdir} -t {threads} {params.exclude} {params.skip} {input.bam}
-        bcftools sort -Oz -o {output.vcf} {params.workdir}/{wildcards.sample}.gridss.vcf
-        tabix -f -p vcf {output.vcf}
+        gridss -s preprocess,assemble,call -r {input.ref:q} -j "$GRIDSS_JAR" -o {params.workdir:q}/{wildcards.sample}.gridss.vcf \
+            --workingdir {params.workdir:q} -t {threads} {params.exclude} {params.skip} {input.bam:q}
+        bcftools sort -Oz -o {output.vcf:q} {params.workdir:q}/{wildcards.sample}.gridss.vcf
+        tabix -f -p vcf {output.vcf:q}
         """
 
 
@@ -510,10 +513,12 @@ rule manta_caller_parse:
         vcf=rules.manta_sv_calling.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.manta.caller.tsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_sv_caller_vcf.py --vcf {input.vcf} --caller Manta --output {output.tsv}
+        mkdir -p "$(dirname {output.tsv:q})"
+        python {SCRIPTS:q}/parse_sv_caller_vcf.py --vcf {input.vcf:q} --caller Manta --output {output.tsv:q}
         """
 
 
@@ -522,10 +527,12 @@ rule delly_caller_parse:
         vcf=rules.delly_sv_calling.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.delly.caller.tsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_sv_caller_vcf.py --vcf {input.vcf} --caller Delly --output {output.tsv}
+        mkdir -p "$(dirname {output.tsv:q})"
+        python {SCRIPTS:q}/parse_sv_caller_vcf.py --vcf {input.vcf:q} --caller Delly --output {output.tsv:q}
         """
 
 
@@ -545,11 +552,11 @@ rule filter_manta_sv:
     shell:
         """
         set -euo pipefail
-        python {FILTER_SV_EVIDENCE_SCRIPT} --caller-tsv {input.tsv} --caller Manta \
+        python {FILTER_SV_EVIDENCE_SCRIPT} --caller-tsv {input.tsv:q} --caller Manta \
             --min-support {EVIDENCE_MIN_SUPPORT} --min-svlen {EVIDENCE_MIN_SVLEN} \
             --max-svlen {EVIDENCE_MAX_SVLEN} {CANONICAL_FLAG} {params.gq} {params.blacklist} \
-            --output-tsv {output.tsv} --output-ids {output.ids}
-        bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.vcf}
+            --output-tsv {output.tsv:q} --output-ids {output.ids:q}
+        bcftools view -i "ID=@{output.ids:q}" -Ov -o {output.vcf:q} {input.vcf:q}
         """
 
 
@@ -569,11 +576,11 @@ rule filter_delly_sv:
     shell:
         """
         set -euo pipefail
-        python {FILTER_SV_EVIDENCE_SCRIPT} --caller-tsv {input.tsv} --caller Delly \
+        python {FILTER_SV_EVIDENCE_SCRIPT} --caller-tsv {input.tsv:q} --caller Delly \
             --min-support {EVIDENCE_MIN_SUPPORT} --min-svlen {EVIDENCE_MIN_SVLEN} \
             --max-svlen {EVIDENCE_MAX_SVLEN} {CANONICAL_FLAG} {params.gq} {params.blacklist} \
-            --output-tsv {output.tsv} --output-ids {output.ids}
-        bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.vcf}
+            --output-tsv {output.tsv:q} --output-ids {output.ids:q}
+        bcftools view -i "ID=@{output.ids:q}" -Ov -o {output.vcf:q} {input.vcf:q}
         """
 
 
@@ -601,16 +608,16 @@ rule survivor_merge:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
-        printf "%s\n%s\n" {input.manta} {input.delly} > {output.list_file}
-        SURVIVOR merge {output.list_file} {SURVIVOR_MAX_DISTANCE} {SURVIVOR_MIN_SUPPORT} \
+        mkdir -p {params.outdir:q}
+        printf "%s\n%s\n" {input.manta:q} {input.delly:q} > {output.list_file:q}
+        SURVIVOR merge {output.list_file:q} {SURVIVOR_MAX_DISTANCE} {SURVIVOR_MIN_SUPPORT} \
             {SURVIVOR_REQUIRE_SAME_TYPE} {SURVIVOR_REQUIRE_SAME_STRAND} \
-            {SURVIVOR_USE_SIZE_RATIO} {SURVIVOR_MIN_SIZE} {output.raw}
-        python {SCRIPTS}/sanitize_jasmine_vcf.py --input {output.raw} --output {params.sanitized} --reference-fai {input.fai}
-        rm -rf {params.tmp}; mkdir -p {params.tmp}
-        bcftools sort -T {params.tmp} -Oz -o {output.vcf} {params.sanitized}
-        tabix -f -p vcf {output.vcf}
-        rm -rf {params.tmp}; rm -f {params.sanitized}
+            {SURVIVOR_USE_SIZE_RATIO} {SURVIVOR_MIN_SIZE} {output.raw:q}
+        python {SCRIPTS:q}/sanitize_jasmine_vcf.py --input {output.raw:q} --output {params.sanitized} --reference-fai {input.fai:q}
+        rm -rf {params.tmp:q}; mkdir -p {params.tmp:q}
+        bcftools sort -T {params.tmp:q} -Oz -o {output.vcf:q} {params.sanitized}
+        tabix -f -p vcf {output.vcf:q}
+        rm -rf {params.tmp:q}; rm -f {params.sanitized}
         """
 
 
@@ -628,11 +635,11 @@ rule summarize_caller_support:
     shell:
         """
         set -euo pipefail
-        python {SCRIPTS}/summarize_sv_caller_support.py --vcf {input.vcf} --output {output.summary} \
+        python {SCRIPTS:q}/summarize_sv_caller_support.py --vcf {input.vcf:q} --output {output.summary:q} \
             --caller-order "{SURVIVOR_CALLER_ORDER}" --min-callers {MULTI_CALLER_MIN_SUPPORT} \
-            --high-confidence-vcf {params.raw}
-        bgzip -f {params.raw}
-        tabix -f -p vcf {output.multi_caller}
+            --high-confidence-vcf {params.raw:q}
+        bgzip -f {params.raw:q}
+        tabix -f -p vcf {output.multi_caller:q}
         """
 
 
@@ -647,24 +654,31 @@ rule deepvariant_snv_indel_calling:
         bam=lambda wc: BAMS[wc.sample],
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
-        fai=REF + ".fai"
+        fai=REF + ".fai",
+        image=lambda wc: [] if "://" in DEEPVARIANT_IMAGE else [DEEPVARIANT_IMAGE]
     output:
         vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz",
         tbi=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi"
     params:
-        outdir=PATH + "{sample}/snp_deepvariant"
+        outdir=PATH + "{sample}/snp_deepvariant",
+        image=DEEPVARIANT_IMAGE,
+        binds=lambda wc: ",".join(sorted({os.path.abspath(os.path.dirname(BAMS[wc.sample])), os.path.abspath(os.path.dirname(bam_index_for(wc.sample))), os.path.abspath(os.path.dirname(REF)), os.path.abspath(PATH)}))
     threads: THREADS
+    log:
+        PATH + "{sample}/logs/deepvariant/{sample}.deepvariant.log"
     conda:
         CONDAENV + "deepvariant.yaml"
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
-        run_deepvariant --model_type=WGS --ref={input.ref} --reads={input.bam} \
-            --output_vcf={output.vcf} --num_shards={threads} \
-            --intermediate_results_dir={params.outdir}/intermediate
-        test -s {output.vcf}
-        test -s {output.tbi}
+        mkdir -p {params.outdir:q} "$(dirname {log:q})"
+        apptainer exec --bind {params.binds:q} {params.image:q} /opt/deepvariant/bin/run_deepvariant \
+            --model_type=WGS --ref={input.ref:q} --reads={input.bam:q} --sample_name={wildcards.sample:q} \
+            --output_vcf={output.vcf:q} --num_shards={threads} \
+            --intermediate_results_dir={params.outdir:q}/intermediate > {log:q} 2>&1
+        test -s {output.vcf:q}
+        tabix -f -p vcf {output.vcf:q}
+        test -s {output.tbi:q}
         """
 
 
@@ -684,9 +698,9 @@ rule whatshap_phasing:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.phased})
-        whatshap phase --reference {input.ref} -o {output.phased} {input.vcf} {input.bam} --ignore-read-groups
-        tabix -f -p vcf {output.phased}
+        mkdir -p "$(dirname {output.phased:q})"
+        whatshap phase --reference {input.ref:q} -o {output.phased:q} {input.vcf:q} {input.bam:q} --ignore-read-groups
+        tabix -f -p vcf {output.phased:q}
         """
 
 
@@ -705,7 +719,8 @@ rule nuclear_mito_small_variant_candidates:
         """
         # bcftools interprets .bed as 0-based but .tsv as 1-based. The curated
         # gene intervals are BED coordinates, even when named .tsv.
-        awk 'BEGIN {{OFS="\\t"}} !/^#/ && NF>=3 {{print $1,$2,$3}}' {input.bed:q} > {output.bed:q}
+        awk 'BEGIN {{OFS="\\t"}} !/^#/ && NF>=3 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {{print $1,$2,$3}}' {input.bed:q} > {output.bed:q}
+        test -s {output.bed:q}
         bcftools view -f 'PASS,.' -R {output.bed:q} -Oz -o {output.vcf:q} {input.vcf:q}
         tabix -f -p vcf {output.vcf:q}
         """
@@ -726,6 +741,7 @@ rule vep_small_variants:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         vep --input_file {input.vcf:q} --format vcf --output_file {output.tsv:q} --tab --force_overwrite \
           --cache --offline --dir_cache {VEP_CACHE_DIR:q} --cache_version {VEP_CACHE_VERSION} \
           --assembly {VEP_ASSEMBLY} --canonical --flag_pick --symbol --biotype --numbers \
@@ -764,21 +780,21 @@ rule cnvpytor_cnv_calling:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
-        rm -f {output.pytor}
-        cnvpytor -root {output.pytor} {CNVPYTOR_CHROM_FLAG} -rd {input.bam}
+        mkdir -p {params.outdir:q}
+        rm -f {output.pytor:q}
+        cnvpytor -root {output.pytor:q} {CNVPYTOR_CHROM_FLAG} -rd {input.bam:q}
         # Record whether CNVpytor recognized hg38 and has GC/mask resources.
-        cnvpytor -root {output.pytor} -ls > {output.info:q} 2>&1
+        cnvpytor -root {output.pytor:q} -ls > {output.info:q} 2>&1
         # Without the installed hg38 GC/mask files, depth calls can be biased.
         # Resource installation is explained in README.md, outside the analysis.
         python -c 'import sys; text="".join(open(sys.argv[1]).read().split()); assert "Usingreferencegenome:hg38[GC:yes,mask:yes]" in text, "CNVpytor needs its hg38 GC and mask resources; follow README.md"' {output.info:q}
-        cnvpytor -root {output.pytor} -his {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
-        cnvpytor -root {output.pytor} -partition {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
-        cnvpytor -root {output.pytor} -snp {input.snv} {CNVPYTOR_CHROM_FLAG}
-        cnvpytor -root {output.pytor} -mask_snps
-        cnvpytor -root {output.pytor} -baf {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
-        cnvpytor -root {output.pytor} -call {CNVPYTOR_MAIN_BIN} > {output.primary}
-        cnvpytor -root {output.pytor} -call {CNVPYTOR_LARGE_CNV_BIN} > {output.secondary}
+        cnvpytor -root {output.pytor:q} -his {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
+        cnvpytor -root {output.pytor:q} -partition {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
+        cnvpytor -root {output.pytor:q} -snp {input.snv:q} {CNVPYTOR_CHROM_FLAG}
+        cnvpytor -root {output.pytor:q} -mask_snps
+        cnvpytor -root {output.pytor:q} -baf {CNVPYTOR_MAIN_BIN} {CNVPYTOR_LARGE_CNV_BIN}
+        cnvpytor -root {output.pytor:q} -call {CNVPYTOR_MAIN_BIN} > {output.primary:q}
+        cnvpytor -root {output.pytor:q} -call {CNVPYTOR_LARGE_CNV_BIN} > {output.secondary:q}
         """
 
 
@@ -803,13 +819,13 @@ rule combine_sv_and_cnv_calls:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.raw})
+        mkdir -p "$(dirname {output.raw:q})"
         python {input.script:q} --breakpoint-vcf {input.breakpoint:q} --cnvpytor-calls {input.cnv:q} \
             --reference-fai {input.fai:q} --min-reciprocal-overlap {CNVPYTOR_MIN_RECIPROCAL_OVERLAP} \
             --max-q0 {CNVPYTOR_MAX_Q0} --max-pn {CNVPYTOR_MAX_PN} --max-eval1 {CNVPYTOR_MAX_EVAL1} \
             --output {output.raw:q} --audit-output {output.audit:q}
-        bgzip -c {output.raw} > {output.vcf}
-        tabix -f -p vcf {output.vcf}
+        bgzip -c {output.raw:q} > {output.vcf:q}
+        tabix -f -p vcf {output.vcf:q}
         """
 
 
@@ -828,10 +844,10 @@ rule annotsv_annotations_check:
     shell:
         """
         set -euo pipefail
-        test -d {params.annotations}/Annotations_Human
-        python {SCRIPTS}/check_annotsv_gene_resource.py --annotations-dir {params.annotations:q}
-        mkdir -p $(dirname {output.marker})
-        touch {output.marker}
+        test -d {params.annotations:q}/Annotations_Human
+        python {SCRIPTS:q}/check_annotsv_gene_resource.py --annotations-dir {params.annotations:q}
+        mkdir -p "$(dirname {output.marker:q})"
+        touch {output.marker:q}
         """
 
 
@@ -853,10 +869,10 @@ rule annotsv_annotation:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
+        mkdir -p {params.outdir:q}
         : > {output.unannotated:q}
-        AnnotSV -SVinputFile {input.vcf} -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
-            -outputDir {params.outdir} -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
+        AnnotSV -SVinputFile {input.vcf:q} -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
+            -outputDir {params.outdir:q} -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
             -genomeBuild GRCh38 -candidateGenesFile {GENE_LIST} -candidateGenesFiltering 0 \
             -tx ENSEMBL -REreport 1 -benignAF {ANNOTSV_BENIGN_AF} -hpo ""
         """
@@ -872,7 +888,7 @@ rule annotsv_annotation_panel_only:
         CONDAENV + "annotsv.yaml"
     shell:
         """
-        python {SCRIPTS}/filter_annotsv_panel.py --annotsv {input.tsv} --genes {input.genes} --output {output.tsv}
+        python {SCRIPTS:q}/filter_annotsv_panel.py --annotsv {input.tsv:q} --genes {input.genes:q} --output {output.tsv:q}
         """
 
 
@@ -885,8 +901,8 @@ rule extract_sv_genes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.genes})
-        python {SCRIPTS}/extract_annotsv_genes.py --annotsv {input.annotsv} --output {output.genes}
+        mkdir -p "$(dirname {output.genes:q})"
+        python {SCRIPTS:q}/extract_annotsv_genes.py --annotsv {input.annotsv:q} --output {output.genes:q}
         """
 
 
@@ -900,7 +916,7 @@ rule extract_nonpanel_genes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python {SCRIPTS}/extract_nonpanel_genes.py --genes {input.genes} --panel {input.panel} --output {output.genes}
+        python {SCRIPTS:q}/extract_nonpanel_genes.py --genes {input.genes:q} --panel {input.panel:q} --output {output.genes:q}
         """
 
 
@@ -916,8 +932,8 @@ rule human_gene_phenotypes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python {SCRIPTS}/monarch_human_gene_phenotypes.py --genes {input.genes} --hpo-anchors {input.hpo} \
-            --nodes {input.nodes} --edges {input.edges} --output {output.tsv}
+        python {SCRIPTS:q}/monarch_human_gene_phenotypes.py --genes {input.genes:q} --hpo-anchors {input.hpo:q} \
+            --nodes {input.nodes:q} --edges {input.edges:q} --output {output.tsv:q}
         """
 
 
@@ -935,9 +951,9 @@ rule rank_genomewide_candidates:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python {SCRIPTS}/rank_sv_gene_candidates.py --annotsv {input.annotsv} --genes {input.genes} \
-            --phenotypes {input.phenotypes} --panel {input.panel} --hpo-seeds {input.hpo} \
-            --edges {input.edges} --output {output.tsv}
+        python {SCRIPTS:q}/rank_sv_gene_candidates.py --annotsv {input.annotsv:q} --genes {input.genes:q} \
+            --phenotypes {input.phenotypes:q} --panel {input.panel:q} --hpo-seeds {input.hpo:q} \
+            --edges {input.edges:q} --output {output.tsv:q}
         """
 
 
@@ -957,8 +973,8 @@ rule vep_sv_annotation:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.txt})
-        vep --input_file {input.vcf} --format vcf --output_file {output.txt} --cache --offline \
+        mkdir -p "$(dirname {output.txt:q})"
+        vep --input_file {input.vcf:q} --format vcf --output_file {output.txt:q} --cache --offline \
             --dir_cache {VEP_CACHE_DIR} --cache_version {VEP_CACHE_VERSION} --assembly {VEP_ASSEMBLY} --canonical --overlaps \
             --tab --force_overwrite --flag_pick --symbol --biotype --numbers --max_sv_size 250000000 --batch_size 100 --fork {threads}
         """
@@ -974,7 +990,7 @@ rule vep_sv_annotation_panel_only:
         ENV_DIR + "/srs_vep.yaml"
     shell:
         """
-        python {SCRIPTS}/filter_vep_panel.py --vep {input.txt} --genes {input.genes} --output {output.txt}
+        python {SCRIPTS:q}/filter_vep_panel.py --vep {input.txt:q} --genes {input.genes:q} --output {output.txt:q}
         """
 
 
@@ -1078,9 +1094,9 @@ rule expansionhunter_str:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.vcf})
-        ExpansionHunter --reads {input.bam} --reference {input.ref} --variant-catalog {input.catalog} \
-            --output-prefix {params.prefix} --threads {threads}
+        mkdir -p "$(dirname {output.vcf:q})"
+        ExpansionHunter --reads {input.bam:q} --reference {input.ref:q} --variant-catalog {input.catalog:q} \
+            --output-prefix {params.prefix:q} --threads {threads}
         """
 
 
@@ -1108,9 +1124,9 @@ rule melt_mei_family:
         CONDAENV + "melt.yaml"
     shell:
         """
-        python {SCRIPTS}/run_melt_single.py --jar {input.jar} --bam {input.bam} --reference {input.ref} \
-            --genes-bed {input.genes} --transposon {input.transposon} --workdir {params.workdir} \
-            --memory-gb {params.memory} --output {output.vcf}
+        python {SCRIPTS:q}/run_melt_single.py --jar {input.jar:q} --bam {input.bam:q} --reference {input.ref:q} \
+            --genes-bed {input.genes:q} --transposon {input.transposon:q} --workdir {params.workdir:q} \
+            --memory-gb {params.memory} --output {output.vcf:q}
         """
 
 
@@ -1130,10 +1146,10 @@ rule melt_merge_families:
     shell:
         """
         set -euo pipefail
-        rm -rf {params.tmp}; mkdir -p {params.tmp}
-        bcftools concat -a -Ov {input.vcfs} | bcftools sort -T {params.tmp} -Oz -o {output.vcf}
-        tabix -f -p vcf {output.vcf}
-        rm -rf {params.tmp}
+        rm -rf {params.tmp:q}; mkdir -p {params.tmp:q}
+        bcftools concat -a -Ov {input.vcfs:q} | bcftools sort -T {params.tmp:q} -Oz -o {output.vcf:q}
+        tabix -f -p vcf {output.vcf:q}
+        rm -rf {params.tmp:q}
         """
 
 
@@ -1153,9 +1169,9 @@ rule prepare_mt_reference:
         ENV_DIR + "/qc.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.fasta})
-        samtools faidx {input.ref} {wildcards.contig} > {output.fasta}
-        samtools faidx {output.fasta}
+        mkdir -p "$(dirname {output.fasta:q})"
+        samtools faidx {input.ref:q} {wildcards.contig} > {output.fasta:q}
+        samtools faidx {output.fasta:q}
         """
 
 
@@ -1177,12 +1193,12 @@ rule mutserve_mtdna_calling:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.vcf})
-        samtools view -@ {threads} -bh -F 3852 {input.bam} {MT_CONTIG} > {output.mtbam}
-        samtools index -@ {threads} {output.mtbam}
-        mutserve call --reference {input.mtref} --output {output.vcf} --threads {threads} \
-            --level {MUTSERVE_LEVEL} {output.mtbam}
-        python {SCRIPTS}/summarize_mtdna_variants.py --vcf {output.vcf} --output {output.tsv}
+        mkdir -p "$(dirname {output.vcf:q})"
+        samtools view -@ {threads} -bh -F 3852 {input.bam:q} {MT_CONTIG} > {output.mtbam:q}
+        samtools index -@ {threads} {output.mtbam:q}
+        mutserve call --reference {input.mtref:q} --output {output.vcf:q} --threads {threads} \
+            --level {MUTSERVE_LEVEL} {output.mtbam:q}
+        python {SCRIPTS:q}/summarize_mtdna_variants.py --vcf {output.vcf:q} --output {output.tsv:q}
         """
 
 
@@ -1214,7 +1230,7 @@ rule add_supporting_evidence:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python {SCRIPTS}/add_supporting_evidence.py --integrated {input.integrated:q} \
+        python {SCRIPTS:q}/add_supporting_evidence.py --integrated {input.integrated:q} \
             --integrated-vcf {input.integrated_vcf:q} --expansionhunter {input.expansionhunter:q} \
             {params.gridss} {params.gridss_qual} {params.melt} --breakpoint-tolerance {SUPPORTING_BP_TOLERANCE} \
             --output {output.tsv:q}
@@ -1241,7 +1257,7 @@ rule mitocarta_context_srs:
         CONDAENV + "plots.yaml"
     shell:
         """
-        python {SCRIPTS}/annotate_mitocarta_context.py --integrated {input.integrated:q} \
+        python {SCRIPTS:q}/annotate_mitocarta_context.py --integrated {input.integrated:q} \
             --mitocarta {input.mitocarta:q} {params.pathways} --ranking {input.ranking:q} \
             --output {output.tsv:q} --summary-output {output.summary:q}
         """
@@ -1356,7 +1372,8 @@ rule thesis_plots_sample:
         samplot=lambda wc: [PATH + f"{wc.sample}/diagnostic_review/{wc.sample}.samplot_manifest.tsv"] if SAMPLOT_ENABLED else [],
         scripts=sorted(str(p) for p in Path(PLOTS).glob("*.py"))
     output:
-        marker=touch(PATH + "{sample}/plots/.thesis_plots.done")
+        marker=touch(PATH + "{sample}/plots/.thesis_plots.done"),
+        manifest=PATH + "{sample}/plots/plot_run_manifest.tsv"
     log:
         PATH + "{sample}/logs/plots/{sample}.thesis_plots.log"
     params:
@@ -1370,7 +1387,7 @@ rule thesis_plots_sample:
         CONDAENV + "plots.yaml"
     shell:
         """
-        mkdir -p $(dirname {log:q})
+        mkdir -p "$(dirname {log:q})"
         python {PLOTS:q}/run_thesis_plots.py --root {PATH:q} --sample {wildcards.sample:q} \
             --platform srs --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
             --top-genes {params.top_genes} --review-top-n {params.review_top_n} --locus-top-n {params.locus_top_n} \
@@ -1422,7 +1439,7 @@ rule downstream_filtering_plots:
         CONDAENV + "plots.yaml"
     shell:
         """
-        python {input.script:q} --filter-dir $(dirname {input.settings:q}) --out-dir {params.outdir:q}
+        python {input.script:q} --filter-dir "$(dirname {input.settings:q})" --out-dir {params.outdir:q}
         touch {output.marker:q}
         """
 
@@ -1461,7 +1478,7 @@ rule benchmark_sv_callset:
         ENV_DIR + "/benchmark.yaml"
     shell:
         """
-        mkdir -p $(dirname {output:q})
+        mkdir -p "$(dirname {output:q})"
         truvari bench -b {input.truth:q} -c {input.calls:q} -f {input.ref:q} -o {output:q} \
           --includebed {input.bed:q} --passonly --sizemin 50 --sizemax 250000000 \
           --pctseq 0 --pctsize 0.7

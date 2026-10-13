@@ -1,4 +1,5 @@
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -30,7 +31,7 @@ TLDR_ELTS = config["tldr_elements"]
 VNTR_BED = config["vntr_bed"]
 
 STRAGLR_BED = config.get("straglr_bed")
-STRAGLR_REGIONS = f"--regions {STRAGLR_BED}" if STRAGLR_BED else ""
+STRAGLR_REGIONS = "--regions " + shlex.quote(str(STRAGLR_BED)) if STRAGLR_BED else ""
 STRAGLR_SCRIPT = config.get("straglr_script", "straglr.py")
 STRAGLR_MIN_OVERLAP = config.get("straglr_annotation_min_overlap", 1)
 
@@ -69,11 +70,12 @@ JASMINE_CALLER_ORDER = config.get(
 
 # Methylation region (optional).
 CPG_REGION = config.get("cpg_region")
-CPG_REGION_FLAG = f"--region {CPG_REGION}" if CPG_REGION else ""
+CPG_REGION_FLAG = "--region " + shlex.quote(str(CPG_REGION)) if CPG_REGION else ""
 
 # VEP.
 VEP_CACHE_DIR = config["vep_cache_dir"]
 VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
+VEP_CACHE_VERSION = int(config.get("vep_cache_version", 116))
 
 # Secondary mtDNA candidate review. The main biological interpretation remains
 # focused on nuclear-encoded mitochondrial genes in the post-processing stage.
@@ -220,10 +222,10 @@ rule mosdepth_coverage:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.global_dist})
-        mosdepth -t {threads} {params.prefix} {input.bam}
-        test -s {output.global_dist}
-        test -s {output.summary}
+        mkdir -p "$(dirname {output.global_dist:q})"
+        mosdepth -t {threads} {params.prefix:q} {input.bam:q}
+        test -s {output.global_dist:q}
+        test -s {output.summary:q}
         """
 
 rule dorado_summary:
@@ -236,9 +238,9 @@ rule dorado_summary:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.tsv}) $(dirname {log})
-        {DORADO_BIN} summary {input.bam} > {output.tsv} 2> {log}
-        test -s {output.tsv}
+        mkdir -p "$(dirname {output.tsv:q})" "$(dirname {log:q})"
+        {DORADO_BIN:q} summary {input.bam:q} > {output.tsv:q} 2> {log:q}
+        test -s {output.tsv:q}
         """
 
 
@@ -253,11 +255,11 @@ rule summarize_dorado_qc:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --input {input.summary} \
+        python {input.script:q} \
+            --input {input.summary:q} \
             --sample {wildcards.sample} \
-            --output {output.tsv}
-        test -s {output.tsv}
+            --output {output.tsv:q}
+        test -s {output.tsv:q}
         """
 
 
@@ -272,11 +274,11 @@ rule read_length_n50:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --bam {input.bam} \
+        python {input.script:q} \
+            --bam {input.bam:q} \
             --min-length {N50_MIN_LENGTH} \
-            --out {output.tsv}
-        test -s {output.tsv}
+            --out {output.tsv:q}
+        test -s {output.tsv:q}
         """
 
 
@@ -300,17 +302,17 @@ rule clair3_snp_calling:
         mkdir -p {PATH}{wildcards.sample}/snp_clair3
 
         run_clair3.sh \
-            -b {input.bam} \
-            -f {input.ref} \
+            -b {input.bam:q} \
+            -f {input.ref:q} \
             -t {threads} \
             -p ont \
             -o {PATH}{wildcards.sample}/snp_clair3 \
-            --model_path={CLAIRENV}
+            --model_path={CLAIRENV:q}
 
-        cp {PATH}{wildcards.sample}/snp_clair3/merge_output.vcf.gz {output.vcf}
-        tabix -f -p vcf {output.vcf}
-        test -s {output.vcf}
-        test -s {output.tbi}
+        cp {PATH}{wildcards.sample}/snp_clair3/merge_output.vcf.gz {output.vcf:q}
+        tabix -f -p vcf {output.vcf:q}
+        test -s {output.vcf:q}
+        test -s {output.tbi:q}
         """
 
 
@@ -328,7 +330,7 @@ rule secondary_mtdna_candidate_review:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.vcf})
+        mkdir -p "$(dirname {output.vcf:q})"
 
         # Keep this as a separate secondary review file. The complete Clair3
         # VCF remains unchanged and continues into the normal LRS workflow.
@@ -360,22 +362,22 @@ rule whatsHap_phasing:
         mkdir -p {PATH}{wildcards.sample}/phasing
 
         whatshap phase \
-            --reference {input.ref} \
-            -o {output.phased} \
-            {input.vcf} \
-            {input.bam} \
+            --reference {input.ref:q} \
+            -o {output.phased:q} \
+            {input.vcf:q} \
+            {input.bam:q} \
             --ignore-read-groups
 
-        tabix -f -p vcf {output.phased}
+        tabix -f -p vcf {output.phased:q}
 
         whatshap haplotag \
-            -o {output.haplotag} \
-            --reference {input.ref} \
-            {output.phased} \
-            {input.bam} \
+            -o {output.haplotag:q} \
+            --reference {input.ref:q} \
+            {output.phased:q} \
+            {input.bam:q} \
             --ignore-read-groups
 
-        samtools index {output.haplotag}
+        samtools index {output.haplotag:q}
         """
 
 
@@ -398,9 +400,9 @@ rule sniffles2_sv:
         mkdir -p {PATH}{wildcards.sample}/sv/sniffles2
 
         sniffles \
-            --input {input.bam} \
-            --vcf {output.vcf} \
-            --reference {input.ref} \
+            --input {input.bam:q} \
+            --vcf {output.vcf:q} \
+            --reference {input.ref:q} \
             --threads {threads} \
             --minsupport 2 \
             {SNIFFLES_NO_QC_FLAG} \
@@ -409,7 +411,7 @@ rule sniffles2_sv:
             --allow-overwrite \
             --min-alignment-length {SNIFFLES_MIN_ALIGNMENT_LENGTH} \
             --output-rnames \
-            --tandem-repeats {VNTR_BED}
+            --tandem-repeats {VNTR_BED:q}
         """
 
 
@@ -427,15 +429,15 @@ rule cutesv:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.vcf})
-        rm -rf {params.workdir}
-        mkdir -p {params.workdir}
+        mkdir -p "$(dirname {output.vcf:q})"
+        rm -rf {params.workdir:q}
+        mkdir -p {params.workdir:q}
 
         cuteSV \
-            {input.bam} \
-            {input.ref} \
-            {output.vcf} \
-            {params.workdir} \
+            {input.bam:q} \
+            {input.ref:q} \
+            {output.vcf:q} \
+            {params.workdir:q} \
             --threads {threads} \
             --max_cluster_bias_INS 100 \
             --diff_ratio_merging_INS 0.3 \
@@ -464,15 +466,15 @@ rule delly_lr:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
+        mkdir -p {params.outdir:q}
 
         delly lr \
             -y {DELLY_GENOME} \
-            -g {input.ref} \
-            -o {output.bcf} \
-            {input.bam}
+            -g {input.ref:q} \
+            -o {output.bcf:q} \
+            {input.bam:q}
 
-        bcftools view {output.bcf} -Ov -o {output.vcf}
+        bcftools view {output.bcf:q} -Ov -o {output.vcf:q}
         """
 
 
@@ -487,13 +489,15 @@ rule sniffles2_caller_parse:
         vcf=rules.sniffles2_sv.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.sniffles.caller.tsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_sv_caller_vcf.py \
-            --vcf {input.vcf} \
+        mkdir -p "$(dirname {output.tsv:q})"
+        python {SCRIPTS:q}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf:q} \
             --caller Sniffles2 \
-            --output {output.tsv}
+            --output {output.tsv:q}
         """
 
 
@@ -504,13 +508,15 @@ rule cutesv_caller_parse:
         vcf=rules.cutesv.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.cutesv.caller.tsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_sv_caller_vcf.py \
-            --vcf {input.vcf} \
+        mkdir -p "$(dirname {output.tsv:q})"
+        python {SCRIPTS:q}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf:q} \
             --caller cuteSV \
-            --output {output.tsv}
+            --output {output.tsv:q}
         """
 
 
@@ -521,13 +527,15 @@ rule delly_caller_parse:
         vcf=rules.delly_lr.output.vcf
     output:
         tsv=PATH + "{sample}/parsed/{sample}.delly.caller.tsv"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/parse_sv_caller_vcf.py \
-            --vcf {input.vcf} \
+        mkdir -p "$(dirname {output.tsv:q})"
+        python {SCRIPTS:q}/parse_sv_caller_vcf.py \
+            --vcf {input.vcf:q} \
             --caller delly \
-            --output {output.tsv}
+            --output {output.tsv:q}
         """
 
 
@@ -550,10 +558,10 @@ rule filter_sniffles_sv:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.tsv}) $(dirname {output.vcf})
+        mkdir -p "$(dirname {output.tsv:q})" "$(dirname {output.vcf:q})"
 
         python {FILTER_SV_EVIDENCE_SCRIPT} \
-            --caller-tsv {input.caller_tsv} \
+            --caller-tsv {input.caller_tsv:q} \
             --caller Sniffles2 \
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
@@ -562,10 +570,10 @@ rule filter_sniffles_sv:
             {params.min_gq} \
             {params.blacklist} \
             {EVIDENCE_CANONICAL_FLAG} \
-            --output-tsv {output.tsv} \
-            --output-ids {output.ids}
+            --output-tsv {output.tsv:q} \
+            --output-ids {output.ids:q}
 
-        bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.caller_vcf}
+        bcftools view -i "ID=@{output.ids:q}" -Ov -o {output.vcf:q} {input.caller_vcf:q}
         """
 
 
@@ -588,10 +596,10 @@ rule filter_cutesv_sv:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.tsv}) $(dirname {output.vcf})
+        mkdir -p "$(dirname {output.tsv:q})" "$(dirname {output.vcf:q})"
 
         python {FILTER_SV_EVIDENCE_SCRIPT} \
-            --caller-tsv {input.caller_tsv} \
+            --caller-tsv {input.caller_tsv:q} \
             --caller cuteSV \
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
@@ -599,10 +607,10 @@ rule filter_cutesv_sv:
             {params.min_gq} \
             {params.blacklist} \
             {EVIDENCE_CANONICAL_FLAG} \
-            --output-tsv {output.tsv} \
-            --output-ids {output.ids}
+            --output-tsv {output.tsv:q} \
+            --output-ids {output.ids:q}
 
-        bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.caller_vcf}
+        bcftools view -i "ID=@{output.ids:q}" -Ov -o {output.vcf:q} {input.caller_vcf:q}
         """
 
 
@@ -625,10 +633,10 @@ rule filter_delly_sv:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.tsv}) $(dirname {output.vcf})
+        mkdir -p "$(dirname {output.tsv:q})" "$(dirname {output.vcf:q})"
 
         python {FILTER_SV_EVIDENCE_SCRIPT} \
-            --caller-tsv {input.caller_tsv} \
+            --caller-tsv {input.caller_tsv:q} \
             --caller delly \
             --min-support {EVIDENCE_MIN_SUPPORT} \
             --min-svlen {EVIDENCE_MIN_SVLEN} \
@@ -636,10 +644,10 @@ rule filter_delly_sv:
             {params.min_gq} \
             {params.blacklist} \
             {EVIDENCE_CANONICAL_FLAG} \
-            --output-tsv {output.tsv} \
-            --output-ids {output.ids}
+            --output-tsv {output.tsv:q} \
+            --output-ids {output.ids:q}
 
-        bcftools view -i "ID=@{output.ids}" -Ov -o {output.vcf} {input.caller_vcf}
+        bcftools view -i "ID=@{output.ids:q}" -Ov -o {output.vcf:q} {input.caller_vcf:q}
         """
 
 
@@ -668,40 +676,40 @@ rule jasmine_merge:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
-        rm -rf {params.sort_tmpdir}
-        mkdir -p {params.sort_tmpdir}
+        mkdir -p {params.outdir:q}
+        rm -rf {params.sort_tmpdir:q}
+        mkdir -p {params.sort_tmpdir:q}
 
         # This order defines the meaning of Jasmine SUPP_VEC.
         printf "%s\\n%s\\n%s\\n" \
-            {input.sniffles} \
-            {input.cutesv} \
-            {input.delly} \
-            > {output.list_file}
+            {input.sniffles:q} \
+            {input.cutesv:q} \
+            {input.delly:q} \
+            > {output.list_file:q}
 
         jasmine \
-            file_list={output.list_file} \
-            out_file={output.raw_vcf} \
+            file_list={output.list_file:q} \
+            out_file={output.raw_vcf:q} \
             threads={threads} \
             --allow_intrasample
 
-        python {SCRIPTS}/sanitize_jasmine_vcf.py \
-            --input {output.raw_vcf} \
-            --output {params.sanitized_vcf} \
-            --reference-fai {input.fai}
+        python {SCRIPTS:q}/sanitize_jasmine_vcf.py \
+            --input {output.raw_vcf:q} \
+            --output {params.sanitized_vcf:q} \
+            --reference-fai {input.fai:q}
 
         bcftools sort \
-            -T {params.sort_tmpdir} \
+            -T {params.sort_tmpdir:q} \
             -Oz \
-            -o {output.vcf} \
-            {params.sanitized_vcf}
+            -o {output.vcf:q} \
+            {params.sanitized_vcf:q}
 
-        tabix -f -p vcf {output.vcf}
-        test -s {output.vcf}
-        test -s {output.tbi}
+        tabix -f -p vcf {output.vcf:q}
+        test -s {output.vcf:q}
+        test -s {output.tbi:q}
 
-        rm -rf {params.sort_tmpdir}
-        rm -f {params.sanitized_vcf}
+        rm -rf {params.sort_tmpdir:q}
+        rm -f {params.sanitized_vcf:q}
         """
 
 
@@ -719,17 +727,17 @@ rule summarize_caller_support:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.summary})
+        mkdir -p "$(dirname {output.summary:q})"
 
-        python {SCRIPTS}/summarize_sv_caller_support.py \
-            --vcf {input.vcf} \
-            --output {output.summary} \
+        python {SCRIPTS:q}/summarize_sv_caller_support.py \
+            --vcf {input.vcf:q} \
+            --output {output.summary:q} \
             --caller-order "{JASMINE_CALLER_ORDER}" \
             --min-callers {HIGH_CONFIDENCE_MIN_SUPP} \
-            --high-confidence-vcf {params.raw_vcf}
+            --high-confidence-vcf {params.raw_vcf:q}
 
-        bgzip -f {params.raw_vcf}
-        tabix -f -p vcf {output.high_conf_vcf}
+        bgzip -f {params.raw_vcf:q}
+        tabix -f -p vcf {output.high_conf_vcf:q}
         """
 
 
@@ -752,32 +760,36 @@ rule sniffles2_needlr_query:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.vcf})
+        mkdir -p "$(dirname {output.vcf:q})"
 
         # Dedicated Sniffles2 v2.6.2 query matching the caller used to build
         # the needLR ONT reference as closely as possible. Keep the Snakemake
         # output bgzipped because needLR may compress an uncompressed input
         # in place, which would otherwise make the declared .vcf disappear.
         sniffles \
-            --input {input.bam} \
-            --reference {input.ref} \
+            --input {input.bam:q} \
+            --reference {input.ref:q} \
             --output-rnames \
-            --vcf {params.raw} \
+            --vcf {params.raw:q} \
             --allow-overwrite \
-            --tandem-repeats {VNTR_BED} \
+            --tandem-repeats {VNTR_BED:q} \
             --threads {threads}
 
-        bgzip -@ {threads} -f {params.raw}
-        tabix -f -p vcf {output.vcf}
+        bgzip -@ {threads} -f {params.raw:q}
+        tabix -f -p vcf {output.vcf:q}
 
-        test -s {output.vcf}
-        test -s {output.tbi}
+        test -s {output.vcf:q}
+        test -s {output.tbi:q}
         """
 
 
 rule needlr_annotation:
     input:
-        vcf=rules.sniffles2_needlr_query.output.vcf
+        vcf=rules.sniffles2_needlr_query.output.vcf,
+        tbi=rules.sniffles2_needlr_query.output.tbi,
+        backend=NEEDLR_BACKEND,
+        cache_script=SCRIPTS + "/check_run_cache.py",
+        environment=CONDAENV + "needlr.yaml"
     output:
         tsv=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.tsv",
         vcf=PATH + "{sample}/sv/needlr/{sample}_needLR_RESULTS.vcf.gz"
@@ -790,75 +802,40 @@ rule needlr_annotation:
         CONDAENV + "needlr.yaml"
     shell:
         """
-        set -eu
+        set -euo pipefail
+        mkdir -p {params.outdir:q} "$(dirname {log:q})"
+        snapshot={params.outdir:q}/.current_inputs.json
+        manifest={params.outdir:q}/.completed_run.json
+        tool_binary=$(command -v needLR)
+        python {input.cache_script:q} snapshot --inputs {input.backend:q} {input.environment:q} "$tool_binary" \
+            --content-inputs {input.vcf:q} --tool-paths {input.vcf:q} {input.backend:q} {params.outdir:q} \
+            --tags-json '{{"mode":"annotate --all"}}' --snapshot "$snapshot"
 
-        mkdir -p {params.outdir}
-        mkdir -p $(dirname {log})
-
-        # Reuse a completed native needLR result only when it belongs to
-        # the current query VCF. This avoids repeating expensive annotation
-        # while preventing stale population evidence after an upstream change.
-        results_tsv=$(find {params.outdir} \
-            -type f \
-            -name '*_RESULTS.tsv' \
-            -print -quit)
-
-        if [ -n "$results_tsv" ]; then
-            results_vcf="${{results_tsv%_RESULTS.tsv}}.vcf.gz"
+        if python {input.cache_script:q} check --snapshot "$snapshot" --manifest "$manifest"; then
+            echo "[needLR] Input/backend/settings and complete outputs match; reusing native result." > {log:q}
+            results_tsv=$(python {input.cache_script:q} output --manifest "$manifest" --index 0)
+            results_vcf=$(python {input.cache_script:q} output --manifest "$manifest" --index 1)
         else
-            results_vcf=""
-        fi
-
-        # Hash the uncompressed VCF text. This stays compatible with
-        # checksums created before the query VCF was bgzipped and avoids a
-        # gzip-container timestamp changing the identity of the same query.
-        query_hash=$(gzip -cd {input.vcf} | sha256sum | awk '{{print $1}}')
-        hash_file="{params.outdir}/.needlr_query.sha256"
-        reuse_native=0
-
-        if [ -s "$results_tsv" ] && [ -s "$results_vcf" ]; then
-            if [ -s "$hash_file" ] && [ "$(cat "$hash_file")" = "$query_hash" ]; then
-                reuse_native=1
-            elif [ ! -e "$hash_file" ] && [ "$results_tsv" -nt {input.vcf} ] && [ "$results_vcf" -nt {input.vcf} ]; then
-                # Bootstrap existing pre-checksum results only when they are
-                # newer than the current query VCF.
-                printf "%s\n" "$query_hash" > "$hash_file"
-                reuse_native=1
+            echo "[needLR] No matching completed run; annotating in a fresh directory." > {log:q}
+            # Only this new run can supply results. Old native outputs are kept
+            # for inspection but cannot hide failure or be relabelled by mtime.
+            rm -f "$manifest" {output.tsv:q} {output.vcf:q}
+            run_dir=$(mktemp -d {params.outdir:q}/run.XXXXXX)
+            needLR annotate -O "$run_dir" -T {threads} -B {input.backend:q} --all {input.vcf:q} >> {log:q} 2>&1
+            mapfile -t matches < <(find "$run_dir" -type f -name '*_RESULTS.tsv')
+            if (( ${{#matches[@]}} != 1 )); then
+                echo "[ERROR] needLR must create exactly one result TSV in its fresh run directory." >&2
+                exit 1
             fi
-        fi
-
-        if [ "$reuse_native" -eq 1 ]; then
-            echo "[needLR] Native result matches current query; reusing it." > {log}
-        else
-            echo "[needLR] Query changed or no validated native result; running annotation." > {log}
-
-            needLR annotate \
-                -O {params.outdir} \
-                -T {threads} \
-                -B {NEEDLR_BACKEND} \
-                --all \
-                {input.vcf} \
-                >> {log} 2>&1
-
-            results_tsv=$(find {params.outdir} \
-                -type f \
-                -name '*_RESULTS.tsv' \
-                -print -quit)
-
-            test -n "$results_tsv"
-
+            results_tsv="${{matches[0]}}"
             results_vcf="${{results_tsv%_RESULTS.tsv}}.vcf.gz"
-
-            test -s "$results_tsv"
-            test -s "$results_vcf"
-            printf "%s\n" "$query_hash" > "$hash_file"
+            python {input.cache_script:q} complete --snapshot "$snapshot" --manifest "$manifest" \
+                --outputs "$results_tsv" "$results_vcf"
         fi
-
-        cp "$results_tsv" {output.tsv}
-        cp "$results_vcf" {output.vcf}
-
-        test -s {output.tsv}
-        test -s {output.vcf}
+        cp "$results_tsv" {output.tsv:q}
+        cp "$results_vcf" {output.vcf:q}
+        test -s {output.tsv:q}
+        test -s {output.vcf:q}
         """
 
 
@@ -884,10 +861,10 @@ rule straglr:
         set -euo pipefail
         mkdir -p {PATH}{wildcards.sample}/sv/straglr
 
-        python {STRAGLR_SCRIPT} \
-            {input.bam} \
-            {input.ref} \
-            {params.prefix} \
+        python {STRAGLR_SCRIPT:q} \
+            {input.bam:q} \
+            {input.ref:q} \
+            {params.prefix:q} \
             --min_str_len 2 \
             --min_support 2 \
             --min_ins_size 100 \
@@ -910,12 +887,12 @@ rule straglr_annotation:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/annotate_straglr.py \
-            --straglr-tsv {input.tsv} \
-            --straglr-bed {input.bed} \
-            --gene-bed {input.genes} \
-            --output {output.tsv} \
+        mkdir -p "$(dirname {output.tsv:q})"
+        python {SCRIPTS:q}/annotate_straglr.py \
+            --straglr-tsv {input.tsv:q} \
+            --straglr-bed {input.bed:q} \
+            --gene-bed {input.genes:q} \
+            --output {output.tsv:q} \
             --min-overlap {STRAGLR_MIN_OVERLAP}
         """
 
@@ -931,12 +908,14 @@ rule annotsv_annotations_check:
         genes=lambda wc: [str(p) for p in (Path(ANNOTSV_ANNOTATIONS_DIR) / "Annotations_Human" / "Genes" / "GRCh38").glob("genes.ENSEMBL.sorted*.bed")]
     output:
         marker=ANNOTSV_ANNOTATIONS_DIR + "/.installed"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
         set -euo pipefail
         test -d {ANNOTSV_ANNOTATIONS_DIR}/Annotations_Human
         python {input.script:q} --annotations-dir {ANNOTSV_ANNOTATIONS_DIR:q}
-        touch {output.marker}
+        touch {output.marker:q}
         """
 
 
@@ -954,13 +933,13 @@ rule annotsv_annotation:
     shell:
         """
         set -euo pipefail
-        mkdir -p {params.outdir}
+        mkdir -p {params.outdir:q}
 
         : > {output.unannotated:q}
         AnnotSV \
-            -SVinputFile {input.vcf} \
+            -SVinputFile {input.vcf:q} \
             -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
-            -outputDir {params.outdir} \
+            -outputDir {params.outdir:q} \
             -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
             -genomeBuild GRCh38 \
             -candidateGenesFile {GENE_LIST} \
@@ -970,7 +949,7 @@ rule annotsv_annotation:
             -benignAF {ANNOTSV_BENIGN_AF} \
             -hpo ""
 
-        test -s {output.tsv}
+        test -s {output.tsv:q}
         """
 
 
@@ -984,10 +963,10 @@ rule annotsv_annotation_panel_only:
         CONDAENV + "annotsv.yaml"
     shell:
         """
-        python {SCRIPTS}/filter_annotsv_panel.py \
-            --annotsv {input.tsv} \
-            --genes {input.genes} \
-            --output {output.tsv}
+        python {SCRIPTS:q}/filter_annotsv_panel.py \
+            --annotsv {input.tsv:q} \
+            --genes {input.genes:q} \
+            --output {output.tsv:q}
         """
 
 
@@ -1006,10 +985,10 @@ rule extract_sv_genes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.genes})
-        python {SCRIPTS}/extract_annotsv_genes.py \
-            --annotsv {input.annotsv} \
-            --output {output.genes}
+        mkdir -p "$(dirname {output.genes:q})"
+        python {SCRIPTS:q}/extract_annotsv_genes.py \
+            --annotsv {input.annotsv:q} \
+            --output {output.genes:q}
         """
 
 
@@ -1023,10 +1002,10 @@ rule extract_nonpanel_genes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python {SCRIPTS}/extract_nonpanel_genes.py \
-            --genes {input.genes} \
-            --panel {input.panel} \
-            --output {output.genes}
+        python {SCRIPTS:q}/extract_nonpanel_genes.py \
+            --genes {input.genes:q} \
+            --panel {input.panel:q} \
+            --output {output.genes:q}
         """
 
 
@@ -1044,13 +1023,13 @@ rule human_gene_phenotypes:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.tsv})
-        python {SCRIPTS}/monarch_human_gene_phenotypes.py \
-            --genes {input.genes} \
-            --hpo-anchors {input.hpo} \
-            --nodes {input.nodes} \
-            --edges {input.edges} \
-            --output {output.tsv}
+        mkdir -p "$(dirname {output.tsv:q})"
+        python {SCRIPTS:q}/monarch_human_gene_phenotypes.py \
+            --genes {input.genes:q} \
+            --hpo-anchors {input.hpo:q} \
+            --nodes {input.nodes:q} \
+            --edges {input.edges:q} \
+            --output {output.tsv:q}
         """
 
 
@@ -1071,14 +1050,14 @@ rule rank_genomewide_candidates:
         CONDAENV + "monarch.yaml"
     shell:
         """
-        python {SCRIPTS}/rank_sv_gene_candidates.py \
-            --annotsv {input.annotsv} \
-            --genes {input.genes} \
-            --phenotypes {input.phenotypes} \
-            --panel {input.panel} \
-            --hpo-seeds {input.hpo_seeds} \
-            --edges {input.edges} \
-            --output {output.tsv}
+        python {SCRIPTS:q}/rank_sv_gene_candidates.py \
+            --annotsv {input.annotsv:q} \
+            --genes {input.genes:q} \
+            --phenotypes {input.phenotypes:q} \
+            --panel {input.panel:q} \
+            --hpo-seeds {input.hpo_seeds:q} \
+            --edges {input.edges:q} \
+            --output {output.tsv:q}
         """
 
 
@@ -1112,24 +1091,24 @@ rule integrated_sv_gene_table:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.tsv})
+        mkdir -p "$(dirname {output.tsv:q})"
 
-        python {SCRIPTS}/build_integrated_sv_gene_tsv.py \
+        python {SCRIPTS:q}/build_integrated_sv_gene_tsv.py \
             --sequencing-type LRS \
             --annotsv-unannotated {input.unannotated:q} \
             --jasmine-id-prefixes \
-            --vcf {input.vcf} \
-            --annotsv {input.annotsv} \
+            --vcf {input.vcf:q} \
+            --annotsv {input.annotsv:q} \
             --annotsv-audit {input.audit:q} \
-            --vep-summary {input.vep_summary} \
-            --needlr {input.needlr} \
-            --ranking {input.ranking} \
-            --panel {input.panel} \
-            --caller-summary {input.caller_summary} \
-            --caller-tsv {input.sniffles} \
-            --caller-tsv {input.cutesv} \
-            --caller-tsv {input.delly} \
-            --output {output.tsv}
+            --vep-summary {input.vep_summary:q} \
+            --needlr {input.needlr:q} \
+            --ranking {input.ranking:q} \
+            --panel {input.panel:q} \
+            --caller-summary {input.caller_summary:q} \
+            --caller-tsv {input.sniffles:q} \
+            --caller-tsv {input.cutesv:q} \
+            --caller-tsv {input.delly:q} \
+            --output {output.tsv:q}
         """
 
 
@@ -1148,7 +1127,7 @@ rule vep_sv_annotation:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.txt})
+        mkdir -p "$(dirname {output.txt:q})"
 
         # Keep every transcript consequence. --flag_pick marks a preferred
         # transcript but does not discard the other transcript rows.
@@ -1156,12 +1135,13 @@ rule vep_sv_annotation:
         # transcript_ablation/amplification and feature truncation/elongation
         # describe structural effects across the transcript.
         vep \
-            --input_file {input.vcf} \
+            --input_file {input.vcf:q} \
             --format vcf \
-            --output_file {output.txt} \
+            --output_file {output.txt:q} \
             --cache \
             --offline \
             --dir_cache {VEP_CACHE_DIR} \
+            --cache_version {VEP_CACHE_VERSION} \
             --assembly {VEP_ASSEMBLY} \
             --tab \
             --fields "Uploaded_variation,Location,Allele,Gene,Feature,Feature_type,Consequence,IMPACT,SYMBOL,BIOTYPE,EXON,INTRON,CANONICAL,PICK,VARIANT_CLASS,OverlapBP,OverlapPC,DISTANCE,STRAND" \
@@ -1177,7 +1157,7 @@ rule vep_sv_annotation:
             --force_overwrite \
             --fork {threads}
 
-        test -s {output.txt}
+        test -s {output.txt:q}
         """
 
 
@@ -1193,11 +1173,11 @@ rule summarize_vep_sv_consequences:
     shell:
         """
         set -euo pipefail
-        python {input.script} \
-            --vep {input.txt} \
-            --vcf {input.vcf} \
-            --output {output.tsv}
-        test -s {output.tsv}
+        python {input.script:q} \
+            --vep {input.txt:q} \
+            --vcf {input.vcf:q} \
+            --output {output.tsv:q}
+        test -s {output.tsv:q}
         """
 
 
@@ -1207,13 +1187,15 @@ rule vep_sv_annotation_panel_only:
         genes=GENE_LIST
     output:
         txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
+    conda:
+        CONDAENV + "annotsv.yaml"
     shell:
         """
-        mkdir -p $(dirname {output.txt})
-        python {SCRIPTS}/filter_vep_panel.py \
-            --vep {input.txt} \
-            --genes {input.genes} \
-            --output {output.txt}
+        mkdir -p "$(dirname {output.txt:q})"
+        python {SCRIPTS:q}/filter_vep_panel.py \
+            --vep {input.txt:q} \
+            --genes {input.genes:q} \
+            --output {output.txt:q}
         """
 
 
@@ -1236,16 +1218,16 @@ rule modkit_pileup:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.bed})
-        mkdir -p $(dirname {log})
+        mkdir -p "$(dirname {output.bed:q})"
+        mkdir -p "$(dirname {log:q})"
 
         # modkit 0.6.4: explicitly retain 5mC and 5hmC as separate
         # modification classes, restrict to CpG sites, combine CpG strands,
         # and write BGZF-compressed bedMethyl directly for tabix indexing.
-        {MODKIT} pileup \
-            {input.bam} \
-            {output.bed} \
-            --reference {input.ref} \
+        {MODKIT:q} pileup \
+            {input.bam:q} \
+            {output.bed:q} \
+            --reference {input.ref:q} \
             {CPG_REGION_FLAG} \
             --cpg \
             --modified-bases 5mC 5hmC \
@@ -1255,12 +1237,12 @@ rule modkit_pileup:
             --io-threads {MODKIT_IO_THREADS} \
             --sampling-threads {MODKIT_SAMPLING_THREADS} \
             --bgzf-threads {MODKIT_BGZF_THREADS} \
-            --log-filepath {log}
+            --log-filepath {log:q}
 
-        tabix -f -p bed {output.bed}
+        tabix -f -p bed {output.bed:q}
 
-        test -s {output.bed}
-        test -s {output.tbi}
+        test -s {output.bed:q}
+        test -s {output.tbi:q}
         """
 
 # Optional read-level methylation output.
@@ -1278,16 +1260,16 @@ rule modkit_extract:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.tsv})
+        mkdir -p "$(dirname {output.tsv:q})"
 
-        {MODKIT} extract calls \
+        {MODKIT:q} extract calls \
             -t {threads} \
-            --reference {input.ref} \
+            --reference {input.ref:q} \
             {CPG_REGION_FLAG} \
-            {input.bam} \
-            {output.tsv}
+            {input.bam:q} \
+            {output.tsv:q}
 
-        test -s {output.tsv}
+        test -s {output.tsv:q}
         """
 
 
@@ -1317,24 +1299,24 @@ rule longphase_phasing:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.vcf})
+        mkdir -p "$(dirname {output.vcf:q})"
 
         longphase phase \
-            -s {input.vcf} \
-            --sv-file {input.sv_vcf} \
-            -b {input.bam} \
-            -r {input.ref} \
+            -s {input.vcf:q} \
+            --sv-file {input.sv_vcf:q} \
+            -b {input.bam:q} \
+            -r {input.ref:q} \
             -t {threads} \
-            -o {params.prefix} \
+            -o {params.prefix:q} \
             --ont
 
-        test -s {params.prefix}.vcf
-        bgzip -f {params.prefix}.vcf
-        test -s {output.vcf}
-        tabix -f -p vcf {output.vcf}
-        test -s {params.prefix}_SV.vcf
-        bgzip -@ {threads} -f {params.prefix}_SV.vcf
-        tabix -f -p vcf {output.sv}
+        test -s {params.prefix:q}.vcf
+        bgzip -f {params.prefix:q}.vcf
+        test -s {output.vcf:q}
+        tabix -f -p vcf {output.vcf:q}
+        test -s {params.prefix:q}_SV.vcf
+        bgzip -@ {threads} -f {params.prefix:q}_SV.vcf
+        tabix -f -p vcf {output.sv:q}
         """
 
 
@@ -1356,18 +1338,17 @@ rule tldr_mei_confirmation:
     shell:
         """
         set -euo pipefail
-        mkdir -p $(dirname {output.table})
+        mkdir -p "$(dirname {output.table:q})"
 
         tldr \
-            -b {input.bam} \
-            -r {input.ref} \
-            -e {TLDR_ELTS} \
+            -b {input.bam:q} \
+            -r {input.ref:q} \
+            -e {TLDR_ELTS:q} \
             -p {threads} \
             --color_consensus \
-            -o {params.outbase}
+            -o {params.outbase:q}
 
-        cp {params.outbase}.table.txt {output.table}
-        test -s {output.table}
+        test -s {output.table:q}
         """
 
 

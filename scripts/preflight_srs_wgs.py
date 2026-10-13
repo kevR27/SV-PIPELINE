@@ -52,6 +52,11 @@ def check_bam_reference(bam_path, index_path, reference_index, checks):
                 same_reference = all(reference_contigs.get(name) == length for name, length in zip(bam.references, bam.lengths))
                 sorted_bam = bam.header.to_dict().get("HD", {}).get("SO") == "coordinate"
                 indexed = bam.check_index()
+                # Callers discover the index beside the BAM; most cannot use
+                # the separate index_filename argument used by this check.
+                nearby_indexes = [Path(str(bam_path) + ".bai"), Path(bam_path).with_suffix(".bai")]
+                visible_index = next((p for p in nearby_indexes if p.is_file()), None)
+                tool_visible_index = visible_index is not None and visible_index.resolve() == Path(index_path).resolve()
                 observed = paired = 0
                 for read in bam.fetch(until_eof=True):
                     if read.is_unmapped or read.is_secondary or read.is_supplementary:
@@ -60,8 +65,8 @@ def check_bam_reference(bam_path, index_path, reference_index, checks):
                     paired += int(read.is_paired)
                     if observed >= 1000:
                         break
-                status = "PASS" if same_reference and sorted_bam and indexed and paired > 0 else "FAIL"
-                detail = f"same_reference={same_reference};coordinate_sorted={sorted_bam};paired_reads={paired}/{observed} checked"
+                status = "PASS" if same_reference and sorted_bam and indexed and tool_visible_index and paired > 0 else "FAIL"
+                detail = f"same_reference={same_reference};coordinate_sorted={sorted_bam};paired_reads={paired}/{observed} checked;tool_visible_index={tool_visible_index}"
         except (ValueError, OSError) as error:
             detail = str(error)
     checks.append({"check": label, "path": f"{bam_path};{detail}", "status": status})

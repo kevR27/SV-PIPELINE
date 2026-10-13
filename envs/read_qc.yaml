@@ -2,6 +2,7 @@ name: read_qc
 
 channels:
   - conda-forge
+  - bioconda
 
 dependencies:
   - python>=3.9

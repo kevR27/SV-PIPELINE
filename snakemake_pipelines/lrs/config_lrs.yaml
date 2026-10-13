@@ -96,6 +96,7 @@ jasmine_caller_order: "Sniffles2,cuteSV,Delly"
 
 reference_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference"
 vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/vep"
+vep_cache_version: 116  # Match envs/vep.yaml and the extracted human GRCh38 cache.
 vep_assembly: "GRCh38"
 
 # ============================================================
