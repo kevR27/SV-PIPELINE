@@ -25,6 +25,9 @@ signal-level information, or a caller model trained for one technology.
 | Is allele-level evidence kept separate from pathogenicity? | Shared allele-assessment layer | Shared allele-assessment layer | Shared |
 | Are nuclear mitochondrial genes and pathways identified? | MitoCarta and mitochondrial-gene ranking | MitoCarta and the same mitochondrial-gene ranking | Shared primary focus |
 | Can top candidates be inspected in the reads? | Samplot long-read mode | Samplot short-read mode | Shared purpose; platform-specific display |
+| Are event-specific SV–gene relationships considered? | Mechanism-aware event ranking in LRS postprocess | Same research interpretation script in `srs_interpretation.smk` | Both distinguish breakpoint disruption, dosage overlap and inversion-spanned genes; SRS evidence differs |
+| Is large DEL/DUP depth context integrated? | Event/flank mosdepth comparison | Event/flank mosdepth and CNVpytor | Same biological question; same-BAM evidence is not independent validation |
+| Are candidate coding/splice SNVs compared with SVs in the same gene? | VEP + LongPhase, with cautious phase labels | VEP + WhatsHap SNV phasing; SV phase unresolved | Same candidate-pair review; short reads cannot infer SV phase from SNV phasing alone |
 
 ## Technology-specific analyses
 
