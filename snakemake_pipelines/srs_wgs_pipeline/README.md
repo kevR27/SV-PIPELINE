@@ -441,9 +441,8 @@ java -version
 samtools --version
 
 SRS_REFERENCE=/DATA/Reference/hg38.fa
-SRS_GRIDSS_JAR=$(find "$CONDA_PREFIX/share" -type f -name '*gridss*jar-with-dependencies.jar' -print -quit)
-test -n "$SRS_GRIDSS_JAR" && test -s "$SRS_GRIDSS_JAR" && \
-  gridss -r "$SRS_REFERENCE" -j "$SRS_GRIDSS_JAR" -s setupreference -t 32
+# The Bioconda wrapper selects its own bundled gridss.jar.
+gridss -r "$SRS_REFERENCE" -s setupreference -t 32
 ```
 
 Use the exact FASTA configured for your aligned BAMs, with write access for
