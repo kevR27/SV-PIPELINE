@@ -494,9 +494,7 @@ rule gridss_sv_calling:
         """
         set -euo pipefail
         mkdir -p {params.workdir:q} "$(dirname {output.vcf:q})"
-        GRIDSS_JAR=$(find "$CONDA_PREFIX/share" -type f -name '*gridss*jar-with-dependencies.jar' | head -n 1)
-        test -n "$GRIDSS_JAR"
-        gridss -s preprocess,assemble,call -r {input.ref:q} -j "$GRIDSS_JAR" -o {params.workdir:q}/{wildcards.sample}.gridss.vcf \
+        gridss -s preprocess,assemble,call -r {input.ref:q} -o {params.workdir:q}/{wildcards.sample}.gridss.vcf \
             --workingdir {params.workdir:q} -t {threads} {params.exclude} {params.skip} {input.bam:q}
         bcftools sort -Oz -o {output.vcf:q} {params.workdir:q}/{wildcards.sample}.gridss.vcf
         tabix -f -p vcf {output.vcf:q}
