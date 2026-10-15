@@ -326,9 +326,8 @@ paired-end WGS alignments.
 
    ```bash
    SRS_REFERENCE=/DATA/Reference/hg38.fa
-   SRS_GRIDSS_JAR=$(find "$CONDA_PREFIX/share" -type f -name '*gridss*jar-with-dependencies.jar' -print -quit)
-   test -n "$SRS_GRIDSS_JAR"
-   gridss -r "$SRS_REFERENCE" -j "$SRS_GRIDSS_JAR" -s setupreference
+   # The Bioconda gridss launcher locates its bundled gridss.jar automatically.
+   gridss -r "$SRS_REFERENCE" -s setupreference
    ```
 
    Keep the generated reference/index files beside that FASTA. The analysis
