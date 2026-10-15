@@ -37,6 +37,14 @@ def main() -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     output.parent.mkdir(parents=True, exist_ok=True)
 
+    # MELTv2 Single expects -t to name a text file containing the paths to
+    # transposon reference ZIPs (one entry per line), not a ZIP itself.
+    transposon_zip = Path(args.transposon).resolve()
+    if not transposon_zip.is_file():
+        raise FileNotFoundError(f"MELT transposon reference is missing: {transposon_zip}")
+    transposon_list = run_dir / "mei_reference_list.txt"
+    transposon_list.write_text(str(transposon_zip) + "\n", encoding="utf-8")
+
     command = [
         "java",
         f"-Xmx{args.memory_gb}G",
@@ -50,7 +58,7 @@ def main() -> int:
         "-n",
         str(Path(args.genes_bed).resolve()),
         "-t",
-        str(Path(args.transposon).resolve()),
+        str(transposon_list),
         "-w",
         str(run_dir),
     ]

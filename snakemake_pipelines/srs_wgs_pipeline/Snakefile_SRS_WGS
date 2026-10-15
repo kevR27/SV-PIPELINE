@@ -308,6 +308,17 @@ rule all:
             MTDNA_TARGETS,
             MITOCARTA_TARGETS,
         ],
+        # Further interpretation retains the discovery VCF and existing tables.
+        downstream_interpretation=[
+            expand(PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_events.tsv.gz", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/final/{sample}_large_sv_genes.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/final/{sample}_snv_sv_candidates.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv", sample=SAMPLES),
+            expand(PATH + "{sample}/gene_discovery/final/{sample}_clinical_candidates.ranked.tsv", sample=SAMPLES),
+        ],
 
 # ============================================================
 # 1. CHECK REFERENCE FILES, ALIGNMENT AND COVERAGE
@@ -1489,3 +1500,6 @@ ATLAS_SMALL_VCF = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
 ATLAS_VEP_TSV = PATH + "{sample}/snp_deepvariant/{sample}.genomewide.vep.tsv.gz"
 ATLAS_SV_VCF = PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz"
 include: "../common/alphagenome_atlas.smk"
+
+# SRS-specific interpretation, without changes to the LRS Snakefiles.
+include: "srs_interpretation.smk"

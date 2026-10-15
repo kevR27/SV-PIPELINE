@@ -115,7 +115,7 @@ evidence_max_svlen: 250000000
 # Merge nearby events of matching type/orientation, keeping single-caller SVs.
 # Agreement between two callers is support, not validation.
 survivor_max_distance: 1000
-survivor_min_support: 2
+survivor_min_support: 1       # Keep single-caller events in the discovery VCF.
 survivor_require_same_type: 1
 survivor_require_same_strand: 1
 survivor_use_size_ratio: 0
@@ -188,6 +188,13 @@ downstream_size_cutoff: 1000        # Main view >1 kb; <1 kb and =1 kb separate.
 downstream_max_af: 0.01
 downstream_inv_min_reads: 3
 downstream_inv_strong_reads: 5       # Higher support tier, not validation.
+
+# SRS-specific downstream interpretation (independent of SV calling).
+# The same clinical/biological questions as LRS, with short-read evidence.
+srs_event_breakpoint_gene_tolerance: 10000
+srs_large_sv_depth_min_size: 100000   # Evaluate DEL/DUP >=100 kb.
+# With conventional short reads, SNV-SV cis/trans phase is unresolved unless
+# independently established; WhatsHap small-variant phasing is not SV phasing.
 
 # ============================================================
 # 9. ALLELE RESEARCH ASSESSMENT — optional patient/family evidence
