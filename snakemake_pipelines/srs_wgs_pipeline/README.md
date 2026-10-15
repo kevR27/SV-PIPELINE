@@ -7,7 +7,7 @@ analysis.** Non-panel genes remain available for review.
 
 The layout now follows LRS: one configuration, numbered analysis stages,
 shared `scripts/` and `envs/` folders, and a separate `all_thesis_plots` target.
-The SRS folder still contains only its existing Snakefile, config and README.
+The SRS folder contains the Snakefile, configuration, README and a separate `srs_interpretation.smk` module for downstream interpretation.
 
 The existing review rule now also writes
 `diagnostic_review/<sample>.clinical_candidates.tsv`. It combines the reported
@@ -52,6 +52,82 @@ This workflow uses GRCh38. `nuclear_mito_candidate_bed` uses BED coordinates
 `gene_bed` describes gene intervals. An optional matching GTF supplies real
 exon tracks in locus diagrams; without it, the diagrams show gene intervals.
 
+## Discovery SV union and downstream interpretation
+
+The primary Manta/DELLY SURVIVOR merge uses `survivor_min_support: 1`.
+Single-caller events are retained in the complete discovery VCF, while
+`multi_caller_min_support: 2` produces a separate stricter review VCF.
+Caller agreement is evidence, not biological or clinical validation. GRIDSS
+is additional breakpoint evidence and is not a third SURVIVOR input.
+CNVpytor-only passing copy-number changes remain separately identified when
+combined with the breakpoint VCF.
+
+The SRS-only `srs_interpretation.smk` module now runs from the standard
+`rule all`. It reuses LRS research scripts on SRS inputs without modifying
+the LRS pipeline, the primary integrated discovery VCF, or existing
+`diagnostic_review` tables.
+
+New outputs under `<sample>/gene_discovery/final/` include:
+
+| Output suffix | Purpose |
+| --- | --- |
+| `_sv_gene_events.tsv.gz` | Mechanism-aware DEL/DUP/INV/BND/INS–gene relationships, event and caller evidence |
+| `_large_sv_depth.tsv`, `_large_sv_depth_bins.tsv` | Event/flank mosdepth comparisons for DEL/DUP >=100 kb |
+| `_large_sv_genes.tsv` | All intersecting genes from the configured GRCh38 gene BED |
+| `_hpo_semantic_similarity.tsv` | Optional patient HPO comparison; unavailable values remain explicit |
+| `_snv_sv_candidates.tsv` | Coding/splice SNV/INDEL candidates in genes that also contain an SV |
+| `_gene_candidates.ranked.tsv`, `_sv_gene_candidates.ranked.tsv` | Further research-ranking views |
+| `_mitochondrial_gene_ranking.ranked.tsv`, `_clinical_candidates.ranked.tsv` | Separate mitochondrial and clinical-review views |
+
+The complete genome-wide DeepVariant VCF and VEP table are kept. The SNV–SV
+table is a *focused review*, not a filter of these discovery outputs.
+WhatsHap can phase nearby small variants but does not, by itself, phase an
+SV against an SNV. For unphased SVs, the pair table therefore records
+`UNRESOLVED` rather than inferring an autosomal-recessive trans pair.
+Similarly, flanking-depth changes from the same BAM are supportive context,
+not independent experimental validation.
+
+To dry-run just the final interpretation target after the upstream calls
+exist, use:
+
+```bash
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 -n -p srs_finalize_candidate_ranking
+```
+
+To run the complete workflow, request `all` as usual. Avoid launching
+SRS WGS simultaneously with a resource-intensive LRS run on the shared
+server without an agreed CPU, RAM and disk-I/O allocation.
+
+### Enabling MELT when its installation is ready
+
+MELT is optional and currently defaults to `melt_enabled: false`.
+This prevents a missing or incompatible JAR, reference family ZIP, or Java
+runtime from failing the entire SRS analysis. It is not a judgment that
+MEIs are biologically unimportant.
+
+The SRS `run_melt_single.py` wrapper calls MELTv2 `Single` independently
+for the four configured families, then combines the outputs for review.
+Check that `melt_jar`, `melt_genes_bed`, and the `melt_transposons`
+archives in the config are the locally installed, matching GRCh38 files.
+The MELT program and reference bundles require their own installation;
+the Snakemake environment does not supply these data automatically.
+
+After verifying these files and the required runtime, change
+`melt_enabled: true` and dry-run the target:
+
+```bash
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 -n -p melt_merge_families
+```
+
+Then execute that target on a sample when the server has available resources.
+The first completed MELT VCF should be inspected before enabling MELT for
+the full cohort. No MELT calls should be reported as completed merely
+because the option is set to `true`.
+
 ## How to read the Snakefile
 
 Each numbered section describes a biological step. Inside a rule:
@@ -79,6 +155,7 @@ for readability. The numerical section labels are a reading guide.
 | 5. AnnotSV, VEP, Monarch, population | Which genes/transcripts overlap the SV, and what annotation/frequency information is available? |
 | 6. Repeats, optional MELT, secondary mtDNA | Which other variant classes need separate review? |
 | 7. Evidence, MitoCarta, candidate review | Which findings fit the biological focus, including non-panel genes? |
+| Additional SRS interpretation | Which event mechanisms, local-depth patterns and candidate SNV–SV pairs merit follow-up? |
 | 8. Plots and downstream views | What do the data and review filters show? |
 | 9. Optional control checks | How do results compare with known positive controls? |
 
