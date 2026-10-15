@@ -1331,7 +1331,7 @@ rule tldr_mei_confirmation:
     output:
         table=PATH + "{sample}/mei/tldr/{sample}.tldr.table.txt"
     params:
-        outbase=PATH + "{sample}/mei/tldr/{sample}"
+        outbase=PATH + "{sample}/mei/tldr/{sample}.tldr"
     threads: THREADS
     conda:
         CONDAENV + "tldr.yaml"
