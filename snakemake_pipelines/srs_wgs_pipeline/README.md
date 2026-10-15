@@ -87,8 +87,8 @@ SV against an SNV. For unphased SVs, the pair table therefore records
 Similarly, flanking-depth changes from the same BAM are supportive context,
 not independent experimental validation.
 
-To dry-run just the final interpretation target after the upstream calls
-exist, use:
+To dry-run the updated complete dependency graph, including the new
+interpretation stages and their upstream requirements, use:
 
 ```bash
 snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
@@ -124,7 +124,7 @@ snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
   --cores 32 -n -p all
 ```
 
-Then execute the selected MELT family or merged VCF file target on one sample
+Then execute a concrete MELT output file target for a single sample
 when the server has available resources. Snakemake rule names containing
 `{sample}` or `{family}` cannot be used directly as CLI targets: request
 a concrete output path, or run `all` once ready.
