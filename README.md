@@ -38,7 +38,7 @@ Read [the audit and server checks](docs/PIPELINE_INPUT_OUTPUT_AUDIT.md) before
 running an updated checkout. It lists execution defects corrected in both
 workflows, verified checks and what still needs testing on Bologna.
 In particular, SRS DeepVariant now uses the official image through Apptainer;
-LRS VEP is pinned to release 116, while SRS retains release 113. Each workflow
+Both LRS and SRS VEP are now pinned to release 116. Each workflow
 needs its matching cache. No patient analysis or clinical validation was run
 for this audit.
 
@@ -1674,7 +1674,7 @@ behaviour, not diagnostic accuracy or performance on a multi-GB resource.
 ### Matching the LRS VEP cache to the executable
 
 LRS `envs/vep.yaml` and `config_lrs.yaml: vep_cache_version` now both specify
-116. SRS separately uses 113. Do not point either workflow at a different
+116. SRS now also uses 116 and can share the same matching cache. Do not point either workflow at a different
 release merely because it is already downloaded. To prepare the LRS cache:
 
 ```bash

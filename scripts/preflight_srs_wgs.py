@@ -119,7 +119,7 @@ def main() -> int:
     parser.add_argument("--monarch-edges", required=True)
     parser.add_argument("--annotsv-dir", required=True)
     parser.add_argument("--vep-cache-dir", required=True)
-    parser.add_argument("--vep-cache-version", default="113")
+    parser.add_argument("--vep-cache-version", default="116")
     parser.add_argument("--gridss-enabled", choices=["true", "false"])
     parser.add_argument("--mt-enabled", choices=["true", "false"])
     parser.add_argument("--mt-contig", default="chrM")

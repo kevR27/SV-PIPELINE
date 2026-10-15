@@ -341,19 +341,19 @@ paired-end WGS alignments.
    The analysis requires its `-ls` report to say
    `Using reference genome: hg38 [ GC: yes, mask: yes ]`.
 
-5. **VEP release 113 human GRCh38 cache.** The pinned VEP version and cache
+5. **VEP release 116 human GRCh38 cache (shared with LRS).** The pinned VEP version and cache
    release must agree. Download/unpack the matching indexed cache manually:
 
    ```bash
    mkdir -p /DATA/Reference/vep
    cd /DATA/Reference/vep
-   curl --fail --location --remote-name https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz
-   tar -xzf homo_sapiens_vep_113_GRCh38.tar.gz
+   curl --fail --location --remote-name https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz
+   tar -xzf homo_sapiens_vep_116_GRCh38.tar.gz
    ```
 
    Set `vep_cache_dir` to that cache root. The human cache should include
    regulatory annotations for `--regulatory`. It must contain
-   `homo_sapiens/113_GRCh38/`. If you change the release, update both
+   `homo_sapiens/116_GRCh38/`. If you change the release, update both
    `envs/srs_vep.yaml` and `vep_cache_version` together. See the
    [official VEP cache documentation](https://www.ensembl.org/info/docs/tools/vep/script/vep_cache.html).
    Return to this workflow folder before running Snakemake.
@@ -391,6 +391,155 @@ paired-end WGS alignments.
    [gnomAD downloads](https://gnomad.broadinstitute.org/downloads) and set
    `gnomad_sv_vcf`/`gnomad_sv_index`. The analysis does not download it. With no
    resource configured, frequency is explicitly unavailable, not proven absent.
+
+## Bologna setup: GRIDSS, CNVpytor and VEP 116
+
+Updated 15 October 2026. Both workflows now use VEP/cache release 116. Keep
+your sample paths and results directory when updating the checkout. In your
+server copy of `config_srs_wgs.yaml`, set `vep_cache_version: 116`; the matching
+`envs/srs_vep.yaml` must specify `ensembl-vep=116`. Do not change only the cache
+number while leaving a release-113 executable installed.
+
+Start in the existing Snakemake environment and SRS workflow folder. Set
+`exomiser_enabled: false` while its data are incomplete. Leave MELT/Atlas
+disabled until their resources are ready. These switches do not install the
+other tools or their data.
+
+```bash
+cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/srs_wgs_pipeline
+
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --conda-create-envs-only --cores 1
+```
+
+This creates missing environments for the requested analysis without running
+variant callers. It includes the pinned GRIDSS 2.13.2 and CNVpytor 1.3.2
+environments, and VEP 116. Do not create separate named copies if you want
+Snakemake to reuse the same installations. Record the actual hashed paths:
+
+```bash
+SRS_ENV_LIST=$(mktemp /tmp/srs_envs.XXXXXX.tsv)
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --list-conda-envs > "$SRS_ENV_LIST"
+cat "$SRS_ENV_LIST"
+```
+
+Keep this shell open: later commands use that temporary table. If environment
+creation fails, resolve that failure before proceeding; a listed path alone
+does not prove its installation completed. The table's last column is the
+environment path. The commands below select it by the YAML filename rather
+than guessing its hash. Stop if a selection is empty or does not name a directory.
+
+### GRIDSS: activate, check, prepare the same FASTA
+
+```bash
+SRS_GRIDSS_ENV=$(awk '$1 ~ /(^|\/)gridss.yaml$/ {print $NF}' "$SRS_ENV_LIST")
+test -n "$SRS_GRIDSS_ENV" && test -d "$SRS_GRIDSS_ENV" && conda activate "$SRS_GRIDSS_ENV"
+command -v gridss
+java -version
+samtools --version
+
+SRS_REFERENCE=/DATA/Reference/hg38.fa
+SRS_GRIDSS_JAR=$(find "$CONDA_PREFIX/share" -type f -name '*gridss*jar-with-dependencies.jar' -print -quit)
+test -n "$SRS_GRIDSS_JAR" && test -s "$SRS_GRIDSS_JAR" && \
+  gridss -r "$SRS_REFERENCE" -j "$SRS_GRIDSS_JAR" -s setupreference -t 32
+```
+
+Use the exact FASTA configured for your aligned BAMs, with write access for
+its indexes; do not substitute another file merely named hg38. GRIDSS's
+[official quick start](https://github.com/PapenfussLab/gridss/blob/master/QuickStart.md#setupreference)
+describes this one-time step. This prepares a reference, not a patient call.
+The pipeline discovers the JAR from its own active Conda environment; no
+additional JAR path is needed in the configuration.
+
+### CNVpytor: activate and prepare its data
+
+```bash
+SRS_CNVPYTOR_ENV=$(awk '$1 ~ /(^|\/)cnvpytor.yaml$/ {print $NF}' "$SRS_ENV_LIST")
+test -n "$SRS_CNVPYTOR_ENV" && test -d "$SRS_CNVPYTOR_ENV" && conda activate "$SRS_CNVPYTOR_ENV"
+command -v cnvpytor
+python -c 'from importlib.metadata import version; print("CNVpytor", version("CNVpytor"))'
+cnvpytor -download
+```
+
+The official [CNVpytor instructions](https://github.com/abyzovlab/CNVpytor/blob/master/GettingStarted.md)
+separate installation from reference-data preparation. Check the hg38 files
+in this same environment; testing HDF5 readability catches empty downloads or
+HTML error pages saved under a `.pytor` filename:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+from cnvpytor.genome import Genome
+import h5py
+for key in ("gc_file", "mask_file"):
+    path = Path(Genome.reference_genomes["hg38"][key])
+    assert path.is_file() and path.stat().st_size > 0, f"Missing hg38 {key}: {path}"
+    with h5py.File(path, "r") as handle:
+        assert len(handle), f"Empty hg38 {key}: {path}"
+    print("Readable hg38 resource:", path)
+PY
+```
+
+If `-download` errors or the hg38 files fail this check, retrieve just these
+two files from the official pinned release, then repeat the check. The
+following manual fallback replaces only hg38 GC/mask files in the activated
+CNVpytor environment, using temporary downloads before replacing final files:
+
+```bash
+SRS_CNVPYTOR_DATA=$(python -c 'from cnvpytor.genome import Genome; print(Genome.pytor_datapath)')
+test -d "$SRS_CNVPYTOR_DATA"
+curl --fail --location --retry 3 \
+  https://raw.githubusercontent.com/abyzovlab/CNVpytor/v1.3.2/cnvpytor/data/gc_hg38.pytor \
+  --output "$SRS_CNVPYTOR_DATA/gc_hg38.pytor.download"
+curl --fail --location --retry 3 \
+  https://raw.githubusercontent.com/abyzovlab/CNVpytor/v1.3.2/cnvpytor/data/mask_hg38.pytor \
+  --output "$SRS_CNVPYTOR_DATA/mask_hg38.pytor.download"
+python - "$SRS_CNVPYTOR_DATA" <<'PY'
+from pathlib import Path
+import h5py
+import sys
+root = Path(sys.argv[1])
+for name in ("gc_hg38.pytor", "mask_hg38.pytor"):
+    with h5py.File(root / (name + ".download"), "r") as handle:
+        assert len(handle), f"Empty resource: {name}"
+for name in ("gc_hg38.pytor", "mask_hg38.pytor"):
+    (root / (name + ".download")).replace(root / name)
+print("Both hg38 resource downloads are readable HDF5 files and installed.")
+PY
+```
+
+After the analysis imports read depth, the existing rule additionally checks
+`cnvpytor -root <sample.pytor> -ls` for
+`Using reference genome: hg38 [ GC: yes, mask: yes ]`. Resource files existing
+alone do not prove the sample's reference was recognized correctly.
+
+### VEP 116: reuse the LRS cache
+
+```bash
+SRS_VEP_ENV=$(awk '$1 ~ /(^|\/)srs_vep.yaml$/ {print $NF}' "$SRS_ENV_LIST")
+test -n "$SRS_VEP_ENV" && test -d "$SRS_VEP_ENV" && conda activate "$SRS_VEP_ENV"
+vep --help
+ls -ld /DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/vep/homo_sapiens/116_GRCh38
+```
+
+The help output should identify Ensembl VEP 116. If the LRS cache is already
+complete at that location, reuse it. The standard `homo_sapiens` cache is
+required by the current commands; RefSeq/merged caches require different VEP
+options and are not interchangeable. Do not download a second copy merely
+because SRS has a separate workflow folder.
+
+Only if the cache is absent, download/extract the standard indexed cache into
+your configured cache root, following the release-116 command in the manual
+setup section above. A directory listing alone does not establish completeness;
+check extraction finished and inspect the first VEP log for unavailable data.
+
+Return to the Snakemake runner environment and run `srs_preflight`, then a dry
+run. DeepVariant's Apptainer image still needs its separate preparation. These
+instructions and repository checks do not claim any installation or reference
+preparation has already run on Bologna.
 
 ## DeepVariant runner setup
 
@@ -479,7 +628,7 @@ See [the shared input/output audit](../../docs/PIPELINE_INPUT_OUTPUT_AUDIT.md).
 rendered successfully. Twenty environment definitions resolved in dry solves;
 19 timed out and remain unverified. These checks do not certify a real server
 installation or patient run. DeepVariant's runner changed as described above;
-SRS VEP remains release 113.
+SRS used release 113 for that audit; it moved to 116 on 15 October 2026.
 
 ## Earlier checks — 10 October 2026
 

@@ -57,7 +57,7 @@ VEP_CACHE_DIR = config["vep_cache_dir"]
 VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 if VEP_ASSEMBLY != "GRCh38":
     raise ValueError("This SRS workflow uses GRCh38 interval/reference resources; vep_assembly must be GRCh38")
-VEP_CACHE_VERSION = int(config.get("vep_cache_version", 113))
+VEP_CACHE_VERSION = int(config.get("vep_cache_version", 116))
 DEEPVARIANT_IMAGE = str(config.get("deepvariant_image", "docker://google/deepvariant:1.10.0"))
 CANONICAL_ONLY = config.get("canonical_chromosomes_only", True)
 CANONICAL_FLAG = "--canonical-only" if CANONICAL_ONLY else ""

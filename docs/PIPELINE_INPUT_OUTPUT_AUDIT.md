@@ -9,6 +9,10 @@ installation, actual needLR backend, downloaded Exomiser database, Atlas API
 credentials or full external-tool analyses were available. A passing test is
 not evidence that these server inputs exist or that a patient result is valid.
 
+Update on 15 October 2026: SRS has also moved to VEP/cache 116 at the user's
+request. The original 13 October audit below used SRS 113; current setup
+instructions in the SRS README supersede that release requirement.
+
 ## What changed, and where
 
 | Area | Existing files changed | Reason and resulting behaviour |
@@ -81,7 +85,7 @@ scientific filtering steps. Installation/download commands remain in the
 |---|---|
 | BAM and reference | Coordinate-sorted WGS BAMs; readable matching indexes beside BAMs; FASTA and `.fai` from the same assembly used in alignment; compatible contig names/lengths. Filename `hg38` alone is insufficient. SRS also needs paired-read data. |
 | DeepVariant | Create its updated runtime environment and test Apptainer executing the official image. Prepare a local SIF for offline use. Check server container permissions and CPU/image compatibility. |
-| VEP | Human GRCh38 indexed cache matching each workflow's executable: LRS 116, SRS 113. Include the regulatory annotations required by the current commands. A downloaded cache of another release is not interchangeable. |
+| VEP | Human GRCh38 indexed cache matching each workflow's executable: LRS 116, SRS 116 (updated 15 October). Include the regulatory annotations required by the current commands. A downloaded cache of another release is not interchangeable. |
 | Offline Exomiser | Download complete and extract, rather than pointing at archives. Check the configured CLI JAR, Java 21, hg38/phenotype 2512 directories and HPO seed/patient files. Run a comparison before relying on scores; a download in progress is not a completed analysis. |
 | AnnotSV/gene resources | Matching annotation bundle, valid gene BED/GTF/transcript identifiers, correctly formatted GenCC/OMIM/ClinGen/ClinVar resources where used. Review unavailable/conflicting evidence flags. Installed resource correctness cannot be proven by repository tests. |
 | Population AF | Actual indexed needLR backend and/or gnomAD VCF, compatible build/contigs and valid allele matching. needLR paths must have no whitespace/glob characters. Missing matches remain unknown. |

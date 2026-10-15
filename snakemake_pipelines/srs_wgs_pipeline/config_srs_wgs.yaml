@@ -37,7 +37,7 @@ expansionhunter_catalog: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/var
 
 vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/vep"
 vep_assembly: "GRCh38"
-vep_cache_version: 113             # Must match envs/srs_vep.yaml and cache.
+vep_cache_version: 116             # Must match envs/srs_vep.yaml and cache.
 # Official runner/model distribution; Apptainer runtime is in deepvariant.yaml.
 # On the server, verify Apptainer can execute this image (README setup steps).
 deepvariant_image: "docker://google/deepvariant:1.10.0"
