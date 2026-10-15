@@ -120,7 +120,7 @@ survivor_require_same_type: 1
 survivor_require_same_strand: 1
 survivor_use_size_ratio: 0
 survivor_min_size: 50
-survivor_caller_order: "Manta,Delly"  # Must stay in the actual input order.
+survivor_caller_order: "Manta, Delly"  # Must stay in the actual input order.
 multi_caller_min_support: 2
 
 gridss_threads: 32
