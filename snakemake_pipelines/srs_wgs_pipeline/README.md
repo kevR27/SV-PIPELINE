@@ -93,7 +93,7 @@ exist, use:
 ```bash
 snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
   --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 32 -n -p srs_finalize_candidate_ranking
+  --cores 32 -n -p all
 ```
 
 To run the complete workflow, request `all` as usual. Avoid launching
@@ -108,7 +108,8 @@ runtime from failing the entire SRS analysis. It is not a judgment that
 MEIs are biologically unimportant.
 
 The SRS `run_melt_single.py` wrapper calls MELTv2 `Single` independently
-for the four configured families, then combines the outputs for review.
+for the four configured families, using a generated one-line reference-list
+file for each family's `-t` input, then combines the outputs for review.
 Check that `melt_jar`, `melt_genes_bed`, and the `melt_transposons`
 archives in the config are the locally installed, matching GRCh38 files.
 The MELT program and reference bundles require their own installation;
@@ -120,10 +121,13 @@ After verifying these files and the required runtime, change
 ```bash
 snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
   --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 32 -n -p melt_merge_families
+  --cores 32 -n -p all
 ```
 
-Then execute that target on a sample when the server has available resources.
+Then execute the selected MELT family or merged VCF file target on one sample
+when the server has available resources. Snakemake rule names containing
+`{sample}` or `{family}` cannot be used directly as CLI targets: request
+a concrete output path, or run `all` once ready.
 The first completed MELT VCF should be inspected before enabling MELT for
 the full cohort. No MELT calls should be reported as completed merely
 because the option is set to `true`.
