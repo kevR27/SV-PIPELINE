@@ -1,5 +1,5 @@
 # SRS PIPELINE CONFIGURATION — Illumina whole-genome sequencing
-# Start with sections 1–3. Sections 4–10 contain the analysis defaults.
+# Start with sections 1–3. Sections 4–11 contain the analysis defaults.
 # Use spaces, not tabs. Quote numeric sample IDs, as in the LRS config.
 # Run from snakemake_pipelines/srs_wgs_pipeline/ so relative paths work.
 
@@ -7,11 +7,10 @@
 # 1. SAMPLES, RESULTS AND REFERENCE — edit these first
 # ============================================================
 samples:
-  patient01: "/data/srs_bams/patient01.sorted.bam"
-  patient02: "/data/srs_bams/patient02.sorted.bam"
+  HG002: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/test_data/SRS_WGS/HG002/HG002.GRCh38.sorted.bam"
 
 path: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/srs_wgs_pipeline/srs_CNTRL_results"          # Folder where results will be written.
-ref: "/DATA/Reference/hg38.fa"      # Same GRCh38 FASTA used for alignment.
+ref: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/GRCh38_GIAB/GRCh38_no_alt_plus_hs38d1.fa"       # GRCh38 reference used for the Bologna HG002 test.
 threads: 32                        # Maximum threads for one analysis step.
 
 
@@ -86,8 +85,8 @@ gridss_enabled: true
 mtdna_enabled: true
 mt_contig: "chrM"
 mutserve_level: 0.01               # Minimum heteroplasmy fraction = 1%.
-# Leave MELT off until its local files in section 7 are installed.
-melt_enabled: false
+# MELT is enabled for the Bologna server; the files in section 7 must exist.
+melt_enabled: true
 
 # Population database: optional, local GRCh38 VCF and its index.
 # null means frequency is unavailable; it does not prove a novel variant.
@@ -120,7 +119,7 @@ survivor_require_same_type: 1
 survivor_require_same_strand: 1
 survivor_use_size_ratio: 0
 survivor_min_size: 50
-survivor_caller_order: "Manta, Delly"  # Must stay in the actual input order.
+survivor_caller_order: "Manta,Delly"  # Must stay in the actual input order.
 multi_caller_min_support: 2
 
 gridss_threads: 32
