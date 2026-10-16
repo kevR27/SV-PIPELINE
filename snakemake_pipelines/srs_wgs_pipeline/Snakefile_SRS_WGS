@@ -1159,15 +1159,39 @@ rule melt_merge_families:
         tbi=PATH + "{sample}/mei/melt/{sample}.MEI.merged.vcf.gz.tbi"
     params:
         tmp=PATH + "{sample}/mei/melt/.sorttmp"
+    log:
+        PATH + "{sample}/mei/melt/{sample}.merge.log"
     conda:
         CONDAENV + "melt.yaml"
     shell:
         """
         set -euo pipefail
-        rm -rf {params.tmp:q}; mkdir -p {params.tmp:q}
-        bcftools concat -a -Ov {input.vcfs:q} | bcftools sort -T {params.tmp:q} -Oz -o {output.vcf:q}
+        mkdir -p "$(dirname {output.vcf:q})"
+        exec > >(tee {log:q}) 2>&1
+
+        # MELT writes plain VCFs; bcftools concat -a reads several inputs
+        # together and expects bgzip-compressed, indexed files.
+        # Keep MELT's original family VCFs unchanged.
+        tmp={params.tmp:q}
+        rm -rf "$tmp"
+        mkdir -p "$tmp"
+        for vcf in {input.vcfs:q}; do
+            compressed="$tmp/$(basename "$vcf").gz"
+            echo "[MELT] Preparing $(basename "$vcf")"
+            bcftools sort -T "$tmp/family_sort" -Oz -o "$compressed" "$vcf"
+            bcftools index -f -t "$compressed"
+        done
+
+        # Combine families for the same sample and sort again because their
+        # genomic positions overlap. Keep distinct MEI records, not just one
+        # record at each position.
+        bcftools concat -a -Ou "$tmp"/*.final_comp.vcf.gz |
+            bcftools sort -T "$tmp/combined_sort" -Oz -o {output.vcf:q}
         tabix -f -p vcf {output.vcf:q}
-        rm -rf {params.tmp:q}
+        test -s {output.vcf:q}
+        test -s {output.tbi:q}
+        echo "[OK] MELT families combined: {output.vcf}"
+        rm -rf "$tmp"
         """
 
 
