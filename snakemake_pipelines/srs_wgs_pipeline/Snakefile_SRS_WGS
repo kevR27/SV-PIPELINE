@@ -512,6 +512,11 @@ rule gridss_sv_calling:
         """
         set -euo pipefail
         mkdir -p {params.workdir:q} "$(dirname {output.vcf:q})"
+        # /DATA is mounted noexec on the Bologna server. Native Java
+        # libraries (especially Snappy) must be unpacked to an exec filesystem.
+        # Keep GRIDSS's large intermediate BAMs/assemblies in the workdir.
+        mkdir -p "$HOME/.cache/gridss-native"
+        export JAVA_TOOL_OPTIONS="${{JAVA_TOOL_OPTIONS:-}} -Dorg.xerial.snappy.tempdir=$HOME/.cache/gridss-native -Djava.io.tmpdir=$HOME/.cache/gridss-native"
         gridss -s preprocess,assemble,call -r {input.ref:q} -o {params.workdir:q}/{wildcards.sample}.gridss.vcf \
             --workingdir {params.workdir:q} -t {threads} {params.exclude} {params.skip} {input.bam:q}
         bcftools sort -Oz -o {output.vcf:q} {params.workdir:q}/{wildcards.sample}.gridss.vcf
