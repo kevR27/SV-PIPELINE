@@ -1,4 +1,48 @@
-# Input/output audit — 13 October 2026
+# Input/output audit
+
+## SRS follow-up — 16 October 2026
+
+Reviewed main at `7f850e6a5b90cceb9dd8a992b3396cdd77be15db`, including the
+recent SRS interpretation module and the user's 32 GB Exomiser setting.
+This review traced the SRS inputs, outputs, tool commands, environments,
+optional steps, candidate tables and plotting dependencies.
+
+| Existing file | Problem corrected |
+| --- | --- |
+| `snakemake_pipelines/srs_wgs_pipeline/Snakefile_SRS_WGS` | Accept spaces in the caller-order list while checking the actual order; correctly quote ID-list filters and several paths; use an existing Python environment for the panel filter; make plots wait for final gene/depth tables; keep preflight errors in a log; correct `benchmark/truari` to `benchmark/truvari`. |
+| `snakemake_pipelines/srs_wgs_pipeline/srs_interpretation.smk` | An absent optional MitoCarta pathway file no longer becomes an invalid `None` rule input or command argument. |
+| `scripts/build_snv_sv_candidates.py` | Check FILTER and the exact ALT genotype before giving a small variant a second-hit label. Select the correct multiallelic ALT using VEP's allele number. Keep uncertain records visible with `SMALL_FILTER`, `SMALL_CALL_STATUS` and `SMALL_VARIANT_REQUIRES_REVIEW`. |
+| `scripts/add_supporting_evidence.py` | Require a passing, called non-reference MELT genotype before using it as support. Reject nonfinite GRIDSS QUAL values when a minimum QUAL is requested. Caller agreement uses the same reads and is not independent validation. |
+| `scripts/preflight_srs_wgs.py` | Show the number and examples of BAM/reference contig mismatches. Keep the strict compatibility check. |
+| `tests/test_srs_downstream_interpretation.py` | Add small synthetic examples proving failed/uncalled small alleles cannot become second hits, while a valid phased pair remains supported; test MELT call-quality filtering. |
+| SRS README | Explain downstream analyses, which tables to read, changes and remaining limits in plain language. |
+
+**Verification:** 142 selected tests passed. Checked 216 rule/configuration
+cases across default, optional-enabled and optional-disabled settings; 210
+rendered successfully and six unrequested cases were explicitly disabled.
+The checks cover input/output/parameter formatting, environment-file presence
+and rendered Bash syntax. Complete `all` plus `all_thesis_plots` dependency
+graphs also passed Snakemake dry runs in all three settings using synthetic
+external input files. A dry run does not execute the tools or validate those
+placeholder inputs as biological data. No patient BAM, actual caller run,
+new Conda installation or Bologna server run was performed.
+
+**Scope and limits:** no new production scripts, ranking systems or environment
+files were added. No config paths, biological SV thresholds, AF review groups,
+clinical classification rules or Exomiser memory setting were changed. The
+small-variant/SV script is shared, so its quality fix also affects the same
+downstream step in LRS. LRS calling, methylation and XCI were not changed.
+
+The early `diagnostic_review` and later `gene_discovery/final` tables are stages
+of the same workflow; they are not independent support. Existing research,
+clinical and Exomiser views have different purposes, so none was deleted.
+No additional plot family was added. GRIDSS-only and MELT-only findings remain
+separate, and small-variant disease review is focused on genes with an SV.
+Coordinate-only caller matching does not establish a reliable SV genotype;
+missing exact IDs or genotype quality remain explicit limitations. Actual
+HG002 truth-set benchmarking and review of real outputs are still required.
+
+## Earlier audit — 13 October 2026
 
 The workflows had execution defects; they were not all correct before this
 review. The fixes below protect the existing biological analysis rather than

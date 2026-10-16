@@ -24,7 +24,7 @@ def open_text(path: str):
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path, "r", encoding="utf-8")
 
 
-def read_phase(path: str, requested=None):
+def read_phase(path: str, requested=None, evidence=None):
     phase = {}
     by_position = {}
     with open_text(path) as handle:
@@ -52,10 +52,24 @@ def read_phase(path: str, requested=None):
             if len(alts) != 1:
                 phased = "NO"  # Do not assign the ALT=1 haplotype to every ALT.
 
-            for alt in alts:
+            for alt_index, alt in enumerate(alts, start=1):
                 if requested is not None and (chrom, pos, alt) not in requested:
                     continue
-                phase[(chrom, pos, alt)] = (gt, ps, phased)
+                key = (chrom, pos, alt)
+                phase[key] = (gt, ps, phased)
+                if evidence is not None:
+                    alleles = re.split(r"[/|]", gt)
+                    if fields[6] not in {"PASS", "."}:
+                        status = "FAILED_FILTER"
+                    elif not alleles or any(a == "." for a in alleles):
+                        status = "MISSING_GENOTYPE"
+                    elif str(alt_index) not in alleles:
+                        status = "ALT_NOT_IN_GENOTYPE"
+                    elif fields[6] == ".":
+                        status = "FILTER_NOT_REPORTED"
+                    else:
+                        status = "CALLED_ALT_PASS"
+                    evidence[key] = (fields[6], status)
             if len(alts) == 1 and (requested is None or (chrom, pos, alts[0]) in requested):
                 by_position[(chrom, pos)] = (gt, ps, phased)
     return phase, by_position
@@ -130,6 +144,24 @@ def parse_uploaded_variant(value: str):
     return chrom, int(pos), alt
 
 
+def vep_variant_key(row):
+    """Use VEP's allele number to select one ALT from an uploaded VCF record."""
+    parsed = parse_uploaded_variant(row.get("Uploaded_variation", "."))
+    if parsed is None:
+        return None
+    chrom, pos, alt = parsed
+    if "," in alt:
+        extra = parse_extra(row.get("Extra", ""))
+        try:
+            allele_number = int(row.get("ALLELE_NUM") or extra.get("ALLELE_NUM", "0"))
+            if allele_number < 1:
+                return None
+            alt = alt.split(",")[allele_number - 1]
+        except (ValueError, IndexError):
+            return None
+    return chrom, pos, alt
+
+
 def parse_location(value: str):
     text = str(value).split("-")[0]
     chrom, pos = text.split(":", 1)
@@ -151,7 +183,7 @@ def main():
     vep = read_vep(args.vep, genes)
     requested = set()
     for _, row in vep.iterrows():
-        parsed = parse_uploaded_variant(row.get("Uploaded_variation", "."))
+        parsed = vep_variant_key(row)
         if parsed:
             requested.add(parsed)
         else:
@@ -160,11 +192,13 @@ def main():
                 requested.add((chrom, pos, str(row.get("Allele", "."))))
             except (ValueError, TypeError):
                 pass
-    phase, phase_by_position = read_phase(args.phased_vcf, requested)
+    small_evidence = {}
+    phase, _ = read_phase(args.phased_vcf, requested, small_evidence)
 
     output_columns = [
         "GENE", "SMALL_VARIANT", "CHROM", "POS", "ALT", "CONSEQUENCE",
         "IMPACT", "CLINVAR_OR_EXISTING_ID", "SMALL_GT", "SMALL_PS",
+        "SMALL_FILTER", "SMALL_CALL_STATUS",
         "SMALL_PHASED", "SMALL_ALT_HAPLOTYPE", "SV_ID", "SVTYPE",
         "SV_GENE_EFFECT", "SV_POPULATION_STATUS", "SV_CALL_SUPPORT",
         "GENE_INHERITANCE_CLASS", "GENE_MOI_SET",
@@ -191,7 +225,7 @@ def main():
         if impact not in KEEP_IMPACT and not (consequences & KEEP_CONSEQUENCE):
             continue
 
-        uploaded = parse_uploaded_variant(row.get("Uploaded_variation", "."))
+        uploaded = vep_variant_key(row)
         if uploaded:
             chrom, pos, uploaded_alt = uploaded
             alt = uploaded_alt
@@ -203,7 +237,11 @@ def main():
             alt = str(row.get("Allele", "."))
         # Position alone can match a different allele. Leave unmatched alleles
         # unresolved rather than borrowing that allele's phase.
-        gt, ps, phased = phase.get((chrom, pos, alt), (".", ".", "NO"))
+        key = (chrom, pos, alt)
+        gt, ps, phased = phase.get(key, (".", ".", "NO"))
+        small_filter, call_status = small_evidence.get(key, (".", "NO_EXACT_VCF_MATCH"))
+        if call_status != "CALLED_ALT_PASS":
+            phased = "NO"  # Failed/unknown calls cannot support a cis/trans claim.
         if gt not in {"0|1", "1|0", "0/1", "1/0", "1|1", "1/1"} or "," in alt:
             phased = "NO"  # allele-specific multiallelic phase needs separate review.
         small_rows.append({
@@ -216,6 +254,8 @@ def main():
             "IMPACT": impact,
             "CLINVAR_OR_EXISTING_ID": row.get("Existing_variation", "."),
             "SMALL_GT": gt,
+            "SMALL_FILTER": small_filter,
+            "SMALL_CALL_STATUS": call_status,
             "SMALL_PS": ps,
             "SMALL_PHASED": phased,
             "SMALL_ALT_HAPLOTYPE": alt_haplotype(gt) if phased == "YES" else ".",
@@ -278,7 +318,9 @@ def main():
                 }
             )
 
-            if is_recessive and relation == "TRANS":
+            if small_var["SMALL_CALL_STATUS"] != "CALLED_ALT_PASS":
+                recessive_status = "SMALL_VARIANT_REQUIRES_REVIEW"
+            elif is_recessive and relation == "TRANS":
                 recessive_status = "AR_TRANS_SNV_SV_CANDIDATE"
             elif is_recessive and relation == "CIS":
                 recessive_status = "AR_CIS_NOT_BIALLELIC_BY_PHASE"
@@ -303,7 +345,9 @@ def main():
                 "PHASE_RELATION": relation,
                 "RECESSIVE_PAIR_STATUS": recessive_status,
                 "INTERPRETATION": (
-                    "Same-gene small variant and SV. An AR trans-pair label is "
+                    "Same-gene small variant and SV; check SMALL_CALL_STATUS. "
+                    "A failed, missing or unconfirmed small-variant call cannot "
+                    "support a second-hit label. An AR trans-pair label is "
                     "reported only when both variants are phased in the same "
                     "phase set on opposite haplotypes. Cis is not biallelic; "
                     "unresolved phase does not imply cis or trans."

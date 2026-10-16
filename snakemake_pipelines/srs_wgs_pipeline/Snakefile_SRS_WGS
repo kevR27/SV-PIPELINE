@@ -81,7 +81,10 @@ SURVIVOR_REQUIRE_SAME_TYPE = config.get("survivor_require_same_type", 1)
 SURVIVOR_REQUIRE_SAME_STRAND = config.get("survivor_require_same_strand", 1)
 SURVIVOR_USE_SIZE_RATIO = config.get("survivor_use_size_ratio", 0)
 SURVIVOR_MIN_SIZE = config.get("survivor_min_size", 50)
-SURVIVOR_CALLER_ORDER = config.get("survivor_caller_order", "Manta,Delly")
+# Spaces in a comma-separated setting do not change the caller order.
+SURVIVOR_CALLER_ORDER = ",".join(
+    name.strip() for name in config.get("survivor_caller_order", "Manta,Delly").split(",")
+)
 if SURVIVOR_CALLER_ORDER != "Manta,Delly":
     raise ValueError("survivor_caller_order must be Manta,Delly to match the actual input VCF order")
 MULTI_CALLER_MIN_SUPPORT = config.get("multi_caller_min_support", 2)
@@ -233,7 +236,7 @@ if CANDIDATE_TRUTH:
 SV_BENCHMARK_SAMPLES = sorted(set(SAMPLES) & set(SV_TRUTH_VCFS))
 if any(not SV_TRUTH_BEDS.get(sample) for sample in SV_BENCHMARK_SAMPLES):
     raise ValueError("Set sv_truth_beds for every benchmark sample; absence from a truth VCF alone is not a reliable negative")
-SV_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/truari", sample=SV_BENCHMARK_SAMPLES)
+SV_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/truvari", sample=SV_BENCHMARK_SAMPLES)
 
 
 # Default target: complete analysis and review tables. Figures have their own target.
@@ -335,6 +338,8 @@ rule srs_preflight:
     output:
         tsv=PATH + "reference_checks/srs_preflight.tsv",
         json=PATH + "reference_checks/srs_preflight.json"
+    log:
+        PATH + "reference_checks/srs_preflight.log"
     params:
         gridss=str(GRIDSS_ENABLED).lower(), mt=str(MTDNA_ENABLED).lower(), mito=str(MITOCARTA_ENABLED).lower(),
         mito_file=("--mitocarta " + shlex.quote(str(MITOCARTA_FILE)) if MITOCARTA_FILE else ""),
@@ -343,6 +348,7 @@ rule srs_preflight:
         ENV_DIR + "/qc.yaml"
     shell:
         """
+        mkdir -p "$(dirname {log:q})"
         python {input.script:q} --reference {REF:q} --panel-bed {PANEL_BED:q} --gene-list {GENE_LIST:q} \
           --nuclear-mito-bed {NUCLEAR_MITO_BED:q} --gene-bed {GENE_BED:q} \
           --exclude-bed {EXCLUDE_BED:q} --repeat-catalog {EH_CATALOG:q} --hpo-seeds {DISCOVERY_HPO_FILE:q} \
@@ -352,7 +358,8 @@ rule srs_preflight:
           --gridss-enabled {params.gridss} --mt-enabled {params.mt} --mt-contig {MT_CONTIG:q} \
           --mitocarta-enabled {params.mito} {params.mito_file} {params.pathways} \
           --bam {input.bams:q} --bai {input.bais:q} \
-          --output-tsv {output.tsv:q} --output-json {output.json:q}
+          --output-tsv {output.tsv:q} --output-json {output.json:q} > {log:q} 2>&1 || {{ cat {log:q} >&2; exit 1; }}
+        cat {log:q}
         """
 
 
@@ -554,18 +561,19 @@ rule filter_manta_sv:
         ids=PATH + "{sample}/parsed/{sample}.manta.pass.ids.txt",
         vcf=PATH + "{sample}/sv/manta/{sample}_manta.filtered.vcf"
     params:
+        id_filter=lambda wc, output: "ID=@" + str(output.ids),
         gq=lambda wc: f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else "",
-        blacklist=lambda wc: f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
+        blacklist=lambda wc: "--blacklist-bed " + shlex.quote(str(EVIDENCE_BLACKLIST_BED)) if EVIDENCE_BLACKLIST_BED else ""
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
         """
         set -euo pipefail
-        python {FILTER_SV_EVIDENCE_SCRIPT} --caller-tsv {input.tsv:q} --caller Manta \
+        python {FILTER_SV_EVIDENCE_SCRIPT:q} --caller-tsv {input.tsv:q} --caller Manta \
             --min-support {EVIDENCE_MIN_SUPPORT} --min-svlen {EVIDENCE_MIN_SVLEN} \
             --max-svlen {EVIDENCE_MAX_SVLEN} {CANONICAL_FLAG} {params.gq} {params.blacklist} \
             --output-tsv {output.tsv:q} --output-ids {output.ids:q}
-        bcftools view -i "ID=@{output.ids:q}" -Ov -o {output.vcf:q} {input.vcf:q}
+        bcftools view -i {params.id_filter:q} -Ov -o {output.vcf:q} {input.vcf:q}
         """
 
 
@@ -578,18 +586,19 @@ rule filter_delly_sv:
         ids=PATH + "{sample}/parsed/{sample}.delly.pass.ids.txt",
         vcf=PATH + "{sample}/sv/delly/{sample}_delly.filtered.vcf"
     params:
+        id_filter=lambda wc, output: "ID=@" + str(output.ids),
         gq=lambda wc: f"--min-gq {EVIDENCE_MIN_GQ}" if EVIDENCE_MIN_GQ is not None else "",
-        blacklist=lambda wc: f"--blacklist-bed {EVIDENCE_BLACKLIST_BED}" if EVIDENCE_BLACKLIST_BED else ""
+        blacklist=lambda wc: "--blacklist-bed " + shlex.quote(str(EVIDENCE_BLACKLIST_BED)) if EVIDENCE_BLACKLIST_BED else ""
     conda:
         CONDAENV + "annotsv.yaml"
     shell:
         """
         set -euo pipefail
-        python {FILTER_SV_EVIDENCE_SCRIPT} --caller-tsv {input.tsv:q} --caller Delly \
+        python {FILTER_SV_EVIDENCE_SCRIPT:q} --caller-tsv {input.tsv:q} --caller Delly \
             --min-support {EVIDENCE_MIN_SUPPORT} --min-svlen {EVIDENCE_MIN_SVLEN} \
             --max-svlen {EVIDENCE_MAX_SVLEN} {CANONICAL_FLAG} {params.gq} {params.blacklist} \
             --output-tsv {output.tsv:q} --output-ids {output.ids:q}
-        bcftools view -i "ID=@{output.ids:q}" -Ov -o {output.vcf:q} {input.vcf:q}
+        bcftools view -i {params.id_filter:q} -Ov -o {output.vcf:q} {input.vcf:q}
         """
 
 
@@ -622,11 +631,11 @@ rule survivor_merge:
         SURVIVOR merge {output.list_file:q} {SURVIVOR_MAX_DISTANCE} {SURVIVOR_MIN_SUPPORT} \
             {SURVIVOR_REQUIRE_SAME_TYPE} {SURVIVOR_REQUIRE_SAME_STRAND} \
             {SURVIVOR_USE_SIZE_RATIO} {SURVIVOR_MIN_SIZE} {output.raw:q}
-        python {SCRIPTS:q}/sanitize_jasmine_vcf.py --input {output.raw:q} --output {params.sanitized} --reference-fai {input.fai:q}
+        python {SCRIPTS:q}/sanitize_jasmine_vcf.py --input {output.raw:q} --output {params.sanitized:q} --reference-fai {input.fai:q}
         rm -rf {params.tmp:q}; mkdir -p {params.tmp:q}
-        bcftools sort -T {params.tmp:q} -Oz -o {output.vcf:q} {params.sanitized}
+        bcftools sort -T {params.tmp:q} -Oz -o {output.vcf:q} {params.sanitized:q}
         tabix -f -p vcf {output.vcf:q}
-        rm -rf {params.tmp:q}; rm -f {params.sanitized}
+        rm -rf {params.tmp:q}; rm -f {params.sanitized:q}
         """
 
 
@@ -880,9 +889,9 @@ rule annotsv_annotation:
         set -euo pipefail
         mkdir -p {params.outdir:q}
         : > {output.unannotated:q}
-        AnnotSV -SVinputFile {input.vcf:q} -annotationsDir {ANNOTSV_ANNOTATIONS_DIR} \
+        AnnotSV -SVinputFile {input.vcf:q} -annotationsDir {ANNOTSV_ANNOTATIONS_DIR:q} \
             -outputDir {params.outdir:q} -outputFile {wildcards.sample}_merged_SV.annotsv.tsv \
-            -genomeBuild GRCh38 -candidateGenesFile {GENE_LIST} -candidateGenesFiltering 0 \
+            -genomeBuild GRCh38 -candidateGenesFile {GENE_LIST:q} -candidateGenesFiltering 0 \
             -tx ENSEMBL -REreport 1 -benignAF {ANNOTSV_BENIGN_AF} -hpo ""
         """
 
@@ -984,7 +993,7 @@ rule vep_sv_annotation:
         set -euo pipefail
         mkdir -p "$(dirname {output.txt:q})"
         vep --input_file {input.vcf:q} --format vcf --output_file {output.txt:q} --cache --offline \
-            --dir_cache {VEP_CACHE_DIR} --cache_version {VEP_CACHE_VERSION} --assembly {VEP_ASSEMBLY} --canonical --overlaps \
+            --dir_cache {VEP_CACHE_DIR:q} --cache_version {VEP_CACHE_VERSION} --assembly {VEP_ASSEMBLY} --canonical --overlaps \
             --tab --force_overwrite --flag_pick --symbol --biotype --numbers --max_sv_size 250000000 --batch_size 100 --fork {threads}
         """
 
@@ -996,7 +1005,7 @@ rule vep_sv_annotation_panel_only:
     output:
         txt=PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt"
     conda:
-        ENV_DIR + "/srs_vep.yaml"
+        CONDAENV + "annotsv.yaml"
     shell:
         """
         python {SCRIPTS:q}/filter_vep_panel.py --vep {input.txt:q} --genes {input.genes:q} --output {output.txt:q}
@@ -1227,11 +1236,11 @@ rule add_supporting_evidence:
         tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_supporting_evidence.tsv"
     params:
         gridss=lambda wc: (
-            f"--gridss {PATH}{wc.sample}/sv/gridss/{wc.sample}.gridss.vcf.gz"
+            "--gridss " + shlex.quote(f"{PATH}{wc.sample}/sv/gridss/{wc.sample}.gridss.vcf.gz")
             if GRIDSS_ENABLED else ""
         ),
         melt=lambda wc: (
-            f"--melt {PATH}{wc.sample}/mei/melt/{wc.sample}.MEI.merged.vcf.gz"
+            "--melt " + shlex.quote(f"{PATH}{wc.sample}/mei/melt/{wc.sample}.MEI.merged.vcf.gz")
             if MELT_ENABLED else ""
         ),
         gridss_qual=lambda wc: f"--gridss-min-qual {GRIDSS_MIN_QUAL}" if GRIDSS_MIN_QUAL is not None else ""
@@ -1261,7 +1270,7 @@ rule mitocarta_context_srs:
         tsv=PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_mitocarta.tsv",
         summary=PATH + "{sample}/gene_discovery/{sample}_mitocarta_summary.tsv"
     params:
-        pathways=lambda wc: f"--pathways-gmx {MITOCARTA_PATHWAYS}" if MITOCARTA_PATHWAYS else ""
+        pathways=lambda wc: "--pathways-gmx " + shlex.quote(str(MITOCARTA_PATHWAYS)) if MITOCARTA_PATHWAYS else ""
     conda:
         CONDAENV + "plots.yaml"
     shell:
@@ -1364,6 +1373,9 @@ rule all_thesis_plots:
 rule thesis_plots_sample:
     input:
         exomiser_comparison=rules.compare_exomiser_hon.output.tsv,
+        final_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
+        depth_summary=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth.tsv",
+        depth_bins_final=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth_bins.tsv",
         candidates=rules.build_diagnostic_candidates.output.tsv,
         evidence=diagnostic_source,
         coverage=rules.mosdepth_coverage.output.summary,
@@ -1482,7 +1494,7 @@ rule benchmark_sv_callset:
         bed=lambda wc: SV_TRUTH_BEDS[wc.sample],
         ref=REF
     output:
-        directory(PATH + "{sample}/benchmark/truari")
+        directory(PATH + "{sample}/benchmark/truvari")
     conda:
         ENV_DIR + "/benchmark.yaml"
     shell:

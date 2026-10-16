@@ -560,9 +560,9 @@ def _main():
         print("[SKIP] no modkit bedMethyl/.bed.gz file found")
 
     if args.platform == "srs":
-        # These figures use detailed LRS event-ranking or multimodal columns.
-        # SRS has no equivalent outputs; its simpler SV overview and
-        # evidence figures already describe the available short-read results.
+        # Keep this set of LRS figures out of the SRS overview. SRS now has
+        # event-ranking tables too, but does not have LRS methylation or SV
+        # phase evidence. Its overview and evidence figures are selected above.
         lrs_event_plots = {
             "plot_large_complex_candidates.py", "plot_gene_sv_spectrum.py",
             "plot_gene_multimodal_summary.py", "plot_sv_gene_associations.py",

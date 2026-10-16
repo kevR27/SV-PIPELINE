@@ -87,6 +87,62 @@ SV against an SNV. For unphased SVs, the pair table therefore records
 Similarly, flanking-depth changes from the same BAM are supportive context,
 not independent experimental validation.
 
+### What does downstream analysis mean here?
+
+It means the work **after finding variants**: adding information, checking
+the evidence, choosing what to review first, and making figures. These steps
+are in the workflow; that does not mean they have already run on your samples.
+
+All paths below are inside `<sample>/` in your results folder.
+
+| Analysis | Question it helps answer | Where to look |
+| --- | --- | --- |
+| Variant effect and disease mechanism | Does the change remove a gene, break part of it, or change its copy number? Does that fit the known disease mechanism? | `gene_discovery/<sample>_allele_assessment.tsv` and `gene_discovery/final/<sample>_sv_gene_events.tsv.gz` |
+| Population frequency | Has a similar variant been reported in a population database? | AF and population-status columns in the candidate tables; missing AF remains different from measured AF <=1% |
+| HON gene and phenotype review | Which genes fit optic neuropathy and the chosen HPO terms? | `gene_discovery/final/<sample>_gene_candidates.ranked.tsv` and the separate `gene_discovery/<sample>_exomiser_comparison.tsv` |
+| Read and copy-number support | Do the reads and depth support the SV? | `gene_discovery/final/<sample>_large_sv_depth.tsv`, supporting-evidence columns and `diagnostic_review/samplot/` |
+| Small variant plus SV review | Is there a possible second change in the same gene? | `gene_discovery/final/<sample>_snv_sv_candidates.tsv`; check call quality and whether phase is known |
+| Mitochondrial gene review | Which nuclear genes have a known mitochondrial role? | `gene_discovery/final/<sample>_mitochondrial_gene_ranking.ranked.tsv` |
+| Clinical candidate review | Which findings should be reviewed first when classification and HON relevance are considered together? | Start with `gene_discovery/final/<sample>_clinical_candidates.ranked.tsv`; read flags and missing evidence, not only rank |
+| Figures and separate filter views | Where are the variants, what patterns appear, and what do the review filters retain? | `plots/00_start_here/START_HERE.txt`, `plots/` and `downstream_filtering/` |
+
+The `diagnostic_review` tables remain useful earlier views. The `final` tables
+also use the later event/depth/pair review. They are two stages of the same
+analysis, not independent evidence to count twice. The original HON research
+ranking, clinical order and Exomiser comparison answer different questions;
+agreement between them is not required to retain a candidate.
+
+For the small-variant/SV table, `SMALL_CALL_STATUS=CALLED_ALT_PASS` means the
+small variant passed the caller's filter and that exact alternative allele is
+present in the genotype. It does **not** mean the variant is pathogenic.
+Failed, uncalled or unmatched records remain visible as
+`SMALL_VARIANT_REQUIRES_REVIEW` and cannot supply a second-hit label. A missing
+filter status is also kept for review. Even a passing pair still needs review
+of frequency, effect, inheritance and, where possible, family data.
+
+### What this workflow does not yet establish
+
+- Genome-wide small variants are found and annotated, but this is not a
+  complete disease ranking of every small variant. The small-variant/SV table
+  focuses on genes with an SV and selected coding/splice effects. The full VCF
+  and VEP table retain the other variants, including noncoding ones.
+- GRIDSS and MELT add support to existing SV rows. Findings present only in
+  their own VCFs are not automatically added to the main clinical table;
+  inspect those separate files too. Nearby breakpoint support alone does not
+  establish the exact rearrangement structure.
+- SV genotypes transferred from callers require an exact caller-ID link and
+  suitable quality/depth evidence. A coordinate-only match stays unresolved;
+  inspect `CALLER_EVIDENCE_MATCH` and genotype-source notes. Do not infer
+  inheritance from a merged VCF genotype or a missing family record.
+- AnnotSV classification and predicted effects are evidence for review, not
+  proof that a finding causes HON. The joint rank is not a disease probability.
+
+The next useful check is the existing HG002/Truvari benchmark with matching
+truth files and confident regions, followed by review of missed and extra
+calls. That measures performance on that control; it is not full diagnostic
+validation. A separate small-variant disease review would be needed if your
+goal expands from SV investigation to all possible genetic causes of HON.
+
 To dry-run the updated complete dependency graph, including the new
 interpretation stages and their upstream requirements, use:
 
@@ -373,7 +429,7 @@ For prioritisation, fill `validation/candidate_truth.template.tsv` and set
 `candidate_truth_tsv` (GENE required, SV_ID optional). For SV detection, set
 `sv_truth_vcfs` and the matching `sv_truth_beds` for each control sample.
 Confident regions must use the same assembly. The existing result folder is
-`<sample>/benchmark/truari/`.
+`<sample>/benchmark/truvari/`.
 
 Truvari compares PASS events ≥50 bp by type, coordinates and size
 (`--pctseq 0`, `--pctsize 0.7`). This is not sequence-resolved allele validation.
@@ -699,7 +755,39 @@ BWA index, annotation bundle, HPO/Monarch resource, or enabled optional resource
 is missing. Each sample also receives `qc/*.wgs_qc_summary.tsv`; threshold
 failures are marked `REVIEW` instead of silently discarding calls.
 
-## Latest audit — 13 October 2026
+## Latest SRS check — 16 October 2026
+
+The input/output review found and fixed real problems:
+
+- Spaces in `Manta, Delly` no longer stop the workflow. Reversing the caller
+  order is still rejected because it would give the wrong caller labels.
+- Leaving the optional MitoCarta pathway file empty no longer breaks rule loading.
+- Failed or uncalled small variants cannot become possible second hits.
+  At sites with more than one alternative allele, the VEP allele number is
+  used to check the right genotype allele. Unmatched alleles stay unresolved.
+- Failed, reference-genotype or missing-genotype MELT calls cannot supply
+  support to a candidate. The original MELT output is still kept for review.
+- Plots wait for their final gene and depth tables. Several file-path quoting
+  errors were fixed, and the small Python panel-filter step now uses an
+  existing environment that explicitly includes Python.
+- Preflight keeps an error log and shows examples of reference mismatches.
+  The benchmark folder spelling is now `truvari`; old `truari` folders are
+  not moved or deleted automatically.
+
+Verification: **142 selected tests passed**. We checked **216 rule/configuration
+cases** (including explicitly disabled cases), and complete `all` plus
+`all_thesis_plots` dry runs passed in three configurations. These used local
+test files. No patient analysis, full caller run or Bologna installation was
+tested here. See [the detailed audit](../../docs/PIPELINE_INPUT_OUTPUT_AUDIT.md).
+
+No new production script or environment file was added. Your sample paths,
+VEP 116 setting, original ranking and 32 GB Exomiser setting were preserved.
+The small-variant/SV quality fix is in a shared script and therefore also
+applies to LRS when that downstream step is rerun; LRS calling and XCI were
+not changed. Keep your server config and sample paths when updating code.
+Then run the usual SRS dry run shown above and inspect the jobs before running.
+
+## Earlier audit — 13 October 2026
 
 See [the shared input/output audit](../../docs/PIPELINE_INPUT_OUTPUT_AUDIT.md).
 245 tests passed, with follow-up SRS checks after the index-discovery fix.

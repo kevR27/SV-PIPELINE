@@ -49,7 +49,12 @@ def check_bam_reference(bam_path, index_path, reference_index, checks):
                 if len(fields := line.split("\t")) >= 2
             }
             with pysam.AlignmentFile(bam_path, "rb", index_filename=index_path) as bam:
-                same_reference = all(reference_contigs.get(name) == length for name, length in zip(bam.references, bam.lengths))
+                mismatches = [
+                    f"{name}(BAM={length},FASTA={reference_contigs.get(name, 'ABSENT')})"
+                    for name, length in zip(bam.references, bam.lengths)
+                    if reference_contigs.get(name) != length
+                ]
+                same_reference = not mismatches
                 sorted_bam = bam.header.to_dict().get("HD", {}).get("SO") == "coordinate"
                 indexed = bam.check_index()
                 # Callers discover the index beside the BAM; most cannot use
@@ -67,6 +72,8 @@ def check_bam_reference(bam_path, index_path, reference_index, checks):
                         break
                 status = "PASS" if same_reference and sorted_bam and indexed and tool_visible_index and paired > 0 else "FAIL"
                 detail = f"same_reference={same_reference};coordinate_sorted={sorted_bam};paired_reads={paired}/{observed} checked;tool_visible_index={tool_visible_index}"
+                if mismatches:
+                    detail += f";mismatching_contigs={len(mismatches)};examples=" + ",".join(mismatches[:5])
         except (ValueError, OSError) as error:
             detail = str(error)
     checks.append({"check": label, "path": f"{bam_path};{detail}", "status": status})

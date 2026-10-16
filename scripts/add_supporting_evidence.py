@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Add independent supporting evidence to the final SRS SV/gene table.
+Add supporting evidence from the same sequencing data to the final SRS SV/gene table.
 
 This script does not change which SVs exist in the integrated callset.
 It only adds evidence columns showing whether a candidate is also supported by:
@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import math
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -213,7 +214,7 @@ def load_gridss(path: str | None, min_qual: float | None = None):
         if record["filter"] not in {"PASS", "."}:
             continue
         qual = as_float(record.get("qual"))
-        if min_qual is not None and (qual is None or qual < min_qual):
+        if min_qual is not None and (qual is None or not math.isfinite(qual) or qual < min_qual):
             continue
         chromosome_1, position_1, chromosome_2, position_2 = parse_breakend(record)
 
@@ -238,6 +239,13 @@ def load_melt(path: str | None):
         return index
 
     for record in read_vcf(path):
+        # A nearby failed or reference-genotype MELT record is not support.
+        gt = record["sample"].get("GT", ".")
+        alleles = re.split(r"[/|]", gt)
+        if record["filter"] != "PASS" or any(a == "." for a in alleles):
+            continue
+        if not any(a.isdigit() and int(a) > 0 for a in alleles):
+            continue
         index[record["chrom"]].append(record)
 
     return index

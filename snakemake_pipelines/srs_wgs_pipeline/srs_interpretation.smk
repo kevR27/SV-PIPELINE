@@ -126,10 +126,12 @@ rule srs_build_hon_hpo_reference:
         nodes=MONARCH_NODES,
         edges=MONARCH_EDGES,
         seeds=DISCOVERY_HPO_FILE,
-        pathways=MITOCARTA_PATHWAYS,
+        pathways=[MITOCARTA_PATHWAYS] if MITOCARTA_PATHWAYS else [],
         script=SCRIPTS + "/build_hon_hpo_reference.py"
     output:
         tsv=PATH + "cohort_analysis/reference/hon_hpo_reference.tsv"
+    params:
+        pathways=("--mitopathways-gmx " + shlex.quote(str(MITOCARTA_PATHWAYS))) if MITOCARTA_PATHWAYS else ""
     conda:
         CONDAENV + "monarch.yaml"
     shell:
@@ -138,7 +140,7 @@ rule srs_build_hon_hpo_reference:
         mkdir -p "$(dirname {output.tsv:q})"
         python {input.script:q} --panel {input.panel:q} \
             --nodes {input.nodes:q} --edges {input.edges:q} \
-            --hon-seeds {input.seeds:q} --mitopathways-gmx {input.pathways:q} \
+            --hon-seeds {input.seeds:q} {params.pathways} \
             --output {output.tsv:q}
         test -s {output.tsv:q}
         """
