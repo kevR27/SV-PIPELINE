@@ -105,6 +105,14 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("MISSING_PN", rows[0]["flags"])
         self.assertIn("MISSING_EVAL1", rows[0]["flags"])
 
+    def test_gridss_snappy_native_library_uses_home_tmp(self):
+        snake = (ROOT / "snakemake_pipelines" / "srs_wgs_pipeline" / "Snakefile_SRS_WGS").read_text()
+        rule = snake.split("rule gridss_sv_calling:", 1)[1].split("\nrule ", 1)[0]
+        self.assertIn("org.xerial.snappy.tempdir=$HOME/.cache/gridss-native", rule)
+        self.assertIn("java.io.tmpdir=$HOME/.cache/gridss-native", rule)
+        self.assertIn("mkdir -p \"$HOME/.cache/gridss-native\"", rule)
+        self.assertIn('include: "srs_interpretation.smk"', snake)
+
     def test_gridss_rejects_failed_filter_and_low_qual(self):
         script = module("support_srs", SCRIPTS / "add_supporting_evidence.py")
         with tempfile.TemporaryDirectory() as tmp:
