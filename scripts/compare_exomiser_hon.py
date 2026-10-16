@@ -105,7 +105,13 @@ def backend_resource_paths(jar, data_dir, genome_version, phenotype_version):
     paths = [Path(jar), genome / f"{prefix}_transcripts_ensembl.ser",
              genome / f"{prefix}_genome.mv.db", genome / f"{prefix}_variants.mv.db",
              genome / f"{prefix}_clinvar.mv.db", phenotype / f"{phenotype_version}_phenotype.mv.db",
-             phenotype / "rw_string_10.mv", phenotype / "rw_string_9_05_id2index.gz"]
+             phenotype / "rw_string_10.mv"]
+    # Do not require an older random-walk index that is absent from the official
+    # 2512 phenotype archive. If installed, still track it as an input so
+    # changes invalidate the cached phenotype result.
+    optional_index = phenotype / "rw_string_9_05_id2index.gz"
+    if optional_index.is_file():
+        paths.append(optional_index)
     # Keep the distribution's lib folder beside its JAR. Some distributions
     # depend on these libraries; updates must invalidate the cached result too.
     paths.extend(sorted((Path(jar).parent / "lib").glob("*.jar")))
@@ -471,9 +477,18 @@ def main():
     comparison.add_argument("--backend-provenance", help="Completed offline CLI run JSON")
     comparison.add_argument("--require-exomiser", action="store_true")
     args = parser.parse_args()
+    if args.command == "run-offline":
+        # Create the log before validating files or Java. Earlier failures
+        # occurred before the subprocess and left an empty Exomiser log.
+        log_path = Path(args.log)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("Starting offline Exomiser preflight.\n", encoding="utf-8")
     try:
         {"prepare-hpo": prepare_query, "run-offline": run_offline, "compare": compare}[args.command](args)
     except (ValueError, OSError) as error:
+        if args.command == "run-offline":
+            with Path(args.log).open("a", encoding="utf-8") as handle:
+                handle.write(f"[ERROR] {error}\n")
         parser.exit(2, f"[ERROR] {error}\n")
 
 
