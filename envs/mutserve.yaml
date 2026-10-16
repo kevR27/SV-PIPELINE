@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  - python=3.11
   - mutserve=2.0.3
   - samtools>=1.20
   - bcftools>=1.20
