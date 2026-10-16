@@ -568,6 +568,17 @@ does not prove its installation completed. The table's last column is the
 environment path. The commands below select it by the YAML filename rather
 than guessing its hash. Stop if a selection is empty or does not name a directory.
 
+### Manta on the server's noexec /DATA filesystem
+
+The SRS Manta rule creates `runWorkflow.py` under its result directory
+on `/DATA`. Since `/DATA` is `noexec`, the workflow must be launched
+through `python2 path/to/runWorkflow.py`, not by executing the file
+directly. The generated script remains in the results directory, while
+the Python 2 interpreter is supplied by the Manta Conda environment.
+This avoids the initial `Permission denied` error from the mount.
+Any further Manta subprocess or runtime issue must be checked in its
+`rundir/workspace/pyflow.data/logs/` logs.
+
 ### GRIDSS native libraries on the Bologna server
 
 The `/DATA` filesystem is mounted with `noexec`. GRIDSS 2.13.2 can
