@@ -568,6 +568,23 @@ does not prove its installation completed. The table's last column is the
 environment path. The commands below select it by the YAML filename rather
 than guessing its hash. Stop if a selection is empty or does not name a directory.
 
+### GRIDSS native libraries on the Bologna server
+
+The `/DATA` filesystem is mounted with `noexec`. GRIDSS 2.13.2 can
+process reads and assemblies there, but a Snappy `.so` library extracted
+there fails with `UnsatisfiedLinkError: failed to map segment`.
+The SRS `gridss_sv_calling` rule now sets Java's
+`org.xerial.snappy.tempdir` and `java.io.tmpdir` to
+`$HOME/.cache/gridss-native` for this command only. The much larger
+GRIDSS intermediate files remain under `sv/gridss/work/` on `/DATA`.
+The user's home filesystem must allow executing native shared libraries.
+
+When restarting a failed GRIDSS run, keep the existing work directory:
+GRIDSS can reuse completed preprocessing and assembly outputs.
+Confirm the new full log does not still extract
+`snappy-*-libsnappyjava.so` under `/DATA` before starting another
+whole-genome run.
+
 ### GRIDSS: activate, check, prepare the same FASTA
 
 ```bash
