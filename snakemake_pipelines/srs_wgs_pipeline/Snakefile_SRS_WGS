@@ -454,7 +454,7 @@ rule manta_sv_calling:
         mkdir -p "$(dirname {output.vcf:q})"
         rm -rf {params.rundir:q}
         configManta.py --bam {input.bam:q} --referenceFasta {input.ref:q} --runDir {params.rundir:q}
-        {params.rundir:q}/runWorkflow.py -m local -j {threads}
+        python2 {params.rundir:q}/runWorkflow.py -m local -j {threads}
         cp {params.rundir:q}/results/variants/diploidSV.vcf.gz {output.original:q}
         # Manta 1.6 reports inversion junctions as BND. Its supplied converter
         # exposes INV3/INV5 for type-aware comparison with DELLY.
