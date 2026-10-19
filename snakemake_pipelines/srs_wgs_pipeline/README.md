@@ -570,14 +570,26 @@ than guessing its hash. Stop if a selection is empty or does not name a director
 
 ### Manta on the server's noexec /DATA filesystem
 
-The SRS Manta rule creates `runWorkflow.py` under its result directory
-on `/DATA`. Since `/DATA` is `noexec`, the workflow must be launched
-through `python2 path/to/runWorkflow.py`, not by executing the file
-directly. The generated script remains in the results directory, while
-the Python 2 interpreter is supplied by the Manta Conda environment.
-This avoids the initial `Permission denied` error from the mount.
-Any further Manta subprocess or runtime issue must be checked in its
-`rundir/workspace/pyflow.data/logs/` logs.
+Manta 1.6.0 uses Python 2.7. The Manta Conda environment explicitly
+pins `python=2.7`; without it, `configManta.py` may stop with
+`/usr/bin/env: python2: No such file or directory`. The pipeline
+checks for `python2` before launching the caller, then runs
+`configManta.py` through that interpreter.
+
+Manta creates `runWorkflow.py` in its results directory on `/DATA`.
+Since `/DATA` is `noexec`, the generated script is also invoked as
+`python2 path/to/runWorkflow.py`, not executed directly. This avoids
+a filesystem-related `Permission denied` error.
+
+After merging a Manta environment change into the server checkout,
+Snakemake should create a new hashed Conda environment with Python 2.7
+when the Manta rule is requested with `--use-conda`. Check that
+`python2 --version` works inside that new environment. Do not add
+Python 2 to the Snakemake runner or other caller environments.
+
+If Manta subsequently fails inside its generated workflow, inspect
+`rundir/workspace/pyflow.data/logs/`; the interpreter fix alone does
+not establish a successful HG002 analysis.
 
 ### GRIDSS native libraries on the Bologna server
 
