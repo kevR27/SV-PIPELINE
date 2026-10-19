@@ -105,6 +105,16 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("MISSING_PN", rows[0]["flags"])
         self.assertIn("MISSING_EVAL1", rows[0]["flags"])
 
+    def test_manta_run_script_uses_python2_on_noexec_filesystem(self):
+        snake = (SRS / "Snakefile_SRS_WGS").read_text()
+        manta_rule = snake.split("rule manta_sv_calling:", 1)[1].split("\nrule ", 1)[0]
+        self.assertIn("python2 {params.rundir:q}/runWorkflow.py -m local -j {threads}", manta_rule)
+        self.assertIn('python2 "$(command -v configManta.py)"', manta_rule)
+        self.assertIn("command -v python2", manta_rule)
+        manta_env = (ROOT / "envs" / "manta.yaml").read_text()
+        self.assertIn("  - python=2.7", manta_env)
+        self.assertNotIn("\n        {params.rundir:q}/runWorkflow.py", manta_rule)
+
     def test_gridss_snappy_native_library_uses_home_tmp(self):
         snake = (ROOT / "snakemake_pipelines" / "srs_wgs_pipeline" / "Snakefile_SRS_WGS").read_text()
         rule = snake.split("rule gridss_sv_calling:", 1)[1].split("\nrule ", 1)[0]
