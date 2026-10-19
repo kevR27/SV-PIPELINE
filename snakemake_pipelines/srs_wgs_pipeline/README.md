@@ -751,6 +751,52 @@ passes the sample name and writes a DeepVariant log under
 `<sample>/logs/deepvariant/`. Server container permissions, CPU compatibility
 and a real WGS run still need verification; they were not tested here.
 
+### Optional NVIDIA GPU for DeepVariant
+
+DeepVariant 1.10.0 has two official images: the CPU image
+`docker://google/deepvariant:1.10.0` and the GPU image
+`docker://google/deepvariant:1.10.0-gpu`. Only the `call_variants`
+step uses the GPU (one GPU at a time); `make_examples` and
+`postprocess_variants` continue on CPU.
+
+Keep `deepvariant_use_gpu: false` until a server check passes. First run
+`nvidia-smi -L` on the host. A GPU is not available to this analysis
+unless the NVIDIA driver is working and you have permission to use it.
+Then test the GPU image with Apptainer, preferably in a terminal separate
+from any current WGS analysis:
+
+```bash
+nvidia-smi -L
+apptainer exec --nv docker://google/deepvariant:1.10.0-gpu \
+  python3 -c 'import tensorflow as tf; print(tf.config.list_physical_devices("GPU"))'
+```
+
+This may download the large GPU image into Apptainer's home cache.
+An empty GPU list or a CUDA driver/library error means leave GPU mode
+disabled and consult the server administrator. `--nv` binds the host's
+NVIDIA libraries into the container; the GPU image provides the correct
+DeepVariant GPU software.
+
+If the check succeeds, set `deepvariant_use_gpu: true` in your *server*
+`config_srs_wgs.yaml`. Leave `deepvariant_image` as the CPU value;
+the rule automatically selects `deepvariant_gpu_image` and adds
+`apptainer exec --nv`. The rule reserves one `gpus` resource. Limit
+simultaneous GPU jobs with `--resources gpus=1` when starting Snakemake:
+
+```bash
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 10 --resources gpus=1 --rerun-incomplete -p
+```
+
+A completed CPU DeepVariant VCF remains valid and is not replaced
+automatically just by changing a YAML setting. To compare CPU and GPU,
+use a separate output directory or deliberately rerun only after
+saving the existing VCF. Do not change the configuration during an
+active run, or force a rerun just to use the GPU. GPU availability
+and the specific NVIDIA driver/CUDA compatibility must be verified
+on Bologna; no server GPU test was performed with this code change.
+
 ## Validate and reuse the environments
 
 There is no separate `environment.yaml`. It duplicated the Snakemake runner
