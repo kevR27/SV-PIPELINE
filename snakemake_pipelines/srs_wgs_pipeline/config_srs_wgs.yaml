@@ -40,6 +40,10 @@ vep_cache_version: 116             # Must match envs/srs_vep.yaml and cache.
 # Official runner/model distribution; Apptainer runtime is in deepvariant.yaml.
 # On the server, verify Apptainer can execute this image (README setup steps).
 deepvariant_image: "docker://google/deepvariant:1.10.0"
+# Set true only after nvidia-smi and an Apptainer GPU-container test succeed.
+# GPU acceleration affects DeepVariant call_variants, not make_examples.
+deepvariant_use_gpu: false
+deepvariant_gpu_image: "docker://google/deepvariant:1.10.0-gpu"
 # The human GRCh38 cache must include regulatory annotations (--regulatory).
 # No coding-only, gene-panel or VEP-impact filter is used on the master table.
 
