@@ -581,9 +581,13 @@ Since `/DATA` is `noexec`, the generated script is also invoked as
 `python2 path/to/runWorkflow.py`, not executed directly. This avoids
 a filesystem-related `Permission denied` error.
 
-After merging a Manta environment change into the server checkout,
-Snakemake should create a new hashed Conda environment with Python 2.7
-when the Manta rule is requested with `--use-conda`. Check that
+The Manta environment uses Python 2.7 and samtools 1.9. For compatibility
+with this older Python, it does not force modern samtools/htslib 1.20.
+The package solver still needs to be tested on the Bologna server.
+
+After merging this Manta environment change into the server checkout,
+Snakemake should create a new hashed Conda environment when the Manta rule
+is requested with `--use-conda`. Check that
 `python2 --version` works inside that new environment. Do not add
 Python 2 to the Snakemake runner or other caller environments.
 
