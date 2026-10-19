@@ -334,7 +334,7 @@ xci_sensitivity_min_reads:
 # conservatively excluded unless xci_xist_promoter_bed is supplied, in which
 # case the clustering script applies the reversed XIST methylation rule.
 # An optional GRCh38 BED of escape genes can also be supplied.
-xci_escape_genes_bed: null
+xci_escape_genes_bed: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/xci/xci_grch38_xist_exclude.bed"
 
 # The revised methylation plot uses only non-masked CpG islands inside
 # confidently oriented phase blocks, then summarizes Xa and Xi in these bins.
