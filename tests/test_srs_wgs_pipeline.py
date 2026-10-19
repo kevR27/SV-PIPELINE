@@ -105,6 +105,19 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("MISSING_PN", rows[0]["flags"])
         self.assertIn("MISSING_EVAL1", rows[0]["flags"])
 
+    def test_deepvariant_gpu_is_optional_and_reserves_one_gpu(self):
+        config = (SRS / "config_srs_wgs.yaml").read_text()
+        snake = (SRS / "Snakefile_SRS_WGS").read_text()
+        rule = snake.split("rule deepvariant_snv_indel_calling:", 1)[1].split("\nrule ", 1)[0]
+
+        self.assertIn("deepvariant_use_gpu: false", config)
+        self.assertIn("docker://google/deepvariant:1.10.0-gpu", config)
+        self.assertIn("DEEPVARIANT_ACTIVE_IMAGE = DEEPVARIANT_GPU_IMAGE if DEEPVARIANT_USE_GPU else DEEPVARIANT_IMAGE", snake)
+        self.assertIn('gpu_flag="--nv" if DEEPVARIANT_USE_GPU else ""', rule)
+        self.assertIn("gpus=1 if DEEPVARIANT_USE_GPU else 0", rule)
+        self.assertIn("apptainer exec {params.gpu_flag}", rule)
+        self.assertIn("image=DEEPVARIANT_ACTIVE_IMAGE", rule)
+
     def test_manta_run_script_uses_python2_on_noexec_filesystem(self):
         snake = (SRS / "Snakefile_SRS_WGS").read_text()
         manta_rule = snake.split("rule manta_sv_calling:", 1)[1].split("\nrule ", 1)[0]
