@@ -453,7 +453,10 @@ rule manta_sv_calling:
         set -euo pipefail
         mkdir -p "$(dirname {output.vcf:q})"
         # Manta 1.6.0 needs Python 2.7; fail clearly before starting a large run.
-        command -v python2 >/dev/null || { echo "Manta environment is missing Python 2.7" >&2; exit 1; }
+        if ! command -v python2 >/dev/null; then
+            echo "Manta environment is missing Python 2.7" >&2
+            exit 1
+        fi
         rm -rf {params.rundir:q}
         python2 "$(command -v configManta.py)" --bam {input.bam:q} --referenceFasta {input.ref:q} --runDir {params.rundir:q}
         # /DATA is noexec: read the generated workflow with the interpreter.
