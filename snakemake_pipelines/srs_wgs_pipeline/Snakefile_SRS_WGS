@@ -457,6 +457,18 @@ rule manta_sv_calling:
             echo "Manta environment is missing Python 2.7" >&2
             exit 1
         fi
+        # Verify the required VCF conversion tools before processing the BAM.
+        for tool in samtools bgzip tabix; do
+            if ! command -v "$tool" >/dev/null; then
+                echo "Manta environment is missing $tool" >&2
+                exit 1
+            fi
+        done
+        converter=$(find "$CONDA_PREFIX" -type f -path '*/libexec/convertInversion.py' -print -quit)
+        if test -z "$converter"; then
+            echo "Manta inversion converter not found in Conda environment" >&2
+            exit 1
+        fi
         rm -rf {params.rundir:q}
         python2 "$(command -v configManta.py)" --bam {input.bam:q} --referenceFasta {input.ref:q} --runDir {params.rundir:q}
         # /DATA is noexec: read the generated workflow with the interpreter.
@@ -464,8 +476,6 @@ rule manta_sv_calling:
         cp {params.rundir:q}/results/variants/diploidSV.vcf.gz {output.original:q}
         # Manta 1.6 reports inversion junctions as BND. Its supplied converter
         # exposes INV3/INV5 for type-aware comparison with DELLY.
-        converter=$(find "$CONDA_PREFIX" -type f -path '*/libexec/convertInversion.py' -print -quit)
-        test -n "$converter"
         python2 "$converter" "$(command -v samtools)" {input.ref:q} {output.original:q} | bgzip -c > {output.vcf:q}
         tabix -f -p vcf {output.vcf:q}
         """
