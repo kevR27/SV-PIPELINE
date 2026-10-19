@@ -58,7 +58,13 @@ VEP_ASSEMBLY = config.get("vep_assembly", "GRCh38")
 if VEP_ASSEMBLY != "GRCh38":
     raise ValueError("This SRS workflow uses GRCh38 interval/reference resources; vep_assembly must be GRCh38")
 VEP_CACHE_VERSION = int(config.get("vep_cache_version", 116))
+# GPU is optional: the official GPU container accelerates call_variants only.
+DEEPVARIANT_USE_GPU = config.get("deepvariant_use_gpu", False)
+if not isinstance(DEEPVARIANT_USE_GPU, bool):
+    raise ValueError("deepvariant_use_gpu must be true or false in YAML")
 DEEPVARIANT_IMAGE = str(config.get("deepvariant_image", "docker://google/deepvariant:1.10.0"))
+DEEPVARIANT_GPU_IMAGE = str(config.get("deepvariant_gpu_image", "docker://google/deepvariant:1.10.0-gpu"))
+DEEPVARIANT_ACTIVE_IMAGE = DEEPVARIANT_GPU_IMAGE if DEEPVARIANT_USE_GPU else DEEPVARIANT_IMAGE
 CANONICAL_ONLY = config.get("canonical_chromosomes_only", True)
 CANONICAL_FLAG = "--canonical-only" if CANONICAL_ONLY else ""
 QC_MIN_MEAN_COVERAGE = float(config.get("qc_min_mean_coverage", 25))
@@ -694,15 +700,19 @@ rule deepvariant_snv_indel_calling:
         bai=lambda wc: bam_index_for(wc.sample),
         ref=REF,
         fai=REF + ".fai",
-        image=lambda wc: [] if "://" in DEEPVARIANT_IMAGE else [DEEPVARIANT_IMAGE]
+        image=lambda wc: [] if "://" in DEEPVARIANT_ACTIVE_IMAGE else [DEEPVARIANT_ACTIVE_IMAGE]
     output:
         vcf=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz",
         tbi=PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz.tbi"
     params:
         outdir=PATH + "{sample}/snp_deepvariant",
-        image=DEEPVARIANT_IMAGE,
+        image=DEEPVARIANT_ACTIVE_IMAGE,
+        gpu_flag="--nv" if DEEPVARIANT_USE_GPU else "",
         binds=lambda wc: ",".join(sorted({os.path.abspath(os.path.dirname(BAMS[wc.sample])), os.path.abspath(os.path.dirname(bam_index_for(wc.sample))), os.path.abspath(os.path.dirname(REF)), os.path.abspath(PATH)}))
     threads: THREADS
+    # With GPU enabled, also pass --resources gpus=1 to Snakemake.
+    resources:
+        gpus=1 if DEEPVARIANT_USE_GPU else 0
     log:
         PATH + "{sample}/logs/deepvariant/{sample}.deepvariant.log"
     conda:
@@ -711,7 +721,7 @@ rule deepvariant_snv_indel_calling:
         """
         set -euo pipefail
         mkdir -p {params.outdir:q} "$(dirname {log:q})"
-        apptainer exec --bind {params.binds:q} {params.image:q} /opt/deepvariant/bin/run_deepvariant \
+        apptainer exec {params.gpu_flag} --bind {params.binds:q} {params.image:q} /opt/deepvariant/bin/run_deepvariant \
             --model_type=WGS --ref={input.ref:q} --reads={input.bam:q} --sample_name={wildcards.sample:q} \
             --output_vcf={output.vcf:q} --num_shards={threads} \
             --intermediate_results_dir={params.outdir:q}/intermediate > {log:q} 2>&1
