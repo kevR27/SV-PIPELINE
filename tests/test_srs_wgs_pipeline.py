@@ -113,6 +113,9 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("command -v python2", manta_rule)
         manta_env = (ROOT / "envs" / "manta.yaml").read_text()
         self.assertIn("  - python=2.7", manta_env)
+        self.assertIn("  - bioconda::samtools=1.9", manta_env)
+        self.assertNotIn("htslib=1.20", manta_env)
+        self.assertNotIn("samtools=1.20", manta_env)
         self.assertNotIn("\n        {params.rundir:q}/runWorkflow.py", manta_rule)
 
     def test_gridss_snappy_native_library_uses_home_tmp(self):
