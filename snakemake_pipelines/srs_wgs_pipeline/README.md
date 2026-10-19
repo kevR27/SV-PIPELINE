@@ -789,11 +789,11 @@ snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
   --cores 10 --resources gpus=1 --rerun-incomplete -p
 ```
 
-A completed CPU DeepVariant VCF remains valid and is not replaced
-automatically just by changing a YAML setting. To compare CPU and GPU,
-use a separate output directory or deliberately rerun only after
-saving the existing VCF. Do not change the configuration during an
-active run, or force a rerun just to use the GPU. GPU availability
+A completed CPU DeepVariant VCF remains valid, but changing Snakemake
+code or params can schedule a rerun and overwrite it. To compare CPU
+and GPU, use a separate output directory or back up the existing VCF
+first. Do not change the configuration during an active run or force
+a rerun just to use the GPU. GPU availability
 and the specific NVIDIA driver/CUDA compatibility must be verified
 on Bologna; no server GPU test was performed with this code change.
 
