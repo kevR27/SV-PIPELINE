@@ -633,6 +633,42 @@ describes this one-time step. This prepares a reference, not a patient call.
 The pipeline discovers the JAR from its own active Conda environment; no
 additional JAR path is needed in the configuration.
 
+### CNVpytor 1.3.2: GRCh38 resource-check workaround
+
+The upstream `Genome.check_resources()` runs before it reads command-line
+arguments and requires every registered genome's files (hg19, CHM13,
+KN99, hg38), even when the experiment uses only GRCh38. Its error can
+return exit status 0 without creating the `.pytor` database. This was
+confirmed in the HG002 chr22 diagnostic: the hg38 GC and mask files
+exist, but five unrelated genome resources are absent.
+
+The SRS rule uses `scripts/run_cnvpytor_hg38.py` in the CNVpytor
+Conda environment. This script restricts the built-in reference-genome
+registry to hg38 **only for that CNVpytor process**. It still requires
+nonempty hg38 GC and mask files, and the rule still verifies the
+`hg38 [GC: yes, mask: yes]` reference report. The scientific calling
+parameters (10/100 kb, RD, BAF and filters) are unchanged. The workaround
+does not modify the installed package or download unrelated genomes.
+
+Before running the entire sample again, test chr22 with:
+
+```bash
+conda activate /home/casadei7/snakemake_envs/envs/6da9eb9830a73c9bf214b4d368aa1af1_
+cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/srs_wgs_pipeline
+BAM=/DATA/casadei7/tools/SV-PIPELINE-main_v3/test_data/SRS_WGS/HG002/HG002.GRCh38.sorted.bam
+OUT=srs_CNTRL_results/HG002/cnv/cnvpytor/diagnostics
+mkdir -p "$OUT"
+python ../../scripts/run_cnvpytor_hg38.py -root "$OUT/HG002.chr22.test.pytor" -chrom chr22 -rd "$BAM"
+test -s "$OUT/HG002.chr22.test.pytor" || echo "CNVpytor produced no database"
+python ../../scripts/run_cnvpytor_hg38.py -root "$OUT/HG002.chr22.test.pytor" -ls
+```
+
+The full Snakemake rule writes a persistent stage log to
+`<sample>/logs/cnvpytor/<sample>.cnvpytor.log` and fails if
+read-depth import produces no database, even when the installed
+CNVpytor program exits with status 0. A successful chr22 import is
+necessary but does not establish that all full-genome operations will work.
+
 ### CNVpytor: activate and prepare its data
 
 ```bash
