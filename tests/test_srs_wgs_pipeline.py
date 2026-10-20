@@ -105,6 +105,21 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("MISSING_PN", rows[0]["flags"])
         self.assertIn("MISSING_EVAL1", rows[0]["flags"])
 
+    def test_cnvpytor_checks_hg38_without_other_genomes(self):
+        script = (SCRIPTS / "run_cnvpytor_hg38.py").read_text()
+        snake = (SRS / "Snakefile_SRS_WGS").read_text()
+        rule = snake.split("rule cnvpytor_cnv_calling:", 1)[1].split("\nrule ", 1)[0]
+
+        self.assertIn('Genome.reference_genomes = {"hg38": hg38}', script)
+        self.assertIn('for key in ("gc_file", "mask_file")', script)
+        self.assertIn("cnvpytor_main()", script)
+        self.assertIn('script=SCRIPTS + "/run_cnvpytor_hg38.py"', rule)
+        self.assertNotIn("\n        cnvpytor -root ", rule)
+        self.assertIn('test -s {output.pytor:q}', rule)
+        self.assertIn('cat {output.info:q}', rule)
+        self.assertIn("Usingreferencegenome:hg38[GC:yes,mask:yes]", rule)
+        self.assertIn('logs/cnvpytor/{sample}.cnvpytor.log', rule)
+
     def test_manta_run_script_uses_python2_on_noexec_filesystem(self):
         snake = (SRS / "Snakefile_SRS_WGS").read_text()
         manta_rule = snake.split("rule manta_sv_calling:", 1)[1].split("\nrule ", 1)[0]
