@@ -813,7 +813,17 @@ def main():
             assembly_image = plot_assembly_alignment(assemblies[sv_id], outdir / (stem+"_assembly"))
         card_prefix = outdir / "candidate_cards" / stem
         card_prefix.parent.mkdir(exist_ok=True)
-        write_candidate_card(str(outdir / stem)+".png",samplot_images.get(sv_id,[]),phase_images.get(gene),assembly_image,row,card_prefix)
+        locus_png = next(
+            path for path in outputs if path.suffix.lower() == ".png"
+        )
+        write_candidate_card(
+            str(locus_png),
+            samplot_images.get(sv_id, []),
+            phase_images.get(gene),
+            assembly_image,
+            row,
+            card_prefix,
+        )
 
         manifest.append(
             {
