@@ -189,7 +189,7 @@ def save_figure(fig, out_prefix: str | Path, dpi: int = 600) -> list[Path]:
         ("svg", {}),
         ("png", {"dpi": dpi}),
     ]:
-        path = prefix.with_suffix(f".{ext}")
+        path = Path(f"{prefix}.{ext}")
         # Finish encoding before writing to mounted output filesystems, so
         # every format includes its complete trailer rather than a partial
         # renderer buffer.
