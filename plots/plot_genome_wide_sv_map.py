@@ -55,22 +55,45 @@ def read_lengths(path):
     return dict(sorted(lengths.items(), key=lambda item: chromosome_sort_key(item[0])))
 
 
-def read_bed(path, lengths):
-    """Validate BED coordinates; never silently clip a resource from another build."""
+def read_bed(path, lengths, allow_contig_only=False):
+    """Read genomic intervals, optionally accepting DELLY whole-contig exclusions.
+
+    DELLY's exclusion resource mixes ordinary BED intervals with one-column
+    contig names. On the canonical genome map, a listed canonical contig must
+    be masked over its entire reference length; noncanonical contigs are ignored.
+    Other BED resources still require at least three columns.
+    """
     rows = []
     if path:
         with open_text(path) as handle:
-            for line in handle:
-                if not line.strip() or line.startswith(("#", "track", "browser")):
+            for line_number, line in enumerate(handle, 1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith(("#", "track", "browser")):
                     continue
-                fields = line.split()
-                chrom, start, end = chrom_name(fields[0]), int(fields[1]), int(fields[2])
-                if start < 0 or end <= start:
-                    raise ValueError(f"Invalid BED interval in {path}: {line.strip()}")
+                fields = stripped.split()
+                chrom = chrom_name(fields[0])
+                if len(fields) == 1 and allow_contig_only:
+                    if chrom in lengths:
+                        rows.append((chrom, 0, lengths[chrom], "whole_contig_exclusion"))
+                    continue
+                if len(fields) < 3:
+                    raise ValueError(
+                        f"Expected at least 3 BED columns in {path} at line "
+                        f"{line_number}: {stripped}"
+                    )
                 if chrom not in lengths:
                     continue
+                try:
+                    start, end = int(fields[1]), int(fields[2])
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid BED coordinates in {path} at line "
+                        f"{line_number}: {stripped}"
+                    ) from exc
+                if start < 0 or end <= start:
+                    raise ValueError(f"Invalid BED interval in {path} at line {line_number}: {stripped}")
                 if end > lengths[chrom]:
-                    raise ValueError(f"BED extends beyond reference chromosome: {path}: {line.strip()}")
+                    raise ValueError(f"BED extends beyond reference chromosome: {path} at line {line_number}: {stripped}")
                 rows.append((chrom, start, end, fields[3] if len(fields) > 3 else "."))
     return pd.DataFrame(rows, columns=["CHROM", "START0", "END0", "LABEL"])
 
@@ -398,7 +421,7 @@ def main():
     lengths = read_lengths(args.reference_fai)
     events = prepare_events(read_tsv(args.input), lengths)
     tracks = {"Centromeres": read_bed(args.centromere_bed, lengths), "Assembly gaps": read_bed(args.gap_bed, lengths),
-              "DELLY excluded": read_bed(args.exclude_bed, lengths), "Panel genes": read_bed(args.panel_bed, lengths)}
+              "DELLY excluded": read_bed(args.exclude_bed, lengths, allow_contig_only=True), "Panel genes": read_bed(args.panel_bed, lengths)}
     mask = interval_index(pd.concat(list(tracks.values())[:3], ignore_index=True))
     labels = pd.DataFrame()
     if args.candidate_table and args.label_top_n:
