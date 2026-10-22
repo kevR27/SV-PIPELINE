@@ -787,6 +787,54 @@ passes the sample name and writes a DeepVariant log under
 `<sample>/logs/deepvariant/`. Server container permissions, CPU compatibility
 and a real WGS run still need verification; they were not tested here.
 
+### Optional NVIDIA GPU for DeepVariant
+
+The default `deepvariant_use_gpu: false` keeps the CPU container and previous
+SRS behaviour. To accelerate DeepVariant's `call_variants` inference step,
+the official `google/deepvariant:1.10.0-gpu` image is selected when this
+flag is set to `true`; `make_examples` and `postprocess_variants`
+continue on CPU. The Snakemake DeepVariant rule adds Apptainer `--nv`
+and requests one `gpus` resource.
+
+Before enabling the flag on Bologna, confirm that an accessible NVIDIA GPU
+is free, and that the GPU image can see it:
+
+```bash
+nvidia-smi -L
+apptainer exec --nv docker://google/deepvariant:1.10.0-gpu \
+  python3 -c 'import tensorflow as tf; print(tf.config.list_physical_devices("GPU"))'
+```
+
+The GPU image may require a substantial download. A missing CUDA driver or
+an empty GPU list means that the GPU configuration should remain disabled.
+
+Then update the working server `config_srs_wgs.yaml`:
+
+```yaml
+deepvariant_use_gpu: true
+deepvariant_gpu_image: "docker://google/deepvariant:1.10.0-gpu"
+```
+
+For a server with multiple GPUs, choose a free GPU before running Snakemake
+(e.g. `export APPTAINERENV_CUDA_VISIBLE_DEVICES=1` to expose GPU 1 to
+the container), and limit GPU-requiring jobs to one at a time:
+
+```bash
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 10 --resources gpus=1 --rerun-incomplete -p
+```
+
+A GPU is not reserved against jobs outside this Snakemake invocation.
+Coordinate with Dorado users, and check available VRAM with `nvidia-smi`.
+These commands are instructions, not evidence of GPU execution on Bologna.
+
+**Preserve completed HG002 results.** The CPU VCF is valid; changing
+the Snakefile or configuration may make Snakemake schedule DeepVariant
+again even if the VCF exists. Inspect the DAG with `-n` first and avoid
+forcing or triggering a rerun of already completed samples. Use a new
+output directory when comparing CPU and GPU.
+
 ## Validate and reuse the environments
 
 There is no separate `environment.yaml`. It duplicated the Snakemake runner
