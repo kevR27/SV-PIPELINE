@@ -1028,7 +1028,7 @@ rule vep_sv_annotation:
         mkdir -p "$(dirname {output.txt:q})"
         vep --input_file {input.vcf:q} --format vcf --output_file {output.txt:q} --cache --offline \
             --dir_cache {VEP_CACHE_DIR:q} --cache_version {VEP_CACHE_VERSION} --assembly {VEP_ASSEMBLY} --canonical --overlaps \
-            --tab --force_overwrite --flag_pick --symbol --biotype --numbers --max_sv_size 250000000 --batch_size 100 --fork {threads}
+            --tab --force_overwrite --flag_pick --symbol --biotype --numbers --max_sv_size 250000000 --buffer_size 100 --fork {threads}
         """
 
 
