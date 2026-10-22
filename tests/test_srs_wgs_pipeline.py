@@ -128,6 +128,19 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("Usingreferencegenome:hg38[GC:yes,mask:yes]", rule)
         self.assertIn('logs/cnvpytor/{sample}.cnvpytor.log', rule)
 
+    def test_deepvariant_optional_gpu_configuration(self):
+        config = (SRS / "config_srs_wgs.yaml").read_text(encoding="utf-8")
+        snake = (SRS / "Snakefile_SRS_WGS").read_text(encoding="utf-8")
+        rule = snake.split("rule deepvariant_snv_indel_calling:", 1)[1].split("\nrule ", 1)[0]
+
+        self.assertIn("deepvariant_use_gpu: false", config)
+        self.assertIn("deepvariant_gpu_image: \"docker://google/deepvariant:1.10.0-gpu\"", config)
+        self.assertIn('gpu_flag="--nv" if DEEPVARIANT_USE_GPU else ""', rule)
+        self.assertIn("gpus=1 if DEEPVARIANT_USE_GPU else 0", rule)
+        self.assertIn("image=DEEPVARIANT_ACTIVE_IMAGE", rule)
+        self.assertIn("apptainer exec {params.gpu_flag}", rule)
+        self.assertIn("--model_type=WGS", rule)
+
     def test_manta_run_script_uses_python2_on_noexec_filesystem(self):
         snake = (SRS / "Snakefile_SRS_WGS").read_text()
         manta_rule = snake.split("rule manta_sv_calling:", 1)[1].split("\nrule ", 1)[0]
