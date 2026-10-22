@@ -94,6 +94,14 @@ class SrsWgsPipelineTests(unittest.TestCase):
         self.assertIn("_SV_VEP.panel_only.txt", snake)
         self.assertIn("{CANONICAL_FLAG}", snake)
 
+    def test_srs_sv_vep_uses_supported_buffer_size(self):
+        snake = (SRS / "Snakefile_SRS_WGS").read_text(encoding="utf-8")
+        rule = snake.split("rule vep_sv_annotation:", 1)[1].split("\nrule ", 1)[0]
+        self.assertIn("--buffer_size 100", rule)
+        self.assertNotIn("--batch_size", rule)
+        self.assertIn("--max_sv_size 250000000", rule)
+        self.assertIn("--fork {threads}", rule)
+
     def test_missing_cnvpytor_qc_never_passes(self):
         script = module("combine_srs", SCRIPTS / "combine_sv_cnv_evidence.py")
         with tempfile.TemporaryDirectory() as tmp:
