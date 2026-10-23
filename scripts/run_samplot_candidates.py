@@ -59,7 +59,7 @@ def samplot_command(
         "-s", str(start),
         "-e", str(end),
         "-q", str(minimum_mapq),
-        "--window", str(window),
+        "-w", str(window),
     ]
     if svtype in {"DEL", "DUP", "INV"}:
         command.extend(["-t", svtype])
