@@ -1,1692 +1,270 @@
-# SV-PIPELINE
+# SV-PIPELINE: Whole-genome variant analysis
 
-This repository contains long- and short-read whole-genome sequencing workflows for studying structural variants (SVs) in patients with clinically assessed optic neuropathy.
+This repository contains two Snakemake workflows: **long-read sequencing (LRS)** from Oxford Nanopore and **short-read sequencing (SRS)** from Illumina. They analyze whole-genome data, identify structural variants (SVs), and organize evidence for hereditary optic neuropathy (HON) research. Nuclear genes involved in mitochondrial biology are an important research focus; mitochondrial-DNA findings are reviewed separately.
 
-The shared and technology-specific parts of the two workflows are mapped in
-[`snakemake_pipelines/PIPELINE_PARITY.md`](snakemake_pipelines/PIPELINE_PARITY.md).
-Both workflows prioritize nuclear genes involved in mitochondrial biology and
-bioenergetic pathways. mtDNA remains available as a separate secondary
-analysis and is not mixed into the main nuclear-gene ranking.
+Variant discovery is genome-wide. The HON gene panel is used after discovery to label and prioritize genes, not to limit the genomic regions analyzed. Results are research candidates and still require review and, where appropriate, independent confirmation.
 
-The main question behind the pipeline is:
+This page explains the LRS workflow and the shared code. For Illumina-specific steps, see [the SRS README](snakemake_pipelines/srs_wgs_pipeline/README.md). For detailed figure descriptions, see [the plotting guide](plots/README.md).
 
-> **Do these patients carry SVs that could contribute to optic neuropathy, either through known panel genes or through other candidate genes? What do the breakpoints and gene annotations suggest about their functional effects?**
+## 1. Where the files are
 
-The long-read workflow uses Oxford Nanopore whole-genome sequencing and combines several SV callers with gene annotation, phenotype information, population-frequency data, and additional long-read evidence.
+| Location | Purpose |
+| --- | --- |
+| **snakemake_pipelines/lrs/Snakefile_LRS_update** | Main ONT analysis: QC, variant calling, merging and annotation. |
+| **snakemake_pipelines/lrs/Snakefile_LRS_postprocess** | Combines evidence, ranks candidates and prepares downstream results. |
+| **snakemake_pipelines/lrs/Snakefile_LRS** | Short compatibility entry point that uses the active LRS workflow. |
+| **snakemake_pipelines/lrs/config_lrs.yaml** | Sample BAMs, output folder, reference files, thresholds and optional analyses. |
+| **snakemake_pipelines/lrs/thesis_extensions.smk** | Additional depth, HPO, SNV–SV and final-ranking rules. |
+| **snakemake_pipelines/lrs/xci_analysis.smk** | Chromosome-X phasing, methylation and XCI analysis. |
+| **snakemake_pipelines/srs_wgs_pipeline/** | Separate Illumina workflow and configuration. |
+| **snakemake_pipelines/common/** | Rules shared by both workflows: allele assessment, AnnotSV auditing, Exomiser and optional AlphaGenome. |
+| **scripts/** | Python and R scripts that read, filter, annotate and summarize the results. |
+| **plots/** and **r_plots/** | Scripts for figures, candidate review and visual summaries. |
+| **envs/** | Conda environment definitions for individual tools. |
+| **PANEL_OA/** and **reference/** | HON panel files and reference/annotation resources. |
+| **docs/** | Additional detailed guides when manual setup or interpretation needs more explanation. |
 
-The optic-neuropathy panel helps organize the results after genome-wide discovery. Genes outside the panel remain available for investigation. A nonpanel gene is a candidate for further study; this label does not establish a new gene–disease relationship. Mitochondrial biology helps guide interpretation, but panel membership alone does not demonstrate a mitochondrial functional effect.
+In a Snakefile, **input** is what a step reads, **output** is what it writes, **threads** is its CPU allocation, **conda** selects its software environment, and **shell** gives the executed command. Snakemake uses file dependencies to determine the order automatically.
 
-Gene overlap is the starting point. The evidence tables distinguish coding-sequence loss, predicted transcript copy gain, possible breakpoint effects and genes contained inside an inversion. These predictions need review alongside read support and population evidence. They do not establish that gene function changed in the patient.
+## 2. Inputs and configuration
 
-The active long-read workflow is:
+The LRS workflow starts with **coordinate-sorted, indexed ONT BAM files** aligned to GRCh38. Edit **config_lrs.yaml** to set the sample-to-BAM mapping, result folder (**path**), reference FASTA (**ref**), available CPU threads, and annotation/reference paths. Quote numeric sample IDs, such as "21930". BAM indexes and reference files must match the alignments. For methylation and XCI analyses, the BAM also needs the appropriate modified-base information.
 
-```text
-snakemake_pipelines/lrs/Snakefile_LRS_update
-```
+External reference data, such as AnnotSV resources, the VEP GRCh38 cache, Monarch KG, needLR backend files and MitoCarta, are not downloaded automatically by simply enabling a Snakemake rule. Check the configured paths before executing an analysis. Optional modules are controlled through the YAML settings; a configured path does not mean the analysis has completed.
 
-A separate downstream workflow,
+## 3. Run the LRS workflow
 
-```text
-snakemake_pipelines/lrs/Snakefile_LRS_postprocess
-```
+Run these commands from the LRS workflow folder. Replace the Conda prefix if your environment location differs.
 
-adds complementary computational evidence and generates integrated interpretation tables and plots without rerunning the main variant-calling steps.
+~~~bash
+cd /path/to/SV-PIPELINE/snakemake_pipelines/lrs
 
-## Input, output and environment audit — 13 October 2026
+# Preview planned jobs without executing them
+snakemake -s Snakefile_LRS_update --configfile config_lrs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 --dry-run -p
 
-Read [the audit and server checks](docs/PIPELINE_INPUT_OUTPUT_AUDIT.md) before
-running an updated checkout. It lists execution defects corrected in both
-workflows, verified checks and what still needs testing on Bologna.
-In particular, SRS DeepVariant now uses the official image through Apptainer;
-Both LRS and SRS VEP are now pinned to release 116. Each workflow
-needs its matching cache. No patient analysis or clinical validation was run
-for this audit.
+# Run QC, callers, merged SVs and primary annotations
+snakemake -s Snakefile_LRS_update --configfile config_lrs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 --rerun-incomplete -p
 
-## Analysis without patient phenotype or trio data
+# Integrate evidence and generate downstream candidate tables
+snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 -p
 
-To recheck an earlier run, use [the saved-output guide](docs/SAVED_OUTPUT_REANALYSIS.md).
-If the installed AnnotSV BED contains `cmpl` or `incmpl` as gene names, use
-[the gene-reference repair guide](docs/ANNOTSV_GENE_REFERENCE_REPAIR.md).
-The rebuild writes to a new folder and does not rerun the callers. Running the
-plotting postprocess alone does not repair an old integrated table.
+# Produce figures and plot-related data files
+snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 all_thesis_plots
+~~~
 
-The new checks explain why AnnotSV skipped a record, catch missing-length calls
-that bypassed the size filter, and flag invalid gene names such as `cmpl` and
-`incmpl`. If these names occur, the installed gene annotation needs checking
-before the affected records can support a complete gene search.
+The postprocessing Snakefile normally selects samples with the required upstream files. Use the **postprocess_samples** configuration setting when you need to select specific ready samples. Snakemake can still schedule missing dependencies when a result is requested; always inspect a dry run before rebuilding earlier analyses.
 
-Genome-wide SV discovery, panel/nonpanel views, caller support and AnnotSV/needLR
-annotations work without the four optional allele-evidence input files. Keep their
-configuration values `null` when those data are unavailable. The additional research
-score is not a required endpoint; missing patient/family evidence is not evidence
-against a candidate. Automatic annotation-availability reporting requires no manual
-curation or additional patient data.
+## 4. What each LRS tool does
 
-## Allele-level assessment and correctness update
-
-Both LRS and SRS now preserve the genome-wide complete discovery callset and add a six-domain,
-source-traceable SV–gene–disease research assessment. See
-[configuration, scoring and input templates](docs/ALLELE_ASSESSMENT.md).
-The original gene-discovery score remains available separately.
-
-- Outputs: `<sample>_allele_assessment.tsv`, `<sample>_allele_disease_hypotheses.tsv`
-  and `<sample>_allele_assessment.manifest.json` in `gene_discovery/`.
-- Assessment domains: population rarity, technical support, predicted/reviewed
-  disruption, genotype/inheritance, patient phenotype, and disease mechanism.
-- Optional patient, disease-model, allele-evidence and family-genotype files are
-  declared workflow inputs. Missing inputs remain unknown; no patient or family
-  evidence is invented. Header-only templates are in `reference/allele_assessment/`.
-- The score is an uncalibrated research aid (0–12), not ACMG classification,
-  diagnostic probability, or a filter. Read statuses, provenance and review flags.
-- Structural-VEP transcript consequences are propagated into the integrated and
-  final SV-gene tables. The allele assessment reports a VEP transcript-context
-  cross-check (whole-transcript, exonic/splice, intronic, or other context), but
-  VEP does not add independent research-score points and does not replace AnnotSV
-  as the primary genome-wide SV-to-gene mapping layer.
-- Corrected exact panel labels, AnnotSV full/split scope, BND partner matching,
-  ambiguous matches, AF parsing, HPO duplication and explicit methylation units.
-- SV phasing now uses `.longphase_SV.vcf.gz`; `.longphase.vcf.gz` remains the SNP
-  output. The older `Snakefile_LRS` delegates to the canonical update workflow.
-- needLR is a separate Sniffles2-compatible population-frequency branch. Reuse
-  now requires a completed-run manifest matching the query, backend, tool and
-  settings, plus verified output checksums. An unsigned old result is rerun
-  rather than adopted from its filename or timestamp. Failed reruns cannot
-  publish a previous native result as current. needLR 4.1 uses unquoted paths
-  internally: give this branch paths without whitespace or glob characters.
-
----
-
-## Clinical candidate review alongside the research ranking
-
-LRS and SRS also produce a separate **clinical candidate review order**. It
-combines AnnotSV's reported deletion/duplication classification with HON query
-relevance, predicted variant effect, disease mechanism, reliable genotype,
-technical support and population evidence. The original research ranking and
-the separate Exomiser phenotype comparison remain available.
-
-- LRS: `gene_discovery/final/<sample>_clinical_candidates.ranked.tsv`.
-- SRS: `diagnostic_review/<sample>.clinical_candidates.tsv`.
-- Start with `CLINICAL_REVIEW_GROUP`, `CLINICAL_REVIEW_FLAGS` and
-  `CLINICAL_MISSING_OR_CONTEXT_NOTES`; then inspect the source evidence columns.
-
-This is an order for review, not a diagnosis or a diagnostic probability. A VUS
-remains a VUS even when it matches HON. Missing AF remains unknown, alongside
-measured AF ≤1% in the existing combined filtering view. All input associations,
-including unclassified and unannotated events, are retained in the clinical
-table; the SRS `diagnostic_candidate_top_n` limit does not truncate it.
-
-Read [the joint ranking rules and CNV audit guide](docs/SCORE_INTERPRETATION.md#joint-clinical-candidate-review).
-No new installation or configuration is needed. The LRS postprocess default
-target now also requests the existing final-ranking dependencies, including
-depth, HPO and phase context. It may run missing downstream analyses; it does
-not automatically restrict itself to saved tables. Historical integrated files
-need rebuilding with the updated integrator to establish full-event AnnotSV
-classification provenance. A reported class with unverified provenance is
-flagged for review rather than trusted silently.
-
-### Where the clinical changes are implemented
-
-| Existing file | Purpose in this update | Used by |
+| Step / tool | Input | Role in the workflow |
 | --- | --- | --- |
-| `scripts/build_integrated_sv_gene_tsv.py` | Keeps the full-event AnnotSV class, points and criteria separate from gene-specific transcript evidence; reports conflicting/provisional classification sources | LRS and SRS |
-| `scripts/assess_sv_alleles.py` | Uses existing transcript/CDS predictions and optional reviewed effect/disease inputs; now blocks genotype transfer from failed, flagged or status-less caller records and exports reviewed AF and disease–HON provenance | LRS and SRS through `common/allele_assessment.smk` |
-| `scripts/build_diagnostic_candidates.py` | Shared joint clinical rules and missing/conflicting-evidence flags; uses event class once, alongside HON, mechanism, genotype, read/depth and AF evidence | SRS directly; LRS through the finalizer |
-| `scripts/finalize_candidate_ranking.py` and `lrs/thesis_extensions.smk` | Adds the complete clinical table to existing final HPO/depth/phase context without replacing research tables | LRS postprocess |
-| `srs_wgs_pipeline/Snakefile_SRS_WGS` | Writes research and clinical views in the existing review rule; tracks the integrator and its helper scripts as inputs so updates can trigger rebuilding | SRS |
-| `reference/allele_assessment/disease_models.tsv` | Extends the existing optional template with sourced HON relevance; older seven-column files remain readable | LRS and SRS |
-
-All script paths above are relative to the repository; workflow paths are under
-`snakemake_pipelines/`. No additional scoring, installation or plotting script
-was added. Existing figures still describe their research-ranked source tables;
-the clinical order is the separate TSV, not an automatic replacement of plot
-candidate selection. The original research formulas and Exomiser comparison
-are preserved. A corrected genotype input can legitimately change a research
-result previously based on a failed caller.
-
-### Apply the clinical update to existing results
-
-Update the existing code checkout and **preserve your edited config files**.
-For an ordinary clean Git checkout, use `git pull --ff-only`; if your config has
-local edits, keep a backup and reconcile it before updating rather than
-overwriting patient paths. If using a downloaded copy, replace the changed
-scripts, shared rules and Snakefiles in the existing layout, then preserve or
-restore your working config. Do not move just the Snakefile to another folder:
-it resolves shared scripts and environments from the repository layout.
-
-Keep `samples`, `path`, BAM/reference paths, AnnotSV annotations and the repaired
-gene resource pointing to your working files. In particular, keep your reviewed
-`gene_bed` value; the known local repaired resource is
-`/DATA/casadei7/tools/SV-PIPELINE-main_v3/annotsv_gene_rebuild/Annotations_Human/Genes/GRCh38/genes.ENSEMBL.sorted.bed`.
-This path is specific to that installation; do not substitute it for another
-installation without checking the file. A code update alone does not repair
-old annotation tables. See the existing
-[gene-reference repair guide](docs/ANNOTSV_GENE_REFERENCE_REPAIR.md) if needed.
-
-No new config key is mandatory. To supply evidence that is currently missing,
-use the existing optional `allele_disease_models`, `allele_evidence`,
-`allele_patient_context` and `allele_family_genotypes` paths in either config.
-Use actual reviewed TSVs, not empty templates or invented patient findings.
-The [allele guide](docs/ALLELE_ASSESSMENT.md#what-the-functional-predictions-can-and-cannot-supply)
-explains what can resolve an uncertain functional effect or disease mechanism.
-
-For every command below, first add `--dry-run --printshellcmds` and inspect the
-jobs. Then run the same command without `--dry-run`. Installation/environment
-preparation stays in the existing README sections. The examples assume the
-upstream caller and annotation files already exist. Missing inputs or outdated
-Snakemake metadata can schedule more work: inspect that before executing a
-historical rebuild. A targeted clinical rebuild does not biologically require
-new variant calling, but Snakemake will produce missing dependencies.
-
-**LRS:** run the main assessment rebuild first, then the separate postprocess
-clinical target. Set `SV_RESULTS_LRS` to the exact `path` in `config_lrs.yaml`;
-change the sample ID for each sample you intend to review.
-
-```bash
-SV_REPO="/DATA/casadei7/tools/SV-PIPELINE-main_v3"
-SV_SAMPLE="21930"
-SV_RESULTS_LRS="$SV_REPO/outs_test_CNTRL"
-cd "$SV_REPO/snakemake_pipelines/lrs"
-
-snakemake -s Snakefile_LRS_update --configfile config_lrs.yaml \
-  --use-conda --cores 32 \
-  "$SV_RESULTS_LRS/$SV_SAMPLE/gene_discovery/${SV_SAMPLE}_allele_assessment.tsv" \
-  --forcerun integrated_sv_gene_table assess_sv_alleles
-
-snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml \
-  --use-conda --cores 32 \
-  "$SV_RESULTS_LRS/$SV_SAMPLE/gene_discovery/final/${SV_SAMPLE}_clinical_candidates.ranked.tsv" \
-  --forcerun rank_sv_gene_events finalize_candidate_ranking
-```
-
-The postprocess workflow can rebuild existing downstream HPO, phase, depth and
-cohort context. Its upstream Straglr, TLDR and LongPhase prerequisites must
-exist. Select ready samples with the existing `postprocess_samples` setting;
-an automatic empty ready-sample set is not evidence that a patient was analysed.
-The samples 21930 and 25428 remain limited OPA1 controls, not diagnostic validation.
-
-**SRS:** use your real configured sample ID and the exact `path` from
-`config_srs_wgs.yaml`. The example output folder is its existing default.
-
-```bash
-SV_REPO="/DATA/casadei7/tools/SV-PIPELINE-main_v3"
-SV_SAMPLE="YOUR_SRS_SAMPLE_ID"
-SV_RESULTS_SRS="/DATA/srs_results"
-cd "$SV_REPO/snakemake_pipelines/srs_wgs_pipeline"
-
-snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
-  --use-conda --cores 32 \
-  "$SV_RESULTS_SRS/$SV_SAMPLE/diagnostic_review/${SV_SAMPLE}.clinical_candidates.tsv" \
-  --forcerun integrated_sv_gene_table assess_sv_alleles build_diagnostic_candidates
-```
-
-This target uses the existing frequency, supporting-evidence and enabled
-MitoCarta branch between integration and clinical review. Optional curated
-files are tracked by the shared assessment rule. Plotting remains the separate
-`all_thesis_plots` target for either workflow; it is not needed just to regenerate
-the clinical TSV. The clinical result retains all input SV–gene rows; review
-uncertain and conflict groups as well as the first-ranked candidates.
-
-## 1. Biological hypothesis and main questions
-
-The working hypothesis is that some unresolved neurological or optic-neuropathy cases may be caused by genomic changes that are difficult to detect or interpret with standard small-variant analysis alone.
-
-These changes can include:
-
-- deletions;
-- duplications;
-- inversions;
-- insertions;
-- breakends and complex rearrangements;
-- tandem-repeat expansions;
-- mobile-element insertions;
-- variants whose interpretation depends on phasing;
-- genomic changes associated with local methylation differences.
-
-The pipeline is designed to answer a series of connected questions.
-
-**Question 1 — Is there a structural variant that could explain the phenotype?**  
-Three long-read SV callers are used independently and their results are merged into one patient-level integrated discovery SV callset.
-
-**Question 2 — Is the call technically supported?**  
-Read support, FILTER status, caller agreement, SV size, QC flags, and sequencing depth are kept as evidence.
-
-**Question 3 — Does the SV affect a relevant gene or genomic region?**  
-The integrated discovery SV callset is annotated genome-wide with AnnotSV and is also analysed with VEP.
-
-**Question 4 — Is the SV rare enough to be compatible with a rare disease?**  
-needLR is used as an additional ONT population-frequency source and is matched back to the integrated discovery SVs.
-
-**Question 5 — Does the affected gene fit the disease phenotype?**  
-Panel membership, OMIM/GenCC information, and Monarch/HPO phenotype relationships are used for prioritization.
-
-**Question 6 — Is there additional long-read evidence that helps interpretation?**  
-Straglr, TLDR, LongPhase/WhatsHap, and modkit provide repeat, mobile-element, phasing, and methylation information.
-
-The pipeline does not automatically classify a variant as pathogenic. Its purpose is to organize the available evidence so that the most relevant candidates can be reviewed and confirmed more carefully.
-
----
-
-## 2. Why the SV analysis is genome-wide
-
-The SV analysis is intentionally genome-wide.
-
-If SV calling were restricted only to the optic-neuropathy panel, the workflow could miss:
-
-- large rearrangements that extend outside a panel region;
-- breakpoints outside coding exons;
-- regulatory or intergenic variants;
-- variants affecting genes that are not yet part of the panel;
-- new candidate genes that may still be related to the phenotype.
-
-For this reason, the optic-neuropathy panel is applied **after SV discovery** as an interpretation layer.
-
-A variant can therefore be labelled as affecting a known panel gene or a non-panel gene without being removed from the complete discovery callset.
-
-The current LRS workflow uses standard ONT whole-genome sequencing. Adaptive sampling is not part of the active workflow.
-
----
-
-## 3. Core LRS workflow
-
-```text
-ONT WGS BAM
-│
-├── mosdepth
-│     └── sequencing-depth QC
-│
-├── Clair3
-│     └── genome-wide SNV/indel calling
-│           └── WhatsHap
-│                 └── small-variant phasing + haplotagged BAM
-│
-├── Sniffles2 ─┐
-├── cuteSV     ├── caller normalization/QC ──> Jasmine ──> INTEGRATED DISCOVERY SV VCF
-└── DELLY LR   ┘                                  │
-                                                  ├── caller-support summary
-                                                  ├── AnnotSV genome-wide
-                                                  │      └── panel-derived view
-                                                  ├── VEP transcript/SV consequence annotation
-                                                  │      └── per-SV/per-gene transcript summary
-                                                  ├── gene extraction
-                                                  ├── Monarch/HPO prioritization
-                                                  └── integrated SV/gene evidence table
-
-ONT BAM ──> dedicated Sniffles2 v2.6.2 ──> needLR
-                                             └── population-frequency evidence
-                                                 matched back to integrated discovery SVs
-
-ONT BAM ──> Straglr ──> tandem-repeat evidence
-ONT BAM ──> TLDR ──> mobile-element insertion evidence
-ONT BAM ──> modkit ──> CpG methylation evidence
-Clair3 + filtered Sniffles2 + BAM ──> LongPhase ──> SNP/SV phasing
-
-MASTER integrated table
-        +
-Straglr / TLDR / LongPhase / WhatsHap / methylation
-        ↓
-post-processing interpretation tables
-        ↓
-final plots and candidate summaries
-```
-
----
-
-## 4. Step-by-step rationale
-
-### 4.1 mosdepth — sequencing-depth QC
-
-**Input:** aligned ONT BAM  
-**Output:** depth distribution and coverage summary for each sample.
-
-mosdepth is used to check whether sequencing coverage is sufficient and reasonably uniform.
-
-This is important because a missed SV does not always mean that the variant is absent. Low or uneven coverage can also reduce caller sensitivity or make support estimates less reliable.
-
-Main outputs:
-
-```text
-<sample>/coverage/<sample>.mosdepth.global.dist.txt
-<sample>/coverage/<sample>.mosdepth.summary.txt
-```
-
-**Question answered:** Is the sequencing coverage sufficient for the downstream analysis?
-
----
-
-### 4.2 Clair3 — complementary genome-wide SNV/indel analysis
-
-Clair3 is used as a complementary genome-wide small-variant layer. The optic-neuropathy BED is retained for panel annotation, but the active LRS Clair3 rule is not BED-restricted. These calls support phasing and secondary SNV+SV review; they do not replace the thesis focus on structural variants.
-
-Small-variant VEP annotation also retains noncoding variants: LRS keeps the full
-`snp_clair3/<sample>.longphase.vep.txt` in postprocess, and SRS now writes
-`snp_deepvariant/<sample>.genomewide.vep.tsv.gz` from its full DeepVariant VCF.
-Both request regulatory annotations and retain all transcript consequences.
-The LRS coding/splice SNV+SV table and SRS nuclear mitochondrial VCF remain
-focused review views. Use the full source VCF and full VEP table for
-genome-wide Atlas annotation. Optional offline AVI lookup and selected native
-AlphaGenome plots are now implemented for both technologies. See the
-[SRS instructions](snakemake_pipelines/srs_wgs_pipeline/README.md#genome-wide-small-variants-and-noncoding-evidence)
-for the replacement output and rerun target.
-
-This is useful because an unresolved case can still contain relevant SNVs or small indels, and these variants can also help with phasing.
-
-Main output:
-
-```text
-<sample>/snp_clair3/<sample>.vcf.gz
-```
-
-**Question answered:** Are there genome-wide small variants that can support phasing and secondary SNV+SV review?
-
----
-
-### 4.3 WhatsHap — small-variant phasing and haplotagging
-
-WhatsHap phases the Clair3 variants using the long reads and also creates a haplotagged BAM.
-
-Main outputs:
-
-```text
-<sample>/phasing/<sample>.phased.vcf.gz
-<sample>/phasing/<sample>.phased.bam
-```
-
-This helps determine whether nearby variants are on the same or on different haplotypes.
-
-**Question answered:** Which small variants can be assigned to the same haplotype?
-
----
-
-## 5. Genome-wide structural-variant discovery
-
-No single SV caller is expected to detect every true event.
-
-Long-read callers use different algorithms, clustering strategies, and QC rules. Because of this, the same biological SV can be represented differently or missed by one caller.
-
-The workflow therefore uses three complementary callers:
-
-```text
-Sniffles2
-cuteSV
-DELLY
-```
-
-### 5.1 Sniffles2
-
-Sniffles2 is one of the main long-read SV callers in the workflow. It detects deletions, duplications, insertions, inversions, and breakend-type events from long-read alignments.
-
-The main discovery environment is kept separate from the Sniffles version used for needLR.
-
-The discovery branch currently uses:
-
-```text
-Sniffles2 2.8.1
-```
-
-The workflow can also expose Sniffles calls that fail internal QC when the controlled `COV_VAR` rescue is enabled.
-
-This does **not** mean that all failed calls are accepted.
-
-The current rescue logic is:
-
-```text
-FILTER = COV_VAR
-AND SVTYPE = DEL or DUP
-AND read support >= 2
-AND |SVLEN| >= 50 kb
-        ↓
-retain the call
-        ↓
-mark it as RESCUED_COV_VAR
-```
-
-Other Sniffles QC failures remain excluded.
-
-**Interpretation:** this is an exploratory sensitivity option, not a validation rule. A `COV_VAR` call failed Sniffles' coverage-based QC; retaining it keeps the hypothesis available for downstream multi-caller, read-depth and read-level review. The `RESCUED_COV_VAR` flag remains visible and the call must not be treated as technically confirmed merely because it was retained.
-
----
-
-### 5.2 cuteSV
-
-cuteSV is used as a second complementary long-read SV caller on the same ONT alignment data.
-
-Its clustering strategy is different from Sniffles2, so it provides another view of the same sequencing data.
-
-Agreement between callers can increase technical confidence. Differences between callers are also useful because they show where sensitivity or breakpoint representation changes between algorithms.
-
-The ONT-specific clustering parameters are defined in the Snakefile. The active rule uses `--max_size -1`, so cuteSV is not restricted by its usual 100 kb reporting ceiling and can contribute caller concordance for large and very large SVs.
-
-**Question answered:** Does another long-read caller recover the same event, and how similar is its representation?
-
----
-
-### 5.3 DELLY long-read mode
-
-DELLY is run in ONT long-read mode and provides a third complementary calling method on the same ONT alignment data. Caller agreement is technical concordance, not independent experimental validation.
-
-A real event can be missed by one caller but still be detected by another. For this reason, DELLY is used together with Sniffles2 and cuteSV rather than as a replacement for either one.
-
-**Question answered:** Is the same event supported by another SV-calling method?
-
----
-
-## 6. Caller normalization and pre-Jasmine evidence filtering
-
-The raw VCFs from Sniffles2, cuteSV, and DELLY do not use exactly the same INFO and FORMAT fields.
-
-`parse_sv_caller_vcf.py` converts them into a common evidence table containing information such as:
-
-- coordinates;
-- SV type;
-- SV length;
-- FILTER status;
-- normalized read support;
-- genotype-related fields.
-
-The normalized evidence is then processed by:
-
-```text
-scripts/filter_sv_evidence.py
-```
-
-Current basic filters include:
-
-```text
-minimum caller support = 2
-minimum |SVLEN| = 50 bp
-no global upper SV-length cutoff
-```
-
-Some features, such as imprecision, low genotype quality, or blacklist overlap, can be kept as flags instead of automatically removing the call.
-
-The filtering step also records why a call was retained or rejected.
-
-The script processes the evidence row by row so that large genome-wide files, including Sniffles `--qc-output-all` results, can be handled without loading the complete table into memory.
-
-**Question answered:** Which caller records have enough basic evidence to enter the merging step?
-
----
-
-## 7. Jasmine — master patient SV callset
-
-After caller-specific filtering, the three VCFs are merged with Jasmine.
-
-The input order is fixed:
-
-```text
-1. Sniffles2
-2. cuteSV
-3. DELLY
-```
-
-This order defines the meaning of Jasmine `SUPP_VEC`.
-
-Examples:
-
-```text
-100 = Sniffles2 only
-010 = cuteSV only
-001 = DELLY only
-101 = Sniffles2 + DELLY
-111 = all three callers
-```
-
-The workflow uses `--allow_intrasample` because all three VCFs come from the same biological sample.
-
-The complete sorted and indexed Jasmine VCF is considered the **integrated discovery SV callset** for each patient:
-
-```text
-<sample>/sv/merged/<sample>_merged_SV.vcf.gz
-```
-
-A second VCF containing variants supported by at least the configured number of callers is also generated:
-
-```text
-<sample>/sv/merged/<sample>_merged_SV.high_confidence.vcf.gz
-```
-
-This second file is a companion high-confidence set. It does not replace the complete Jasmine VCF.
-
-A single-caller SV is therefore not automatically considered false.
-
-**Question answered:** Which caller records most likely represent the same biological event, and how many callers support each integrated discovery SV?
-
----
-
-## 8. Caller-support summary
-
-`summarize_sv_caller_support.py` decodes the Jasmine caller information and generates:
-
-```text
-<sample>/sv/merged/<sample>_caller_support_summary.tsv
-```
-
-This table records which callers support each integrated discovery SV and is also used for caller-concordance plots.
-
-Caller count is treated as technical evidence. It is not a pathogenicity score.
-
----
-
-## 9. needLR — population-frequency evidence
-
-needLR is kept separate from the Jasmine calling workflow.
-
-A dedicated Sniffles2 2.6.2 query VCF is generated because the needLR ONT backend was built using a Sniffles2-compatible representation.
-
-The workflow is:
-
-```text
-ONT BAM
-  ↓
-Sniffles2 2.6.2
-  ↓
-needLR
-  ↓
-population-frequency evidence
-  ↓
-match back to Jasmine integrated discovery SV
-```
-
-Main outputs:
-
-```text
-<sample>/sv/needlr/<sample>_needLR_RESULTS.tsv
-<sample>/sv/needlr/<sample>_needLR_RESULTS.vcf.gz
-```
-
-The needLR results are matched back to the integrated Jasmine SVs using compatible SV type, genomic position and size/overlap criteria. The transferred frequency is therefore provisional coordinate-compatible population evidence, not an assertion of exact allele identity.
-
-Important rules:
-
-- needLR is a supplementary annotation source, not a filter that defines the integrated discovery SV callset;
-- a missing needLR match does **not** mean allele frequency = 0;
-- BNDs and SVs >=10 Mb remain in the master analysis even when needLR cannot evaluate them;
-- needLR records are matched by SV type and coordinates, not only by gene name.
-
-**Question answered:** Is a coordinate-compatible SV present in the ONT population reference, and what population frequency does that matched needLR event report?
-
----
-
-## 10. AnnotSV — main SV annotation and SV-database evidence
-
-AnnotSV is the main annotation tool used for the structural variants.
-
-It is run directly on the complete Jasmine complete discovery VCF.
-
-The main outputs are:
-
-```text
-<sample>/sv/annotsv/<sample>_merged_SV.annotsv.tsv
-<sample>/sv/annotsv/<sample>_merged_SV.annotsv.panel_only.tsv
-```
-
-The first file contains the genome-wide annotation. The panel-only file is derived afterwards.
-
-This order is important because the genome-wide discovery step should remain independent of the known gene panel.
-
-In addition to gene annotation and CNV-oriented ACMG/ClinGen ranking, the integrated table now exposes AnnotSV's SV-specific benign/pathogenic overlap fields for:
-
-```text
-DEL  -> loss evidence
-DUP  -> gain evidence
-INS  -> insertion evidence
-INV  -> inversion evidence
-```
-
-The source fields can contain evidence derived from SV resources such as ClinVar, dbVar, ClinGen, gnomAD, DGV and 1000 Genomes, depending on the installed AnnotSV annotation release.
-
-These are kept as separate columns because the ACMG/ClinGen quantitative framework mainly applies to copy-number loss/gain. For insertions and inversions, the database-overlap evidence is therefore especially useful.
-
-The workflow records both the original source text and database-overlap flags. An overlap is treated as evidence, not as proof that the patient SV is exactly the same event as the database SV.
-
-The six `SV_DB_*_OVERLAP` columns (ClinVar, dbVar, gnomAD, DGV, 1000 Genomes and ClinGen) summarize database names reported in AnnotSV's source fields:
-
-| Flag | Meaning |
+| **Dorado** | ONT BAM | Produces read-level sequencing-summary information. This workflow starts from existing BAMs; it does not perform the original basecalling. |
+| **mosdepth** and BAM N50 script | Aligned BAM | Measure coverage, read lengths and sequencing quality. |
+| **Clair3** | ONT BAM and reference | Calls genome-wide single-nucleotide variants (SNVs) and small insertions/deletions. |
+| **WhatsHap** | Clair3 VCF and BAM | Phases small variants and generates a haplotagged BAM. |
+| **Sniffles2, cuteSV, DELLY LR** | ONT BAM | Independently detect genome-wide structural variants, including deletions, insertions and rearrangements. |
+| **Caller parser and evidence filter** | Caller VCFs | Put support fields into a common table and produce filtered caller VCFs before merging. |
+| **Jasmine** | Filtered caller VCFs | Merges compatible calls into a complete patient-level SV VCF. A stricter multi-caller VCF is saved separately. |
+| **needLR** | Dedicated Sniffles2-compatible query | Supplies long-read population-frequency context; it does not replace the Jasmine VCF. |
+| **AnnotSV** | Merged SV VCF | Adds overlapping genes, SV annotation and available classification/population information. |
+| **VEP** | Merged SV VCF | Adds transcript and sequence-consequence information. A panel-only view is made separately. |
+| **Monarch KG / HPO** | Genes and phenotype resources | Links genes to phenotype evidence for research prioritization. |
+| **Exomiser (offline)** | HON/patient HPO query | Provides a separate phenotype-based ranking for comparison. |
+| **Straglr** | ONT BAM | Detects tandem-repeat variation. |
+| **TLDR** | ONT BAM | Detects mobile-element insertion evidence. |
+| **LongPhase** | ONT BAM and variants | Adds SNP/SV phasing information; its SNP and SV VCF outputs are distinct. |
+| **modkit** | Modified-base ONT BAM | Summarizes CpG methylation. |
+| **XCI analysis** | Chromosome-X phasing and methylation | Investigates X-inactivation skew where the required data and configuration exist. |
+| **MitoCarta, gnomAD-SV and gene-depth scripts** | Annotated candidate tables | Add mitochondrial gene context, population comparison and local depth evidence. |
+| **Samplot and plotting scripts** | BAM plus selected SVs and evidence tables | Visualize alignments, breakpoints, candidate loci and whole-genome summaries. |
+| **Optional AlphaGenome module** | Small-variant VCF and configured AVI resource | Adds research-oriented predictions without changing variant calling or clinical classification. |
+
+**Main distinction:** a call supported by several callers is not automatically pathogenic. Frequencies that are absent or cannot be matched remain unknown; they must not be interpreted as zero. Repeat, mobile-element, depth, methylation and phase results add context but are not independent experimental confirmation.
+
+## 5. Main LRS outputs
+
+These paths are inside the configured results folder, under each sample directory.
+
+| Path under a sample | Meaning |
 | --- | --- |
-| `YES` | The database is mentioned in at least one source field. |
-| `NOT_REPORTED` | Source text exists, but this database is not mentioned. |
-| `UNKNOWN` | Both source fields are missing. These fields alone cannot distinguish no reported overlap from unavailable annotations. |
-| `NOT_APPLICABLE` | This integration has no dedicated source-field mapping for the SV type, including BND/translocations and complex types outside DEL/DUP/INS/INV. |
-
-Empty fields and the missing-value tokens `.`, `NA`, `N/A`, `NaN`, `None` and `null` are treated as missing, ignoring case and surrounding whitespace. Unsupported SV types receive `NOT_APPLICABLE` before source fields are checked.
-
-These flags expose existing AnnotSV annotations; they do not query databases independently. `NOT_REPORTED` is not a verified negative database search, and none of these statuses establishes that an SV is benign. The automatic AnnotSV availability audit now adds separate `SV_PATHOGENIC_DB_STATUS`, `SV_BENIGN_DB_STATUS` and six `SV_DB_*_AVAILABILITY` fields. These distinguish missing output columns, unavailable/empty/unrecognized processed resources and no overlap reported. See [automatic availability reporting](docs/ANNOTSV_AVAILABILITY.md). The original overlap flags remain unchanged.
-
-The change is implemented in `build_integrated_sv_gene_tsv.py` ([commit d019bf9](https://github.com/kevR27/SV-PIPELINE/commit/d019bf9ae6193367990feb9055c3ab955e1fbda5)). Existing result tables retain their old flags until the integrated-table step is rerun with the updated script. Downstream summaries that previously expected only `YES`/`NO` must handle all four statuses.
-
-**Question answered:** Which genes and genomic features are affected, and is there known benign or pathogenic SV evidence overlapping the event?
-
----
-
-## 11. VEP — supplementary transcript/consequence annotation
-
-VEP is also run on the complete Jasmine complete discovery VCF.
-
-It is used as a supplementary transcript/consequence layer rather than as the main tool for deciding which genes are affected by an SV.
-
-The workflow uses `--flag_pick`, not `--pick`.
-
-`--flag_pick` keeps all transcript/gene consequences and marks VEP's preferred consequence with the `PICK` flag. This is important for large SVs because one SV can span several genes and transcripts. Using `--pick` would keep only one selected consequence and would under-represent the full overlap.
-
-Main outputs:
-
-```text
-<sample>/sv/vep/<sample>_SV_VEP.txt
-<sample>/sv/vep/<sample>_SV_VEP.panel_only.txt
-```
-
-AnnotSV remains the main genome-wide gene-mapping layer. VEP is used to add transcript-level consequence information.
-
-**Question answered:** What transcript-level consequences are associated with the SV, while keeping all affected genes/transcripts visible?
-
----
-
-## 12. Genome-wide gene and phenotype discovery
-
-After AnnotSV, all genes affected by the integrated discovery SVs are extracted.
-
-The workflow creates:
-
-```text
-<sample>_SV_genes.txt
-<sample>_nonpanel_genes.txt
-```
-
-The non-panel list is kept because the analysis should not stop at genes that are already known.
-
-The affected genes are then compared with phenotype information from an offline Monarch/HPO knowledge graph.
-
-This produces:
-
-```text
-<sample>_human_gene_phenotypes.tsv
-<sample>_ranked_candidates.tsv
-```
-
-### Manual Monarch KG setup
-
-If the configured nodes and edges TSVs already exist, reuse that release.
-For a new setup, obtain the KGX TSV archive from the
-[official Monarch data directory](https://data.monarchinitiative.org/monarch-kg/latest/index.html).
-Use a separate download folder so an existing analysis keeps its references:
-
-```bash
-MONARCH_KG_DIR="/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/monarch/new_download"
-mkdir -p "$MONARCH_KG_DIR"
-curl --fail --location https://data.monarchinitiative.org/monarch-kg/latest/monarch-kg.tar.gz -o "$MONARCH_KG_DIR/monarch-kg.tar.gz"
-tar -tzf "$MONARCH_KG_DIR/monarch-kg.tar.gz"
-tar -xzf "$MONARCH_KG_DIR/monarch-kg.tar.gz" -C "$MONARCH_KG_DIR"
-```
-
-Set `monarch_nodes` and `monarch_edges` to the actual extracted
-`monarch-kg_nodes.tsv` and `monarch-kg_edges.tsv` paths, including any archive
-subdirectory. Keep both files from the same release. Record the release date
-shown in the official directory and retain the archive: `latest` changes over
-time. This KG is separate from the small, supplied HON seed TSV and from the
-Exomiser phenotype database. No analysis rule downloads it.
-
-### Gene ranking
-
-The gene-ranking layer uses two explicit components:
-
-```text
-generic HON anchor context
-        +
-curated gene-disease evidence
-```
-
-The HON component is based on predefined hereditary-optic-neuropathy HPO anchor terms. It is a generic disease-context score, not patient-specific phenotype matching. Patient-specific HPO semantic similarity is calculated separately only when patient HPO terms are supplied.
-
-The gene-disease component uses GenCC classifications when available. These are kept as readable terms such as:
-
-```text
-Definitive
-Strong
-Moderate
-Supportive
-Limited
-Animal Model Only
-Disputed
-Refuted
-No known disease relationship
-```
-
-A small internal numerical value is attached to these terms only to help order candidates. It is called:
-
-```text
-gene_disease_evidence_score
-```
-
-This is **not a probability of pathogenicity**.
-
-If GenCC evidence is not available but an OMIM disease relationship is present, a smaller supportive value is used for research prioritization.
-
-The primary gene ranking uses four relevance tiers: `HIGH`, `MODERATE`,
-`SUPPORTING` and `LIMITED`. A separate 0–10 display score helps compare genes
-within that interpretation; it is not a calibrated diagnostic score.
-
-The code in `scripts/ranking_common.py` calculates this display score as:
-
-```text
-5 × normalized HON phenotype similarity                0–5
-5 × (context-adjusted gene-disease evidence / 4)         0–5
-                                                       ---
-maximum                                                 10
-```
-
-`HON_SEMANTIC_SCORE_0_10` separately reports the phenotype component on a
-0–10 scale. Do not add that column to the gene-disease score to reconstruct
-the display score. The context adjustment reduces the contribution of a
-general disease-gene association when HON similarity is weak; conflicting
-curated evidence is also down-weighted. The tier thresholds and weights are
-project choices and have not been validated as clinical cutoffs.
-
-SV count does not contribute points. SV size, mechanism, caller concordance, population evidence and other event-level information remain separate so that large rearrangements or repeatedly called genes do not automatically rise in the gene ranking.
-
-Panel membership remains a separate category and is not added directly to the numerical score. This avoids automatically forcing known panel genes above potentially relevant non-panel genes.
-
-`CANDIDATE_CLASS`, `gene_disease_evidence_score`, and the integrated discovery score are prioritization tools. They are not automatic clinical classifications.
-
-**Question answered:** Which affected genes are most compatible with the phenotype and with known human disease evidence, including genes outside the original panel?
-
-### Offline Exomiser CLI
-
-The separate Exomiser comparison now runs the installed **CLI 15.1.0** locally,
-using its **PHENOTYPE_ONLY** preset. It no longer launches AnnotSV's REST
-prioritiser, opens server ports or runs AnnotSV a second time. The REST version
-also used local data; moving to the CLI removes the service/startup dependency,
-not an internet dependency. Offline execution is not evidence of higher
-prediction accuracy.
-
-This preserves the original purpose: compare established Exomiser gene–phenotype
-matching with the custom HON method. **Patient variants are not loaded by this
-comparison.** The CLI still needs the hg38 data bundle to load its reference
-transcripts/genes, plus the phenotype bundle. This is not full Exomiser SV or
-SNV/indel variant prioritisation, and it does not create a diagnostic probability.
-AnnotSV continues to provide the independent SV annotations and CNV evidence.
-Its main run receives an empty HPO query so Exomiser scores do not alter its
-CNV classification. Research and clinical ranking rules are unchanged.
-
-Both LRS and SRS use `scripts/compare_exomiser_hon.py` and the shared rules in
-`snakemake_pipelines/common/annotsv_evidence_audit.smk`. No second analysis
-script is needed. A small dedicated `envs/exomiser.yaml` supplies Python and
-Java 21 when using `--use-conda`; the AnnotSV/MELT environments are unchanged.
-The pipeline does not download the CLI or scientific data bundles.
-
-#### Configuration and the HPO query
-
-Both configs contain these settings. The paths follow the existing server CLI
-installation; edit `exomiser_data_dir` if you extract the downloads elsewhere.
-
-```yaml
-exomiser_enabled: true
-exomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
-exomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
-exomiser_genome_data_version: "2512"
-exomiser_phenotype_data_version: "2512"
-exomiser_java: "java"
-exomiser_memory_gb: 8
-hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
-hpo_terms: null
-patient_hpo_files: {}
-```
-
-`hpo_terms: null` selects only the six `CORE_OCULAR_HON` rows from the explicit
-seed file. It is labelled `SHARED_HON_PROFILE`, a cohort query rather than proof
-that every listed finding was observed in each patient. Syndromic context rows
-remain in the original research ranking; they are not sent as shared patient
-findings. `hpo_terms` may replace the shared query with a string/list of HPO IDs,
-not a filename. `patient_hpo_files` optionally supplies a complete replacement
-query for a sample; the file can contain one ID per line or a TSV with
-`hpo_id`/`HPO_ID`. In LRS it also feeds the existing patient semantic stage.
-
-The new switch is `exomiser_enabled`. Older server configs containing only
-`annotsv_exomiser_enabled` are accepted as an enablement alias, but now run the
-CLI with no REST fallback. Remove that old key when adding the new one; conflicting
-values stop the workflow. Set `exomiser_enabled: false` for explicit disabled
-reports without requiring Java, the CLI or downloaded databases.
-
-#### Files and interpretation
-
-A distinct HPO query is scored once per workflow results directory, across all
-reference genes. Samples with the same terms share that result. Patient-specific
-queries with different terms use different results. Cached native files live in
-`reference_checks/exomiser_profiles/hpo_<query hash>/` under the configured
-results root. The hash identifies the term set; it is not a biological score.
-Data/JAR changes are tracked so the result is regenerated when resources change.
-
-| File | Purpose |
-|---|---|
-| `phenotype.genes.tsv` in the query folder | Native CLI TSV_GENE result; all returned genes, not a top-N shortlist |
-| `phenotype.job.json` and `application.properties` | Exact reproducible query/preset and hg38-only local data settings |
-| `run.json` and `exomiser.log` | Versions, command, Java, resource file identities, checksums and execution status/log |
-| `<sample>/gene_discovery/<sample>_exomiser_hpo.tsv` | Exact terms, source and shared/patient query scope |
-| `<sample>/gene_discovery/<sample>_exomiser_comparison.tsv` | Original ranks, custom same-query phenotype score, native Exomiser phenotype score/evidence, backend and data versions |
-| `<sample>/gene_discovery/<sample>_exomiser_comparison.summary.json` | Comparable genes, phenotype rank correlation/overlap, checksums and CLI provenance |
-
-Only the native **EXOMISER_GENE_PHENO_SCORE** is used for phenotype comparison.
-Native combined/variant scores or P-values are not substituted for it. The
-custom phenotype score is recalculated using the identical query. Original
-`CUSTOM_GENE_*` columns still come from `*_ranked_candidates.tsv`, not the
-later final SV/event ranking. The comparison reads that ranking without changing
-its scores, weights, tiers or ordering. Missing genes/scores remain unavailable;
-a valid zero remains zero, and inconsistent gene-specific scores are flagged.
-Shared event classifications are never distributed as gene phenotype scores.
-
-The existing plot still compares phenotype ranks with teal and purple. Its
-legend now identifies the offline CLI. Unavailable genes stay in the TSV, and
-only comparable genes enter rank statistics. Ties can enlarge top-k sets.
-The CLI/data releases differ from the old AnnotSV backend, and the native TSV
-rounds scores: do not expect identical old and new numbers or treat them as
-interchangeable without considering provenance.
-
-The run-specific properties file is generated from these config settings and
-passed explicitly to Java. It enables **hg38 only**, avoiding accidental hg19
-loading or old server-port placeholders. The external CLI installation's
-`application.properties` is not rewritten. No CADD/ReMM download is needed for
-this phenotype-only preset; preserving noncoding variants in VEP is a separate
-step, not a claim that Exomiser assessed those variants.
-
-#### Finish the manual setup and run
-
-Your current downloads are `2512_hg38.zip` and `2512_phenotype.zip`. Finish both
-and extract them into the configured data root, preserving the archive folder
-layout. Do not point `exomiser_data_dir` at one release subfolder or at a ZIP.
-Keep the complete CLI distribution, including `lib/`, beside its JAR.
-
-For the configured server directory, extraction commands are:
-
-```bash
-EXOMISER_CLI_DIR="/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0"
-mkdir -p "$EXOMISER_CLI_DIR/data"
-# Run these where your completed ZIP files are located:
-unzip -n 2512_hg38.zip -d "$EXOMISER_CLI_DIR/data"
-unzip -n 2512_phenotype.zip -d "$EXOMISER_CLI_DIR/data"
-```
-
-The root should contain `2512_hg38/` and `2512_phenotype/`. The script checks
-nonempty expected genome, transcript, ClinVar, phenotype and random-walk files.
-This detects missing/incomplete extraction, not every possible corruption or
-scientific database error. It also checks Java 21+ and the returned TSV header,
-usable phenotype scores, query identity and output checksum. The existing
-AnnotSV `2406` database is not silently reused. No completion is assumed while
-a download is still in progress.
-
-Run with `--use-conda` to supply the dedicated Java 21 runtime. If you already
-have Java 21 in your manually created `exomiser15` environment, you may set
-`exomiser_java` to that environment's actual absolute `bin/java` path. Do not
-assume the Java 8 executable in the MELT environment will work. The CLI step
-reserves the configured thread count and records its heap; raising total
-Snakemake cores above that count can allow multiple distinct queries concurrently,
-so account for each JVM's configured memory.
-
-After updating the checkout, run from the LRS workflow folder:
-
-```bash
-snakemake --snakefile Snakefile_LRS_update --configfile config_lrs.yaml \
-  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 32 -p exomiser_comparison
-```
-
-For SRS, use `Snakefile_SRS_WGS` and `config_srs_wgs.yaml` from its workflow
-folder. The comparison remains included in each main `all` target. Existing
-upstream files are reused. Then run the usual `all_thesis_plots` target; in LRS
-that target belongs to `Snakefile_LRS_postprocess`. Plotting alone does not run
-the upstream Exomiser analysis. Old comparison files are regenerated when their
-new CLI inputs/dependencies are required; old REST logs on your server are not
-deleted automatically.
-
-Exomiser is an established phenotype method, but agreement with the custom HON
-method is not independent validation because their knowledge sources overlap.
-Do not average the scores, add duplicate points or require an intersection.
-Two OPA1-positive controls can check a familiar association; they do not validate
-performance across HON genes or establish the effect of every SV. Use actual
-variant consequences, technical support, inheritance, population and disease
-mechanism evidence for clinical review.
-
-See the [official CLI installation instructions](https://exomiser.readthedocs.io/en/stable/installation.html),
-[phenotype preset configuration](https://exomiser.readthedocs.io/en/stable/advanced_analysis.html#preset)
-and [15.1.0 phenotype-only preset](https://github.com/exomiser/Exomiser/blob/15.1.0/exomiser-cli/src/main/resources/examples/preset-phenotype-only-analysis.yml).
-
----
-
-## 13. Integrated SV/gene evidence table
-
-The main interpretation output of the core LRS workflow is:
-
-```text
-<sample>/gene_discovery/<sample>_integrated_SV_gene_analysis.tsv
-```
-
-Each row represents one integrated discovery SV together with one overlapping gene.
-
-The table combines:
-
-- integrated discovery SV coordinates, type, and length;
-- caller provenance;
-- caller count and `SUPP_VEC`;
-- normalized read support;
-- caller QC/evidence flags;
-- affected genes;
-- VEP transcript consequences, transcript IDs and impact categories;
-- VEP exon/intron context and canonical/picked transcripts;
-- VEP whole-transcript loss/gain, truncation/elongation and overlap proportion;
-- needLR population-frequency evidence;
-- OMIM and GenCC disease information;
-- gene-disease evidence level and score;
-- ClinGen haploinsufficiency (HI) and triplosensitivity (TS);
-- AnnotSV ranking score and ranking criteria;
-- ACMG CNV class for deletions and duplications;
-- panel status;
-- generic HON-context and gene-disease relevance scores;
-- relevant INFO fields from the complete discovery VCF.
-
-Representative columns include:
-
-```text
-SV_ID
-CHROM / START / END
-CHR2 / POS2
-SVTYPE / SVLEN
-
-CALLERS / CALLER_COUNT
-SUPP / SUPP_VEC
-CALLER_READ_SUPPORT
-CALLER_EVIDENCE_FLAGS
-
-NEEDLR_AF / NEEDLR_STATUS
-
-GENES
-VEP_MATCH_STATUS / VEP_MATCH_METHOD
-VEP_TRANSCRIPT_COUNT / VEP_TRANSCRIPTS
-VEP_WHOLE_TRANSCRIPT_COUNT / VEP_GENE_TRANSCRIPT_SCOPE
-VEP_CONSEQUENCES / VEP_IMPACTS
-VEP_EXON / VEP_INTRON
-VEP_CANONICAL_TRANSCRIPTS / VEP_PICK_TRANSCRIPTS
-VEP_OVERLAP_BP_MAX / VEP_OVERLAP_PC_MAX
-VEP_TRANSCRIPT_REGION_CLASS / VEP_STRUCTURAL_EFFECT
-
-OMIM
-GENCC
-GENCC_DISEASE
-GENCC_MOI
-GENE_DISEASE_EVIDENCE_SCORE
-GENE_DISEASE_EVIDENCE_LEVEL
-GENE_DISEASE_EVIDENCE_CONFLICT
-
-CLINGEN_HI
-CLINGEN_TS
-DOSAGE_RELEVANCE
-
-SV_DATABASE_EVIDENCE_SCOPE
-SV_PATHOGENIC_DB_SOURCE
-SV_PATHOGENIC_DB_COORD
-SV_PATHOGENIC_DB_PHENOTYPE
-SV_PATHOGENIC_DB_HPO
-SV_BENIGN_DB_SOURCE
-SV_BENIGN_DB_COORD
-SV_BENIGN_DB_AFMAX
-SV_DB_CLINVAR_OVERLAP
-SV_DB_DBVAR_OVERLAP
-SV_DB_GNOMAD_OVERLAP
-SV_DB_DGV_OVERLAP
-SV_DB_1000G_OVERLAP
-SV_DB_CLINGEN_OVERLAP
-
-ANNOTSV_RANKING_SCORE
-ANNOTSV_RANKING_CRITERIA
-ACMG_CNV_SCORE
-ACMG_CNV_CLASS
-
-PANEL_STATUS
-PHENOTYPE_SCORE
-SV_EVIDENCE_SCORE
-INTEGRATED_DISCOVERY_SCORE
-CANDIDATE_CLASS
-```
-
-For deletions, the dosage interpretation uses the ClinGen **HI** score. For duplications, it uses the ClinGen **TS** score.
-
-The ACMG CNV fields are only treated as formal CNV pathogenicity evidence for `DEL` and `DUP` events. Other SV types keep the AnnotSV ranking information but are not forced into a CNV-specific interpretation framework.
-
-This table connects the SV discovery results with gene relevance, dosage sensitivity, and variant-level pathogenicity evidence.
-
----
-
-## 14. Complementary long-read computational evidence
-
-The following analyses are kept separate from the main Jasmine caller count because they answer different biological questions.
-
-### 14.1 Straglr — tandem-repeat expansions
-
-Straglr is used to search for tandem-repeat expansions and the results are then linked to genes.
-
-Main outputs:
-
-```text
-<sample>/sv/straglr/<sample>_straglr.vcf
-<sample>/sv/straglr/<sample>_straglr.tsv
-<sample>/sv/straglr/<sample>_straglr.annotated.tsv
-```
-
-**Question answered:** Is there a repeat-expansion event that may not be represented well by the main breakpoint-based SV callers?
-
----
-
-### 14.2 TLDR — mobile-element insertions
-
-TLDR is used to identify mobile-element insertions.
-
-Main output:
-
-```text
-<sample>/mei/tldr/<sample>.tldr.table.txt
-```
-
-**Question answered:** Is there a mobile-element insertion at or near a candidate locus?
-
----
-
-### 14.3 LongPhase — SNP/SV phasing
-
-LongPhase combines the small variants, filtered Sniffles SVs, the BAM file, and the reference genome.
-
-Main output:
-
-```text
-<sample>/phasing_longphase/<sample>.longphase.vcf.gz     # phased SNPs
-<sample>/phasing_longphase/<sample>.longphase_SV.vcf.gz  # phased SVs
-```
-
-**Question answered:** Can a candidate SV be placed on the same haplotype as nearby sequence variants?
-
----
-
-### 14.4 modkit — methylation context
-
-modkit is used to obtain CpG methylation information from modification-aware ONT BAMs.
-
-Main output:
-
-```text
-<sample>/methylation/<sample>.cpg.bedmethyl.gz
-```
-
-Methylation is treated as additional biological context, not as direct proof that an SV is disease-causing.
-
-**Question answered:** Does the candidate region show a methylation pattern that may be useful for follow-up interpretation?
-
----
-
-## 15. Post-processing and multimodal integration
-
-The post-processing workflow is run after the main LRS workflow is complete.
-
-It does not call new integrated discovery SVs. The Jasmine complete discovery callset remains the backbone, while event ranking, Straglr/TLDR/LongPhase evidence, local WhatsHap/methylation context, MitoCarta context and the optional dedicated gnomAD-SV comparison are added around the same SV-gene rows.
-
-To avoid duplicating very large tables, the post-processing workflow now keeps **one persistent integrated SV-gene table**:
-
-```text
-<sample>/gene_discovery/<sample>_integrated_SV_gene_analysis.final.tsv.gz
-```
-
-Intermediate ranked, complementary, multimodal and MitoCarta-enriched tables are written as Snakemake `temp()` files under `.postprocess_tmp/`, compressed as `.tsv.gz`, and removed automatically after their downstream consumers finish. The event-ranking step first uses the detailed AnnotSV/caller audit payloads, then removes bulky JSON and raw VCF `INFO_*` fields that are no longer required downstream. Jasmine ID-list fields needed for LongPhase matching are retained.
-
-Small non-duplicative outputs remain separate where they represent a different analysis product rather than another copy of the integrated table:
-
-```text
-<sample>_independent_complementary_findings.tsv
-<sample>_mitocarta_annotation_summary.tsv
-<sample>_gene_multimodal_evidence_summary.tsv
-```
-
-The final integrated table therefore contains the compact row-level evidence required for interpretation: mechanism-aware SV-gene relationship, caller support/QC summaries, needLR population context, complementary Straglr/TLDR/LongPhase evidence, WhatsHap/methylation context, MitoCarta annotation, and dedicated gnomAD-SV exact-match fields when a gnomAD VCF is configured.
-
-### Why keep the dedicated gnomAD-SV comparison?
-
-AnnotSV already exposes gnomAD among its benign SV overlap resources. Those AnnotSV fields are retained and remain useful as database-overlap evidence. The dedicated gnomAD-SV step is not used as a replacement for AnnotSV and is not counted as an independent pathogenicity signal. Its purpose is narrower: against the explicitly configured gnomAD-SV VCF, it tests a conservative same-type exact site match and reports the matched site ID plus AF/AC/AN and filter status. This keeps AnnotSV's broader overlap evidence and the explicit gnomAD site-frequency evidence conceptually separate without storing a second full annotation table.
-
-### Independent complementary findings
-
-Relevant Straglr or TLDR findings without a compatible Jasmine SV remain in a small separate table because they are biologically distinct discoveries rather than annotations of an existing master SV.
-
-### Gene-level multimodal summary
-
-The compact gene-level summary combines the different evidence layers while avoiding repeated counting of the same integrated discovery SV.
-
----
-
-## 16. What information is available at the end?
-
-For each candidate, the final analysis can provide:
-
-| Evidence layer | Final information |
+| **qc/**, **coverage/** | Dorado, BAM length/N50 and mosdepth QC. |
+| **snp_clair3/** | Small-variant VCF. |
+| **sv/sniffles2/**, **sv/cutesv/**, **sv/delly/** | Caller-specific SV VCFs. |
+| **parsed/** | Standardized caller support and filtered evidence. |
+| **sv/merged/SAMPLE_ID_merged_SV.vcf.gz** | Master Jasmine SV VCF (replace SAMPLE_ID with the sample). |
+| **sv/merged/SAMPLE_ID_caller_support_summary.tsv** | Caller agreement and support. |
+| **sv/needlr/** | Supplementary ONT population results. |
+| **sv/annotsv/**, **sv/vep/** | Variant-to-gene and transcript annotation. |
+| **gene_discovery/SAMPLE_ID_integrated_SV_gene_analysis.tsv** | Primary integrated SV–gene table. |
+| **gene_discovery/SAMPLE_ID_allele_assessment.tsv** | Research allele and disease-mechanism assessment. |
+| **gene_discovery/SAMPLE_ID_integrated_SV_gene_analysis.final.tsv.gz** | Later integrated analysis from postprocessing. |
+| **gene_discovery/final/SAMPLE_ID_clinical_candidates.ranked.tsv** | Separate clinical candidate review order, not a diagnosis. |
+| **phasing/**, **phasing_longphase/** | WhatsHap and LongPhase results. |
+| **sv/straglr/**, **mei/tldr/**, **methylation/** | Tandem-repeat, mobile-element and methylation results. |
+| **plots/** | Figures and plot-source tables when plotting is requested. |
+
+Other final candidate, cohort, large-SV-depth and XCI tables are generated by the postprocessing and extension rules, depending on their inputs and enabled settings.
+
+## 6. Shared Python and R scripts
+
+The Snakefiles call most of these scripts automatically. Their names are listed here so you can find the code responsible for a particular result. For command-line options of a standalone Python script, run **python scripts/SCRIPT_NAME.py --help** from the repository root. Some modules are internal helpers and are intended to be imported, not run directly.
+
+### Quality control and file checks
+
+| Script | What it does |
 | --- | --- |
-| Technical QC | sequencing depth and coverage distribution |
-| Master SV | chromosome, breakpoints, SV type, SV length |
-| Caller provenance | which of Sniffles2/cuteSV/DELLY detected the event |
-| Read support | normalized per-caller support |
-| Caller QC | QC flags and controlled rescue information |
-| Caller agreement | `SUPP`, `SUPP_VEC`, caller count |
-| Gene effect | genes affected by the SV |
-| Known-disease context | panel membership, OMIM, GenCC |
-| Population evidence | needLR AF/status, AnnotSV population-overlap evidence, and dedicated exact gnomAD-SV AF/AC/AN when configured |
-| HON context | generic Monarch/HPO anchor context; patient-specific HPO similarity is separate |
-| Candidate priority | discovery-oriented candidate class |
-| Repeat evidence | Straglr findings |
-| MEI evidence | TLDR findings |
-| Haplotype context | WhatsHap/LongPhase |
-| Epigenetic context | modkit methylation information |
-| Final interpretation | SV-level, SV-gene-level, and gene-level integrated tables |
-
-The final result is therefore more than a VCF.
-
-The analysis follows this general path:
-
-```text
-raw long-read evidence
-        ↓
-caller-specific SV calls
-        ↓
-transparent QC
-        ↓
-patient-level integrated discovery SVs
-        ↓
-gene and clinical annotation
-        ↓
-population-frequency evidence
-        ↓
-phenotype prioritization
-        ↓
-repeat / MEI / phasing / methylation context
-        ↓
-candidate variants for review and confirmation
-```
-
----
-
-## 17. Main interpretation rules
-
-The following rules are central to the workflow:
-
-1. The complete Jasmine VCF is the master LRS SV callset.
-2. A variant is not removed simply because needLR, VEP, or another annotation tool cannot evaluate it.
-3. Support from several callers increases technical confidence but does not define pathogenicity.
-4. Single-caller variants remain available for interpretation.
-5. The high-confidence multi-caller VCF is a companion file, not the complete discovery callset.
-6. Panel membership is used for interpretation, not as a restriction during genome-wide SV discovery.
-7. No needLR match does not mean allele frequency = 0.
-8. BNDs and very large SVs remain in the master analysis even when a supplementary tool has size or representation limits.
-9. Straglr, TLDR, phasing, and methylation are additional evidence layers and do not increase the Jasmine caller count.
-10. Candidate ranking is used for prioritization, not as an automatic diagnostic classification.
-11. The gene-disease evidence score is an internal ranking value derived from curated GenCC/OMIM evidence; it is not a probability that a gene is pathogenic.
-12. For deletions and duplications, AnnotSV/ACMG CNV score and class are kept separately from the gene-priority score.
-13. ClinGen HI and TS are interpreted according to SV direction: HI for deletions and TS for duplications.
-14. SV-specific database overlaps from AnnotSV are retained separately from ACMG CNV classification, especially for insertions and inversions.
-15. VEP retains all transcript/gene consequences with `--flag_pick`; AnnotSV remains the main source for genome-wide SV gene mapping.
-16. Known-positive samples are used to test sensitivity before parameter changes are applied to the wider dataset.
-
----
-
-## 18. Running the active LRS workflow
-
-From the LRS workflow directory:
-
-```bash
-cd /DATA/casadei7/tools/SV-PIPELINE-main/snakemake_pipelines/lrs
-
-snakemake \
-  --snakefile Snakefile_LRS_update \
-  --configfile config_lrs.yaml \
-  --use-conda \
-  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 32 \
-  --rerun-incomplete \
-  --printshellcmds
-```
-
-A dry run can be used first to inspect the workflow:
-
-```bash
-snakemake \
-  --snakefile Snakefile_LRS_update \
-  --configfile config_lrs.yaml \
-  --use-conda \
-  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 32 \
-  --dry-run \
-  --printshellcmds
-```
-
-The output directory is controlled by the `path:` setting in `config_lrs.yaml`.
-
----
-
-## 19. Running the post-processing workflow
-
-Build the downstream interpretation tables with:
-
-```bash
-snakemake \
-  --snakefile Snakefile_LRS_postprocess \
-  --configfile config_lrs.yaml \
-  --use-conda \
-  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 8
-```
-
-For an initial candidate review from completed outputs, use the
-[interpretation guide](docs/INTERPRETING_LRS_RESULTS.md) and the plotting
-launcher's `--review-only` option. Start with the generated
-`plots/00_start_here/START_HERE.txt` and editable candidate review table.
-
-For a separate >1 kb genic review view, with small events archived, explicit
-AF/caller/inversion-support groups and preserved ranks, see
-[Further downstream SV filtering](docs/DOWNSTREAM_SV_FILTERING.md).
-
-To generate the full plotting collection:
-
-```bash
-snakemake \
-  --snakefile Snakefile_LRS_postprocess \
-  --configfile config_lrs.yaml \
-  --use-conda \
-  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 8 \
-  all_thesis_plots
-```
-
-The plotting step is kept separate from the biological analysis so that figures can be regenerated without rerunning the complete WGS workflow.
-
----
-
-## 20. Plotting layer
-
-The plotting scripts are organized by analysis type:
-
-```text
-<sample>/plots/
-├── 01_qc/
-├── 02_caller_concordance/
-├── 03_sv_landscape/
-├── 04_population_frequency/
-├── 05_candidate_prioritization/
-├── 06_phenotype/
-├── 07_complementary_evidence/
-│   ├── straglr/
-│   └── tldr/
-├── 08_phasing/
-├── 09_methylation/
-└── 10_integrated_evidence/
-```
-
-These plots are used to summarize:
-
-- sequencing coverage;
-- caller agreement;
-- SV type and size distribution;
-- population frequency;
-- candidate genes;
-- phenotype relationships;
-- repeat and MEI findings;
-- phasing;
-- methylation;
-- integrated evidence across candidates.
-
-More details are available in:
-
-```text
-plots/README.md
-```
-
----
-
-## 21. Recommended validation strategy
-
-Before applying the workflow to unresolved cases, it should be tested using samples with known structural variants.
-
-For each known event, the following should be checked:
-
-1. whether the event is present in the raw caller output;
-2. whether it passes or fails the caller's internal QC;
-3. whether the normalized evidence is interpreted correctly;
-4. whether the pre-Jasmine filter retains the event;
-5. whether Jasmine merges compatible caller representations correctly;
-6. whether `SUPP_VEC`, `IDLIST`, and caller provenance are correct;
-7. whether AnnotSV identifies the expected gene or region;
-8. whether needLR status is interpreted correctly;
-9. whether the event remains in the integrated table;
-10. whether the additional evidence layers provide useful context.
-
-This step is especially important for very large deletions because caller versions and default parameters can change sensitivity.
-
-Software regression checks are optional development checks and are separate
-from biological validation. Neither patient-analysis Snakefile runs the test
-suite. The GitHub workflow `SV evidence regression` now runs only when requested:
-open **Actions**, select that workflow, then choose **Run workflow**. It no longer
-runs automatically on uploads or pull requests. Existing tests remain available
-to investigate a code change; they do not need to be run before each sample.
-
-The optional local command, from the repository root with the required Python
-packages installed, is:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
----
-
-## 22. Short-read workflow
-
-The repository also contains a parallel short-read WGS workflow:
-
-```text
-Illumina BAM
-│
-├── mosdepth
-├── preflight + QC gate
-├── DeepVariant -> WhatsHap
-│
-├── Manta ─┐
-└── DELLY ─┴── caller evidence filter -> SURVIVOR -> MASTER SRS SV VCF
-                                                   │
-                                                   ├── caller-support summary
-                                                   ├── AnnotSV
-                                                   ├── VEP
-                                                   ├── Monarch/HPO
-                                                   └── diagnostic-support candidate table
-
-BAM -> ExpansionHunter
-BAM -> MELTv2
-BAM -> Mutserve2 (secondary mtDNA branch)
-```
-
-The same general rules are used:
-
-- the complete merged VCF is the master SRS SV callset;
-- multi-caller support is evidence, not an exclusion requirement;
-- the gene panel is applied during interpretation;
-- ExpansionHunter and MELT remain independent evidence branches;
-- needLR is not used for SRS;
-- the integrated-table structure remains as similar as possible between LRS and SRS.
-- nuclear genes involved in mitochondrial biology and bioenergetic pathways are
-  the primary review focus through the configured MitoCarta analysis;
-- mtDNA calls are retained as a separate, secondary analysis;
-- Samplot review and optional positive-control/Truvari benchmarking provide
-  validation layers without converting research evidence into a diagnosis.
-
-The SRS workflow can later be compared with the LRS results to evaluate which types of SVs and genomic regions benefit most from long-read sequencing.
-
----
-
-## 23. Repository structure
-
-```text
-SV-PIPELINE/
-├── envs/                       conda environments
-├── PANEL_OA/                   optic-neuropathy panel resources
-├── reference/                  reference and annotation resources
-├── scripts/                    parsing, filtering, and integration scripts
-├── plots/                      downstream plotting and interpretation scripts
-└── snakemake_pipelines/
-    ├── lrs/
-    │   ├── Snakefile_LRS_update
-    │   ├── Snakefile_LRS_postprocess
-    │   ├── config_lrs.yaml
-    │   └── PIPELINE_LOGIC.md
-    └── srs_wgs_pipeline/
-        ├── Snakefile_SRS_WGS
-        ├── config_srs_wgs.yaml
-        └── validation/
-```
-
-Both workflows use the central `scripts/` and `envs/` folders. The installed
-Conda environments on the Bologna server remain under
-`/home/casadei7/snakemake_envs/envs/` and are reused with `--conda-prefix`.
-
----
-
-## 24. Practical interpretation of a final candidate
-
-A useful candidate does not need to be supported by every analysis layer.
-
-The final tables make it possible to ask:
-
-```text
-Is the SV technically supported?
-        ↓
-Was it detected by one or several callers?
-        ↓
-Does it affect a known optic-neuropathy gene?
-        ├── yes -> interpret in the known disease context
-        └── no  -> keep it as a possible genome-wide candidate
-        ↓
-Is the event rare in the available ONT population reference?
-        ↓
-Does the affected gene fit the phenotype/HPO profile?
-        ↓
-Is there repeat, MEI, phasing, or methylation information?
-        ↓
-Does the combined evidence support further review
-and independent experimental confirmation where required?
-```
-
-The main purpose of the pipeline is to move from a large genome-wide SV callset to a smaller and more informative set of candidates, while keeping the analysis transparent and without discarding potentially relevant variants simply because one caller or one annotation resource cannot evaluate them.
-
-## AlphaGenome Atlas: genome-wide research annotation and separate plots
-
-Atlas is an **optional molecular-impact research layer** in LRS postprocess
-and SRS WGS. It does not change the original HON research ranking, the offline
-Exomiser comparison, AnnotSV/ACMG clinical ordering, filtering or XCI. Atlas
-cannot replace VEP: VEP explains transcript/regulatory consequences, while
-Atlas adds predictions. These predictions must not guide clinical decisions.
-
-The Atlas paper describes genome-wide in-silico mutagenesis for interpreting
-noncoding variants ([Cheng et al., 2026 preprint,
-DOI 10.64898/2026.09.16.26363192](https://doi.org/10.64898/2026.09.16.26363192)).
-Its usefulness here is to retain molecular context for intronic and intergenic
-SNVs that a coding-only shortlist would miss. This is not clinical validation
-of the pipeline or proof of an HON mechanism.
-
-### What goes into this step
-
-| Information | LRS | SRS | Purpose |
-|---|---|---|---|
-| Actual small-variant alleles | `snp_clair3/<sample>.vcf.gz` | `snp_deepvariant/<sample>.vcf.gz` | Direct genome-wide offline lookup; no panel/coding restriction |
-| Consequence context | `<sample>.longphase.vep.txt` | `<sample>.genomewide.vep.tsv.gz` | Exact-SNV-allele VEP context in the impact review table |
-| Phasing | Existing LongPhase/WhatsHap outputs | Existing WhatsHap outputs | Separate cis/trans evidence; not substituted for caller alleles |
-| SVs | Complete merged Jasmine VCF | Complete integrated SV/CNV VCF | Inventory of unsupported events and manually selected exploratory deletions |
-
-LRS VEP currently annotates the LongPhase small-variant file. If an original
-Clair3 allele is absent there, its AVI lookup is still retained and the review
-row reports `EXACT_ALLELE_NOT_FOUND` for VEP context. It is never assigned a
-different allele's consequence. BED gene overlap describes genomic location;
-it does not establish the target of an enhancer or a splice defect.
-
-**Blood and muscle describe where DNA was collected.** For germline WGS they
-do not determine which regulatory prediction tissue answers the HON question.
-`dna_sample_tissue` and `dna_sample_tissues` record collection context only.
-Offline AVI is a single genome-wide score, not a blood/muscle-specific score.
-For native predictions, choose available model tissue ontology IDs separately;
-retinal/neuronal context may be more relevant to HON. If the exact cell type is
-unavailable, identify any proxy explicitly rather than calling it a retinal
-ganglion-cell prediction. No patient RNA measurements are generated here.
-
-### Download once, then enable offline AVI
-
-1. From the [official downloads page](https://deepmind.google.com/science/alphagenome/downloads),
-   obtain the **GRCh38 AVI** bgzip TSV and its tabix index. Check the actual
-   resource name and portal size before allocating disk space; a download of
-   roughly 20 GB may be a different resource. AVI, merged splicing scores and
-   detailed feature downloads are not interchangeable. This implementation
-   uses AVI; it does not pretend to import the separate splicing/features files.
-2. Wait for completion and check the publisher's checksum if supplied. Keep
-   the file and its matching `.tbi` together on the Bologna server. For an
-   unindexed complete AVI bgzip TSV, create a **1-based point** index with
-   `tabix -s 1 -b 2 -e 2 /absolute/path/AVI.tsv.gz`. Do not use a BED/zero-based
-   index. The official layout is `chrom, pos, ref, alt, raw_score, phred`, as
-   implemented by [Ensembl's AVI VEP plugin](https://github.com/Ensembl/VEP_plugins/blob/release/116/AVI.pm).
-3. In each config, set `alphagenome_atlas_enabled: true`,
-   `alphagenome_avi_file: "/absolute/path/to/the_actual_AVI.tsv.gz"`, and
-   `alphagenome_avi_release: "the exact downloaded filename/release"`.
-   The default is disabled until these paths are known; no download runs from
-   a helper script. The reference must be GRCh38, with its `.fai` present.
-
-AVI lookup and the overview use the existing `envs/plots.yaml`; they need no
-API key or native model requests. Small tabix windows bound lookup memory,
-but genome-wide lookup against a large file is still substantial disk I/O.
-All original ALT alleles are written, including indels, filtered calls,
-reference mismatches and absent scores, with visible statuses. Missing score
-is not zero and is not evidence of low impact. Missing population AF is not
-inferred from Atlas coverage or genotype; the existing SV AF logic is unchanged.
-
-From the relevant workflow folder, the normal analysis target includes offline
-Atlas when enabled. To request only this branch, use:
-
-```bash
-# LRS: run the upstream Snakefile_LRS_update first for new samples.
-snakemake --snakefile Snakefile_LRS_postprocess --configfile config_lrs.yaml \
-  --use-conda --cores 32 -p atlas_annotation
-snakemake --snakefile Snakefile_LRS_postprocess --configfile config_lrs.yaml \
-  --use-conda --cores 32 -p all_atlas_plots
-# SRS: same targets with Snakefile_SRS_WGS and config_srs_wgs.yaml.
-```
-
-LRS uses the configured `postprocess_samples`, or its usual completed-sample
-selection. Required missing downstream inputs may be scheduled. The regular
-`all_thesis_plots` target also requests Atlas plots when enabled.
-
-### Read these results
-
-Both technologies use the same output names under `<sample>/`:
-
-| File | Meaning |
-|---|---|
-| `alphagenome_atlas/<sample>.impact_review.tsv` | AVI PHRED >= the configured threshold, ordered by molecular impact; QC flags, exact VEP consequences and source alleles stay visible |
-| `alphagenome_atlas/<sample>.alleles.tsv.gz` | Complete caller ALT-allele annotation, including unavailable/unsupported variants |
-| `alphagenome_atlas/<sample>.sv_scope.tsv` | All input SVs with unsupported-AVI status, endpoint conflicts and modelling requirements |
-| `alphagenome_atlas/<sample>.summary.json` | Counts, assembly, download label, file identities, quality thresholds and collection context |
-| `plots/17_alphagenome_atlas/atlas_overview.*` | Simple score distribution and lookup coverage: blue scored, grey unavailable; PDF/SVG/PNG and source TSV |
-| `plots/17_alphagenome_atlas/native/` | Official AlphaGenome plotting components for selected REF/ALT RNA and splice-site predictions; grey REF, purple ALT |
-
-The default PHRED 20 threshold denotes the top 1% of possible genome-wide
-substitutions; it is **not 99% probability of disease**. This impact view is not
-an HON candidate ranking. Poor-quality rows remain visible and require review.
-AVI includes AlphaGenome and other predictors, including AlphaMissense,
-loss-of-function annotation and conservation: separate additive bonuses would
-double-count correlated evidence. Check population frequency, clinical evidence
-and mechanism using their existing outputs; this table supplies none of those
-as a new diagnosis. All raw noncoding alleles remain in the complete table even
-if they do not meet the display threshold.
-
-### Native plots and exploratory large deletions
-
-The precomputed AVI file cannot produce tissue-specific REF/ALT tracks. Those
-plots use the **official AlphaGenome Python SDK**, pinned in
-`envs/alphagenome.yaml`, and selected requests to its remote API. Snakemake
-creates that environment with `--use-conda`. Obtain an API key using the
-[official setup instructions](https://www.alphagenomedocs.com/installation.html)
-and export `ALPHAGENOME_API_KEY` on the server; never put credentials in YAML or
-Git. Selected allele/region data go to the service. No API calls are made by
-the offline annotation step.
-
-Inspect the model's actual available tissue IDs before selecting them:
-
-```python
-import os
-from alphagenome.models import dna_client
-model = dna_client.create(os.environ["ALPHAGENOME_API_KEY"], timeout=30)
-metadata = model.output_metadata()
-print(metadata.rna_seq)  # Includes biosample names and ontology CURIEs.
-```
-
-Create one reviewed tab-separated selection file per sample. The required
-columns are `SOURCE`, `CHROM`, `POS`, `REF`, `ALT`, `SV_ID`; copy exact caller
-alleles and use **1-based VCF POS**. `SOURCE` is `SMALL` or `SV`. For a small
-variant, `SV_ID` is `.`. For a symbolic deletion, use the exact SV ID, original
-REF and `<DEL>` ALT, and add `CONFIRMED_BREAKPOINTS` and
-`CONFIRMED_ALT_PRESENT`, both `YES` only after checking the actual evidence.
-These confirmations are analysis selections, not inferred clinical findings.
-
-Set `alphagenome_plot_selection_files` to a map of sample IDs to these paths,
-set `alphagenome_prediction_ontology_terms` to the selected model IDs, then
-enable `alphagenome_native_plots_enabled`. Run `all_atlas_plots`. The default
-limit is ten selected alleles per sample, not millions of API requests. Small
-variants need a PASS call, observed ALT genotype and configured GQ/DP. Variants
-failing these checks remain in the master, but the selection must be resolved
-before predictions run. Merged caller columns do not establish a reliable
-patient SV genotype; the SV selection also requires manual ALT confirmation.
-
-Only reviewed `<DEL>` events are reconstructed automatically. POS is the
-retained anchor, and END is the last deleted base. The script checks explicit
-END against SVLEN, rejects imprecise/conflicting breakpoints and unknown
-sequence, and requires the whole allele plus flanks within one supported
-context, at most 1,048,576 bp. Near contig ends or for larger events it reports
-why prediction cannot proceed. DUP insertion site/orientation, INV structure,
-BND junctions and complex events need a resolved altered sequence; their SV
-inventory rows remain available instead of receiving invented AVI scores.
-
-Large deletion plots are labelled `EXPLORATORY_DEL_UNVALIDATED_NO_AVI`.
-AlphaGenome was evaluated primarily on small changes; accepting a larger
-sequence change does not validate its prediction. Its indel alignment assigns
-zero ALT signal to deleted positions: that is a coordinate convention, not
-independent proof of reduced whole-gene expression. Predictions represent one
-allele, not the patient's total heterozygous expression or cis/trans effects.
-See the [official limitations](https://www.alphagenomedocs.com/faqs.html) and
-[alignment explanation](https://www.alphagenomedocs.com/variant_scoring.html).
-
-Raw tracks and request/tissue metadata are cached under
-`alphagenome_atlas/prediction_cache/<request-hash>/`, outside the plot folder.
-The cache identifies allele, interval, reference file identity, tissues, SDK
-and explicit model version. It permits redraws with
-`alphagenome_native_cache_only: true` without an API key. Changing those inputs
-requires new predictions; upstream server model updates within the same version
-also require manual cache invalidation. Predicted tracks are saved as NPZ and
-track metadata TSVs, alongside PDF/SVG/PNG exports with four tracks per page
-for readability. Native splice-site class tracks can be tissue-independent;
-inspect the returned metadata and `native_manifest.tsv` for unavailable RNA
-tissues. No successful patient or
-live API analysis is assumed by enabling these rules.
-
-One necessary shared script, `scripts/annotate_alphagenome_atlas.py`, supplies
-annotation and plotting subcommands; one shared include,
-`snakemake_pipelines/common/alphagenome_atlas.smk`, wires both workflows.
-There is no duplicate VEP annotation, parallel clinical score or new diagnostic
-probability model. Source VCFs, existing VEP and existing rankings are reused.
-
-The LRS configuration also contained `14496` in `xci_samples` without a matching
-sample/BAM entry, which stopped parsing. That invalid entry has been removed;
-check the person's intended ID and XX/XCI eligibility before adding them. The
-XCI rules, masks and thresholds have not changed.
-
-Focused verification used synthetic caller VCFs and a small indexed AVI fixture:
-seven checks cover allele retention, exact VEP matching, negative/zero/missing
-scores, conflicting and incorrectly indexed resources, caller-column genotype
-ambiguity, deletion coordinates and native SDK/cache plotting. Enabled,
-disabled and native-plot DAGs were checked for both technologies; offline
-annotation and overview rules were also executed through both Snakefiles on
-saved synthetic inputs. Native plot rendering used mocked model tracks, not
-live service predictions. No real patient, OPA1-control, Bologna-server or full
-genome-wide download analysis was performed. These checks establish software
-behaviour, not diagnostic accuracy or performance on a multi-GB resource.
-
-
-### Matching the LRS VEP cache to the executable
-
-LRS `envs/vep.yaml` and `config_lrs.yaml: vep_cache_version` now both specify
-116. SRS now also uses 116 and can share the same matching cache. Do not point either workflow at a different
-release merely because it is already downloaded. To prepare the LRS cache:
-
-```bash
-mkdir -p /DATA/Reference/vep
-cd /DATA/Reference/vep
-curl --fail --location --remote-name https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz
-tar -xzf homo_sapiens_vep_116_GRCh38.tar.gz
-```
-
-Set the LRS `vep_cache_dir` to the directory containing
-`homo_sapiens/116_GRCh38/`. Follow the
-[official VEP cache guidance](https://www.ensembl.org/info/docs/tools/vep/script/vep_cache.html).
-If you deliberately use another supported release, change the environment
-pin and configuration together. Return to the LRS workflow folder before
-running Snakemake. Installation and extraction remain manual README steps.
+| **scripts/summarize_dorado_qc.py** | Summarizes Dorado read metrics for ONT sequencing.. |
+| **scripts/calc_bam_n50.py** | Calculates long-read length statistics and N50 directly from BAM alignments.. |
+| **scripts/build_qc_summary.py** | Combines SRS mapping and coverage metrics into a QC table.. |
+| **scripts/preflight_srs_wgs.py** | Checks SRS input files, genome reference and required resources before analysis.. |
+| **scripts/audit_sv_outputs.py** | Checks that master SV records are accounted for in downstream results.. |
+| **scripts/audit_vep_gene_coverage.py** | Compares gene coverage in VEP and AnnotSV annotations.. |
+
+### SV calling, merging and evidence
+
+| Script | What it does |
+| --- | --- |
+| **scripts/parse_sv_caller_vcf.py** | Converts caller-specific SV fields into a consistent evidence table.. |
+| **scripts/filter_sv_evidence.py** | Applies configurable support, size and FILTER checks before merging.. |
+| **scripts/summarize_sv_caller_support.py** | Reports which callers support each merged SV.. |
+| **scripts/sanitize_jasmine_vcf.py** | Repairs missing VCF header definitions without changing variants.. |
+| **scripts/combine_sv_cnv_evidence.py** | Joins SRS breakpoint SVs with CNVpytor read-depth evidence and retains passing depth-only CNVs.. |
+| **scripts/add_supporting_evidence.py** | Adds GRIDSS, CNVpytor, MELT and repeat evidence to SRS candidate rows.. |
+| **scripts/sv_evidence_common.py** | Shared parsers and helpers for conservative SV evidence handling.. |
+
+### Annotation, genes and population resources
+
+| Script | What it does |
+| --- | --- |
+| **scripts/build_integrated_sv_gene_tsv.py** | Combines master SVs, caller evidence, AnnotSV, population and gene annotations into one SV–gene table.. |
+| **scripts/extract_annotsv_genes.py** | Extracts genes found in genome-wide AnnotSV results.. |
+| **scripts/extract_nonpanel_genes.py** | Separates genes outside the optic-neuropathy panel.. |
+| **scripts/filter_annotsv_panel.py** | Makes a panel-only view of complete AnnotSV results.. |
+| **scripts/filter_vep_panel.py** | Makes a panel-only view of VEP results.. |
+| **scripts/summarize_vep_transcripts.py** | Summarizes VEP transcript consequences, retaining the full annotation separately.. |
+| **scripts/summarize_vep_sv_consequences.py** | Summarizes VEP SV consequences by variant and gene.. |
+| **scripts/monarch_human_gene_phenotypes.py** | Gets gene–phenotype associations from a local Monarch Knowledge Graph.. |
+| **scripts/annotate_gnomad_sv_exact.py** | Adds exact-site gnomAD-SV frequency matches where supported.. |
+| **scripts/annotate_mitocarta_context.py** | Adds MitoCarta gene and pathway context.. |
+| **scripts/annotate_straglr.py** | Links repeat-locus findings to overlapping genes.. |
+| **scripts/annotsv_reconciliation.py** | Explains SV records omitted from AnnotSV output using the matching log.. |
+| **scripts/audit_annotsv_evidence.py** | Reports annotation-source coverage and available AnnotSV database resources.. |
+| **scripts/merge_integrated_annotation_deltas.py** | Combines supplemental annotation columns back into the main table.. |
+| **scripts/summarize_secondary_mtdna_vcf.py** | Formats secondary ONT mtDNA small-variant findings.. |
+| **scripts/summarize_mtdna_variants.py** | Formats SRS Mutserve mtDNA SNV and heteroplasmy results.. |
+
+### Phenotype matching and candidate interpretation
+
+| Script | What it does |
+| --- | --- |
+| **scripts/rank_sv_gene_candidates.py** | Prioritizes genes from genome-wide SV discovery using HON phenotype and gene-disease evidence.. |
+| **scripts/build_hon_hpo_reference.py** | Builds an HON gene–disease–HPO reference from Monarch.. |
+| **scripts/hpo_semantic_similarity.py** | Compares patient HPO terms with gene-associated phenotypes.. |
+| **scripts/compare_exomiser_hon.py** | Runs or compares offline Exomiser phenotype matching against the HON method.. |
+| **scripts/rank_sv_gene_events.py** | Ranks individual SV–gene relationships with the predicted variant effect.. |
+| **scripts/build_candidate_tables.py** | Produces readable gene and SV–gene candidate tables.. |
+| **scripts/assess_sv_alleles.py** | Organizes allele, disease-mechanism and missing-evidence information for research review.. |
+| **scripts/build_diagnostic_candidates.py** | Creates SRS/LRS candidate review tables, including a separate clinical-review order.. |
+| **scripts/finalize_candidate_ranking.py** | Combines later depth, phase, HPO and variant evidence for final review tables.. |
+| **scripts/rank_mitochondrial_genes.py** | Prioritizes nuclear mitochondrial genes and separately reports mtDNA genes.. |
+| **scripts/build_population_gene_effect_table.py** | Reports population frequencies alongside predicted SV–gene effects.. |
+| **scripts/build_snv_sv_candidates.py** | Identifies small variants in genes that also contain an SV for manual second-hit review.. |
+| **scripts/sv_gene_effects.py** | Describes how an SV overlaps, removes, duplicates or breaks near a gene.. |
+| **scripts/ranking_common.py** | Shared logic and constants for ranking and evidence interpretation.. |
+
+### Extra evidence and cohort comparisons
+
+| Script | What it does |
+| --- | --- |
+| **scripts/summarize_large_sv_depth.py** | Summarizes read depth at and around large deletions and duplications.. |
+| **scripts/build_large_sv_gene_context.py** | Lists genes intersecting large SVs for depth and locus review.. |
+| **scripts/integrate_depth_into_candidates.py** | Adds depth observations to SV–gene candidate tables.. |
+| **scripts/build_cohort_sv_recurrence.py** | Finds conservatively similar SVs across study samples.. |
+| **scripts/filter_sv_candidates_for_review.py** | Creates separate size, frequency and supporting-evidence review views.. |
+| **scripts/run_samplot_candidates.py** | Makes SRS read-alignment plots for selected SV candidates.. |
+| **scripts/annotate_alphagenome_atlas.py** | Optional AlphaGenome offline variant-impact lookup and selected research plots.. |
+
+### X-chromosome inactivation
+
+| Script | What it does |
+| --- | --- |
+| **scripts/extract_xci_haplotags.py** | Extracts phased chromosome-X reads from a haplotagged BAM.. |
+| **scripts/compare_xci_phasing.py** | Checks agreement between WhatsHap and LongPhase phase blocks on chromosome X.. |
+| **scripts/xci_cluster_methylation.R** | Groups phased CpG methylation observations for XCI analysis.. |
+| **scripts/calculate_xci_skew.py** | Estimates XCI skew and related confidence and sensitivity measures.. |
+
+### Setup, rebuilds, checks and optional utilities
+
+| Script | What it does |
+| --- | --- |
+| **scripts/check_annotsv_gene_resource.py** | Checks the prepared AnnotSV gene reference for invalid labels.. |
+| **scripts/rebuild_annotsv_gene_resource.py** | Builds a corrected AnnotSV gene reference in a new folder.. |
+| **scripts/install_annotsv_gene_resource.py** | Installs a validated corrected AnnotSV gene resource with backup.. |
+| **scripts/check_run_cache.py** | Verifies saved inputs, settings and outputs before reusing expensive tool results.. |
+| **scripts/rebuild_sv_results.py** | Recreates interpretation tables from saved results without rerunning SV callers.. |
+| **scripts/run_cnvpytor_hg38.py** | Runs the GRCh38-specific CNVpytor compatibility wrapper.. |
+| **scripts/run_melt_single.py** | Runs one MELT transposon family with a predictable output path.. |
+| **scripts/benchmark_candidates.py** | Checks whether expected positive-control candidates were recovered.. |
+| **scripts/benchmark_candidate_ranking.py** | Measures the rank of known variants or genes in a predefined truth set.. |
+| **scripts/parse_vcf_to_tsv.py** | Standalone optional VCF-to-TSV inspection tool, not a Snakemake rule.. |
+
+## 7. Plotting scripts
+
+The **plots/run_thesis_plots.py** launcher uses the existing pipeline results to generate the figure collection. The individual figure scripts are grouped below. For outputs and options, see [plots/README.md](plots/README.md).
+
+| Script | What it does |
+| --- | --- |
+| **plots/build_candidate_review.py** | Creates starter candidate-review resources. |
+| **plots/build_gene_evidence_summary.py** | Summarizes gene-level evidence. |
+| **plots/candidate_review.py** | Prepares candidate-review views. |
+| **plots/integrate_candidate_context.py** | Adds supporting context to candidate views. |
+| **plots/intersect_complementary_sv_evidence.py** | Matches repeat, MEI and other evidence by SV coordinates. |
+| **plots/plot_caller_concordance.py** | Caller overlap plots. |
+| **plots/plot_candidate_evidence_matrix.py** | Candidate evidence matrix. |
+| **plots/plot_candidate_genes.py** | Prioritized gene plots. |
+| **plots/plot_candidate_locus.py** | Per-candidate locus plots. |
+| **plots/plot_cohort_sv_comparison.py** | Cross-sample SV comparison. |
+| **plots/plot_downstream_sv_filtering.py** | Downstream review-filter plots. |
+| **plots/plot_event_review_summary.py** | Event review summary. |
+| **plots/plot_gene_hpo_heatmap.py** | Gene–HPO and phenotype-rank heatmaps. |
+| **plots/plot_gene_multimodal_summary.py** | Combined gene-evidence figures. |
+| **plots/plot_gene_sv_spectrum.py** | SV types associated with genes. |
+| **plots/plot_genome_wide_sv_map.py** | Whole-genome SV positions and context. |
+| **plots/plot_large_complex_candidates.py** | Large or complex SV overview. |
+| **plots/plot_large_sv_overview.py** | Large-SV summaries. |
+| **plots/plot_lrs_qc.py** | Long-read coverage figures. |
+| **plots/plot_lrs_vs_srs.py** | LRS-versus-SRS benchmarking figures. |
+| **plots/plot_mei.py** | Mobile-element insertion plots. |
+| **plots/plot_methylation.py** | CpG methylation plots. |
+| **plots/plot_mitocarta_sv_genes.py** | SVs affecting MitoCarta genes. |
+| **plots/plot_mitochondrial_gene_ranking.py** | Mitochondrial gene rankings. |
+| **plots/plot_needlr_population.py** | ONT population-frequency plots. |
+| **plots/plot_panel_nonpanel_discovery.py** | Panel versus non-panel discovery plots. |
+| **plots/plot_phasing_qc.py** | Phasing quality plots. |
+| **plots/plot_straglr.py** | Tandem-repeat plots. |
+| **plots/plot_sv_gene_associations.py** | SV–gene association plots. |
+| **plots/plot_sv_gene_network.py** | SV-to-gene networks. |
+| **plots/plot_sv_landscape.py** | SV distributions by class, size and location. |
+| **plots/plot_utils.py** | Shared plotting helpers. |
+| **plots/run_samplot_candidates.py** | ONT candidate read-alignment plots. |
+| **plots/run_thesis_plots.py** | Launcher for the per-sample figure collection. |
+
+The **r_plots/** folder contains complementary R figures:
+
+| Script | What it does |
+| --- | --- |
+| **r_plots/plot_candidate_evidence_heatmap.R** | Candidate evidence heatmap. |
+| **r_plots/plot_hpo_heatmap.R** | HPO association heatmap. |
+| **r_plots/plot_large_sv_depth.R** | Large-SV depth plot. |
+| **r_plots/plot_population_gene_effect.R** | Population and gene-effect plots. |
+| **r_plots/plot_sequencing_qc.R** | Read-level and coverage QC figures. |
+| **r_plots/plot_xci.R** | XCI methylation and skew figures. |
+| **r_plots/theme_thesis.R** | Shared figure styling. |
+
+## 8. How to read the results
+
+Start with the master merged VCF and its caller-support summary, then check the integrated SV–gene table, gene/transcript effects, population evidence, HPO relevance, and the final candidate tables. Inspect the BAM or Samplot image for important breakpoints. The complete discovery variants are preserved even when an optional annotation is unavailable.
+
+The gene-panel label and mitochondrial context help prioritize which findings to investigate; neither is evidence that an SV is disease-causing. An SV–gene overlap predicts a possible mechanism but does not demonstrate an effect on RNA or protein. Use the final TSV files to select variants for further analysis and experimental confirmation.
+
+For short-read sequencing, follow the [SRS README](snakemake_pipelines/srs_wgs_pipeline/README.md). For the separate detailed checks and interpretation documents, consult **docs/**.
