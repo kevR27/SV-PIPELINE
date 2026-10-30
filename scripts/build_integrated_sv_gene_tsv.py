@@ -1434,8 +1434,8 @@ def main() -> int:
         ) as fh:
             temp_path = Path(fh.name)
             writer = csv.DictWriter(
-                fh, fieldnames=columns, delimiter="\\t",
-                extrasaction="ignore", lineterminator="\\n",
+                fh, fieldnames=columns, delimiter="\t",
+                extrasaction="ignore", lineterminator="\n",
             )
             writer.writeheader()
             for row in output_rows:
