@@ -30,8 +30,10 @@ import csv
 import gzip
 import json
 import math
+import os
 import re
 import sys
+import tempfile
 from collections import OrderedDict, defaultdict
 from pathlib import Path
 from sv_evidence_common import breakend, same_breakend, population_frequency, gene_symbols, invalid_gene_labels
@@ -734,7 +736,19 @@ def main() -> int:
     parser.add_argument("--jasmine-id-prefixes", action="store_true",
                         help="Resolve zero-based inputIndex_ID using --caller-tsv order, which must match the Jasmine file list")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--max-output-gb", type=float, default=10.0,
+                        help="Maximum uncompressed integrated TSV size in GiB (default: 10).")
+    parser.add_argument("--max-row-mb", type=float, default=8.0,
+                        help="Maximum individual row size in MiB (default: 8).")
     args = parser.parse_args()
+    if not (math.isfinite(args.max_output_gb) and args.max_output_gb > 0):
+        parser.error("--max-output-gb must be positive and finite")
+    if not (math.isfinite(args.max_row_mb) and args.max_row_mb > 0):
+        parser.error("--max-row-mb must be positive and finite")
+    max_output_bytes = int(args.max_output_gb * 1024**3)
+    max_row_bytes = int(args.max_row_mb * 1024**2)
+    estimated_output_bytes = 0
+    seen_pairs = set()
 
     sv_rows, _ = read_vcf(args.vcf)
     annotsv_rows = read_tsv(args.annotsv)
@@ -1232,6 +1246,30 @@ def main() -> int:
             for key, value in sv.items():
                 if key.startswith("INFO_"):
                     row[key] = value
+            pair = (sv_id, gene.upper())
+            if pair in seen_pairs:
+                raise ValueError(f"Duplicate SV/gene pair: {pair}")
+            seen_pairs.add(pair)
+            # JSON evidence can be repeated for every gene of a large SV.
+            # Detect abnormal expansion before accumulating huge output rows.
+            sizes = [(len(str(value).encode("utf-8")), key)
+                     for key, value in row.items()]
+            row_bytes = sum(size for size, _ in sizes) + 2 * len(sizes)
+            if row_bytes > max_row_bytes:
+                largest = sorted(sizes, reverse=True)[:5]
+                raise ValueError(
+                    f"SV {sv_id} gene {gene}: row estimated at "
+                    f"{row_bytes / 1024**2:.1f} MiB, exceeding --max-row-mb "
+                    f"{args.max_row_mb:g}. Largest fields: {largest}. "
+                    "Inspect repeated JSON annotations before raising the limit."
+                )
+            estimated_output_bytes += row_bytes
+            if estimated_output_bytes > max_output_bytes:
+                raise ValueError(
+                    f"Output estimate exceeded --max-output-gb {args.max_output_gb:g} "
+                    f"at SV {sv_id} gene {gene} after {len(output_rows)} rows; "
+                    "inspect annotation multiplicity and repeated JSON payloads."
+                )
             output_rows.append(row)
 
     ann_rate = (annotsv_match_count / n_sv * 100.0) if n_sv else 0.0
@@ -1387,17 +1425,29 @@ def main() -> int:
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(
-            fh,
-            fieldnames=columns,
-            delimiter="\t",
-            extrasaction="ignore",
-            lineterminator="\n",
-        )
-        writer.writeheader()
-        for row in output_rows:
-            writer.writerow({column: row.get(column, MISSING) for column in columns})
+    # Write atomically so a failed run cannot leave a valid-looking output.
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="", dir=output_path.parent,
+            prefix=f".{output_path.name}.", suffix=".tmp", delete=False,
+        ) as fh:
+            temp_path = Path(fh.name)
+            writer = csv.DictWriter(
+                fh, fieldnames=columns, delimiter="\\t",
+                extrasaction="ignore", lineterminator="\\n",
+            )
+            writer.writeheader()
+            for row in output_rows:
+                writer.writerow({column: row.get(column, MISSING) for column in columns})
+                if fh.tell() > max_output_bytes:
+                    raise ValueError(
+                        f"Serialized TSV exceeded --max-output-gb {args.max_output_gb:g} GiB."
+                    )
+        os.replace(temp_path, output_path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
     print(f"[OK] integrated_rows={len(output_rows)} output={output_path}")
     return 0
