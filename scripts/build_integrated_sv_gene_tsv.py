@@ -699,7 +699,7 @@ def annotsv_row_for_gene(matches: list[dict], gene: str, prepared=None):
         # Source mentions can be unioned within the same event without choosing
         # a gene/transcript or asserting coordinate/allele equivalence.
         out[key] = ";".join(values) if key in SOURCE_FIELDS and values else (values[0] if len(values) == 1 else MISSING)
-    out["_GENE_ROWS"] = json.dumps(specific, separators=(",", ":"))
+    out["_GENE_ROWS"] = json.dumps(compact_records(specific, ASSESS_ANNOT_FIELDS), separators=(",", ":"))
     out["_GENE_STATUS"] = "GENE_SPECIFIC" if specific else "NO_GENE_SPECIFIC_ROW"
     # A large CNV's classification belongs to the event, not to every gene.
     # Retain the source and disagreement rather than borrowing a split-row class.
@@ -713,6 +713,22 @@ def annotsv_row_for_gene(matches: list[dict], gene: str, prepared=None):
         for key in event_fields
     ) else "NO"
     return out
+
+
+# Minimal per-gene and per-caller evidence needed by assess_sv_alleles.py.
+# Full transcript/caller rows remain in the supplied AnnotSV and caller TSVs.
+ASSESS_ANNOT_FIELDS = ("SV_chrom", "Tx_start", "Tx_end", "Overlapped_CDS_percent")
+ASSESS_CALLER_FIELDS = (
+    "CALLER", "CALLER_SUPPORT", "EVIDENCE_FLAGS", "EVIDENCE_STATUS",
+    "EVIDENCE_FAIL_REASONS", "CALLER_GQ", "CALLER_DP", "CALLER_GT",
+)
+
+
+def compact_records(rows, fields):
+    return [
+        {key: row[key] for key in fields if row.get(key) not in (None, "", MISSING)}
+        for row in rows
+    ]
 
 
 def main() -> int:
@@ -802,7 +818,7 @@ def main() -> int:
             genes = [MISSING]
         prepared_gene_views = prepare_annotsv_gene_views(ann_matches)
         record_info = record_evidence(sv, ann_matches, skip_notes, bool(args.annotsv_unannotated))
-        unresolved_json = json.dumps(unresolved_rows, separators=(",", ":"))
+        unresolved_count = len(unresolved_rows)
 
         summary = caller_summary.get(sv_id, {})
         callers = first(summary, ["CALLERS"])
@@ -815,7 +831,7 @@ def main() -> int:
             sv, caller_by_id, caller_spatial_index
         )
         caller_rows, _ = caller_matches_for_sv(sv, caller_by_id, caller_spatial_index)
-        caller_json = json.dumps(caller_rows, separators=(",", ":"))
+        caller_json = json.dumps(compact_records(caller_rows, ASSESS_CALLER_FIELDS), separators=(",", ":"))
 
         if needlr_enabled:
             needlr_row, needlr_status, needlr_distance = match_needlr(
@@ -1237,15 +1253,14 @@ def main() -> int:
 
             row.update(evidence_availability(ann_row, sv["SVTYPE"], availability_audit, bool(ann_matches)))
             row.update(record_info)
-            row["VEP_ROWS_JSON"] = first(vep_row, ["VEP_ROWS_JSON"])
-            row["ANNOTSV_UNRESOLVED_GENE_ROWS_JSON"] = unresolved_json if gene == MISSING else "[]"
+            # Detailed VEP transcript records remain in --vep-summary.
+            row["ANNOTSV_UNRESOLVED_GENE_ROW_COUNT"] = str(unresolved_count if gene == MISSING else 0)
             row["ANNOTSV_GENE_STATUS"] = ann_row.get("_GENE_STATUS", "NO_GENE_SPECIFIC_ROW")
             row["ANNOTSV_GENE_ROWS_JSON"] = ann_row.get("_GENE_ROWS", "[]")
             row["CALLER_EVIDENCE_JSON"] = caller_json
             row["BND_ORIENTATION"] = sv.get("BND_ORIENTATION", MISSING)
-            for key, value in sv.items():
-                if key.startswith("INFO_"):
-                    row[key] = value
+            # Exclude INFO read lists and other large VCF payloads. The merged
+            # VCF remains the authoritative source for raw INFO evidence.
             pair = (sv_id, gene.upper())
             if pair in seen_pairs:
                 raise ValueError(f"Duplicate SV/gene pair: {pair}")
@@ -1410,17 +1425,15 @@ def main() -> int:
         "INTEGRATED_DISCOVERY_SCORE",
         "CANDIDATE_CLASS",
     ]
-    info_columns = sorted(
-        {key for row in output_rows for key in row if key.startswith("INFO_")}
-    )
+    info_columns = []
     extra_columns = ["NEEDLR_AF_SOURCE_FIELD", "NEEDLR_AF_VALUE_STATUS", "NEEDLR_MATCH_SCOPE",
                      "NEEDLR_SOURCE_ID", "ANNOTSV_GENE_STATUS", "ANNOTSV_GENE_ROWS_JSON",
-                     "VEP_ROWS_JSON", "CALLER_EVIDENCE_JSON", "BND_ORIENTATION"]
+                     "CALLER_EVIDENCE_JSON", "BND_ORIENTATION"]
     extra_columns += ["SV_PATHOGENIC_DB_STATUS", "SV_BENIGN_DB_STATUS"]
     extra_columns += [f"SV_DB_{db}_AVAILABILITY" for db in DATABASES]
     extra_columns += ["SV_SIZE_SCOPE", "ANNOTSV_RECORD_STATUS", "ANNOTSV_UNANNOTATED_REASON",
                       "ANNOTSV_GENE_MAPPING_STATUS", "ANNOTSV_INVALID_GENE_LABELS",
-                      "ANNOTSV_UNRESOLVED_GENE_ROWS_JSON"]
+                      "ANNOTSV_UNRESOLVED_GENE_ROW_COUNT"]
     columns = fixed_columns + extra_columns + info_columns
 
     output_path = Path(args.output)
