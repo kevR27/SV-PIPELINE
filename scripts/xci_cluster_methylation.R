@@ -294,17 +294,25 @@ cluster_one <- function(row_index) {
   clustered
 }
 
-cl <- makeCluster(max(1, nthreads))
-registerDoParallel(cl)
-
-clustered_list <- foreach(
-  idx = seq_len(nrow(cpgs)),
-  .packages = c("NanoMethViz", "tidyverse")
-) %dopar% {
-  cluster_one(idx)
+if (nthreads == 1L) {
+  # Keep errors in the main R process and show which island was started.
+  clustered_list <- lapply(seq_len(nrow(cpgs)), function(idx) {
+    message("[XCI] Starting CpG island ", idx, "/", nrow(cpgs))
+    cluster_one(idx)
+  })
+} else {
+  cl <- makeCluster(nthreads)
+  registerDoParallel(cl)
+  clustered_list <- tryCatch(
+    foreach(
+      idx = seq_len(nrow(cpgs)),
+      .packages = c("NanoMethViz", "tidyverse")
+    ) %dopar% {
+      cluster_one(idx)
+    },
+    finally = stopCluster(cl)
+  )
 }
-
-stopCluster(cl)
 
 clustered_reads <- bind_rows(clustered_list)
 
