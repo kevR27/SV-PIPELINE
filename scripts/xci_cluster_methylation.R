@@ -175,11 +175,30 @@ mbr <- ModBamResult(
   mod_code = "m"
 )
 
+# NanoMethViz 2.8.1 checks the read count, but a matrix with enough reads
+# can still have no CpG columns after filtering. Guard the actual matrix
+# before HDBSCAN enters native code. Only change our local function copy.
+cluster_reads_checked <- NanoMethViz:::cluster_reads
+cluster_steps <- as.list(body(cluster_reads_checked))
+hdbscan_step <- quote(dbsc <- dbscan::hdbscan(mod_mat_filled, minPts = min_pts))
+where <- which(vapply(cluster_steps, identical, logical(1), y = hdbscan_step))
+if (length(where) != 1L) {
+  stop("NanoMethViz cluster_reads has changed; review the empty-matrix check before running XCI.")
+}
+cluster_steps[[where]] <- quote({
+  if (NCOL(mod_mat_filled) == 0L) {
+    stop(sprintf("no CpG positions left after filtering (%d read rows); cannot cluster",
+                 NROW(mod_mat_filled)))
+  }
+  dbsc <- dbscan::hdbscan(mod_mat_filled, minPts = min_pts)
+})
+body(cluster_reads_checked) <- as.call(cluster_steps)
+
 cluster_one <- function(row_index) {
   region <- cpgs[row_index, ]
 
   clustered <- tryCatch(
-    NanoMethViz:::cluster_reads(
+    cluster_reads_checked(
       mbr,
       region$chr,
       region$start,
