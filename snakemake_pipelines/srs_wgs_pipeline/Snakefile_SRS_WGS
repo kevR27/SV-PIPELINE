@@ -1450,6 +1450,7 @@ rule further_filtering:
 
 rule all_thesis_plots:
     input:
+        GENOMISER_TARGETS,
         expand(PATH + "{sample}/plots/.thesis_plots.done", sample=SAMPLES),
         expand(PATH + "{sample}/downstream_filtering/plots/.filter_plots.done", sample=SAMPLES),
         SAMPLOT_TARGETS,
