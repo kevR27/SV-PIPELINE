@@ -9,8 +9,9 @@ import csv
 import json
 import re
 from pathlib import Path
+from datetime import datetime, timezone
 
-HPO_PATTERN = re.compile(r"HP:\\d{7}$")
+HPO_PATTERN = re.compile(r"HP:\d{7}$")
 
 
 def terms(value):
@@ -68,11 +69,8 @@ def make_profile(row, sample, labels):
         if hpo_id in labels:
             feature["type"]["label"] = labels[hpo_id]
         features.append(feature)
-    for hpo_id in absent:
-        feature = {"type": {"id": hpo_id}, "excluded": True}
-        if hpo_id in labels:
-            feature["type"]["label"] = labels[hpo_id]
-        features.append(feature)
+    # Absent findings remain in clinical metadata, not the score-generating
+    # query. Both ranking methods receive the same positive HPO terms.
 
     # Exomiser 15.1 accepts a GA4GH v1 Phenopacket; keep a minimal, stable
     # representation. Do not pretend that suspected diagnoses are confirmed.
@@ -81,7 +79,7 @@ def make_profile(row, sample, labels):
         "subject": {"id": sample},
         "phenotypicFeatures": features,
         "metaData": {
-            "created": "2026-01-01T00:00:00Z",
+            "created": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "createdBy": "SV-PIPELINE patient profile importer",
             "resources": [{
                 "id": "hp",
