@@ -6,6 +6,9 @@ rule genomiser_genome:
         small=GENOMISER_SMALL_VCF,
         sv=GENOMISER_SV_VCF,
         packet=rules.prepare_patient_profile.output.packet,
+        jar=config["genomiser_cli_jar"],
+        remm=config["genomiser_remm_hg38"],
+        remm_index=config["genomiser_remm_hg38"] + ".tbi",
         runner=SCRIPTS + "/run_genomiser.py"
     output:
         genes=PATH + "{sample}/genomiser/{sample}.genomiser.genes.tsv",
@@ -31,7 +34,7 @@ rule genomiser_genome:
         """
         set -euo pipefail
         mkdir -p "$(dirname {log:q})"
-        python {input.runner:q}                 --sample {wildcards.sample:q}                 --small-vcf {input.small:q} --sv-vcf {input.sv:q}                 --phenopacket {input.packet:q}                 --jar {params.jar:q} --data-dir {params.data:q}                 --remm {params.remm:q}                 --genome-version {params.genome_version:q}                 --phenotype-version {params.phenotype_version:q}                 --java {params.java:q} --memory-gb {params.memory}                 --outdir {params.outdir:q} > {log:q} 2>&1
+        python {input.runner:q}                 --sample {wildcards.sample:q}                 --small-vcf {input.small:q} --sv-vcf {input.sv:q}                 --phenopacket {input.packet:q}                 --jar {input.jar:q} --data-dir {params.data:q}                 --remm {input.remm:q}                 --genome-version {params.genome_version:q}                 --phenotype-version {params.phenotype_version:q}                 --java {params.java:q} --memory-gb {params.memory}                 --outdir {params.outdir:q} > {log:q} 2>&1
         test -s {output.genes:q}
         test -s {output.variants:q}
         test -s {output.manifest:q}
