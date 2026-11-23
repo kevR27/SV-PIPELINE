@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from prepare_patient_profiles import load_profile, make_profile, terms
-from benchmark_genomiser import chrom, gene_ranks, sv_match
+from benchmark_genomiser import (chromosome, sequential_gene_ranks,
+                                 custom_global_gene_ranks, genomiser_global_gene_ranks,
+                                 sv_matches)
 
 
 class PatientProfileTests(unittest.TestCase):
@@ -60,13 +62,29 @@ class PatientProfileTests(unittest.TestCase):
 
 class BenchmarkTests(unittest.TestCase):
     def test_chromosome_normalization(self):
-        self.assertEqual(chrom("chrMT"), "MT")
-        self.assertEqual(chrom("chrM"), "MT")
-        self.assertEqual(chrom("chr3"), "3")
+        self.assertEqual(chromosome("chrMT"), "MT")
+        self.assertEqual(chromosome("chrM"), "MT")
+        self.assertEqual(chromosome("chr3"), "3")
 
     def test_gene_ranks_deduplicates_inheritance_models(self):
         data = [{"GENE_SYMBOL": "OPA1"}, {"GENE_SYMBOL": "OPA1"}, {"GENE_SYMBOL": "ACO2"}]
-        self.assertEqual(gene_ranks(data, "GENE_SYMBOL"), {"OPA1": 1, "ACO2": 2})
+        self.assertEqual(sequential_gene_ranks(data, "GENE_SYMBOL"), {"OPA1": 1, "ACO2": 2})
+
+    def test_custom_gene_rank_is_global_not_panel_sorted(self):
+        genes = [
+            {"GENE": "LOW", "PANEL_STATUS": "PANEL", "FINAL_GENE_RELEVANCE_TIER": "LIMITED",
+             "BEST_EVENT_FINAL_RANK_GLOBAL": "20", "FINAL_GENE_RELEVANCE_DISPLAY_SCORE": "0"},
+            {"GENE": "HIGH", "PANEL_STATUS": "NONPANEL", "FINAL_GENE_RELEVANCE_TIER": "HIGH",
+             "BEST_EVENT_FINAL_RANK_GLOBAL": "1", "FINAL_GENE_RELEVANCE_DISPLAY_SCORE": "9"}
+        ]
+        self.assertEqual(custom_global_gene_ranks(genes, set(genes[0])),
+                         {"HIGH": 1, "LOW": 2})
+
+    def test_genomiser_genes_ranked_by_model_order(self):
+        rows = [{"GENE_SYMBOL": "OPA1", "#RANK": "2"},
+                {"GENE_SYMBOL": "ACO2", "#RANK": "1"}]
+        self.assertEqual(genomiser_global_gene_ranks(rows, set(rows[0])),
+                         {"ACO2": 1, "OPA1": 2})
 
     def test_sv_event_coordinate_match(self):
         truth = {"gene": "OPA1", "chrom": "chr3", "pos": "1000", "end": "2000", "svtype": "DEL"}
@@ -74,7 +92,7 @@ class BenchmarkTests(unittest.TestCase):
                   "END": "1990", "SVTYPE": "DEL"}
         genomiser = {"GENE_SYMBOL": "OPA1", "CONTIG": "3", "START": "1000",
                      "END": "2000", "ALT": "<DEL>"}
-        self.assertTrue(sv_match(custom, truth, "custom", 20))
+        self.assertTrue(sv_matches(custom, truth, "custom", 20))
         self.assertTrue(sv_match(genomiser, truth, "genomiser", 20))
         self.assertFalse(sv_match(genomiser, {**truth, "svtype": "DUP"}, "genomiser", 20))
 
