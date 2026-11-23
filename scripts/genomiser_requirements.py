@@ -7,7 +7,11 @@ Actual resource and per-sample phenotype checks happen when the job runs.
 
 
 def require_genomiser(config, samples):
-    if config.get("genomiser_enabled", True) is not True:
+    enabled = config.get("genomiser_enabled", True)
+    # Snakemake --config KEY=true can pass "true" as a string.
+    if enabled is not True and not (
+        isinstance(enabled, str) and enabled.strip().lower() == "true"
+    ):
         raise ValueError(
             "Genomiser is required in both pipelines; do not set "
             "genomiser_enabled: false."
