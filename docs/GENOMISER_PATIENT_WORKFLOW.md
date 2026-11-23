@@ -21,6 +21,138 @@ The original phenotype-only Exomiser comparison is no longer a mandatory
 `rule all` target. Existing Exomiser scripts are retained for historical
 reproducibility; they do not run by default.
 
+
+## Install / verify resources on the Bologna server
+
+Because the 15.1.0 Exomiser CLI and its 2512 HG38/phenotype databases are
+already configured for the existing phenotype-only comparison, **do not
+download duplicate genome databases unless the preflight identifies missing
+files**. Retain 15.1.0 and 2512 for reproducibility; a newer Exomiser release
+requires a separate versioned validation.
+
+1. Confirm the installed Java CLI and data:
+
+```bash
+BASE=/DATA/casadei7/tools/SV-PIPELINE-main_v3
+CLI="$BASE/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0"
+test -s "$CLI/exomiser-cli-15.1.0.jar"
+find "$CLI/data" -maxdepth 2 -type f -name '*mv.db' | head -20
+df -h "$BASE"
+```
+
+2. Download ReMM v0.4 **GRCh38** (approximately 15 GB compressed) and the
+index from the official ReMM page (https://remm.bihealth.org/download).
+Use the direct official URLs below; `wget -c` supports continuing an
+interrupted download:
+
+```bash
+BASE=/DATA/casadei7/tools/SV-PIPELINE-main_v3
+REMM_DIR="$BASE/reference/remm"
+mkdir -p "$REMM_DIR"
+cd "$REMM_DIR"
+wget -c https://kircherlab.bihealth.org/download/ReMM/ReMM.v0.4.hg38.tsv.gz
+wget -c https://kircherlab.bihealth.org/download/ReMM/ReMM.v0.4.hg38.tsv.gz.tbi
+wget -c https://kircherlab.bihealth.org/download/ReMM/ReMM.v0.4.hg38.md5
+md5sum -c ReMM.v0.4.hg38.md5
+ls -lh ReMM.v0.4.hg38.tsv.gz*
+```
+
+If any checksum fails, stop and redownload the corrupted file; do not
+create a new tabix index as a substitute for a missing official file.
+
+3. Install the small execution environment using the workflow's YAML:
+
+```bash
+cd /DATA/casadei7/tools/SV-PIPELINE-main_v3
+conda env create -f envs/genomiser.yaml
+conda run -n genomiser java -version
+conda run -n genomiser bcftools --version
+```
+
+If `genomiser` already exists, use
+`conda env update -n genomiser -f envs/genomiser.yaml --prune`
+instead of creating it. Snakemake `--use-conda` can create its own
+environment from the same file, so a manual environment is for standalone
+preflight or debugging.
+
+4. Edit the **two** YAML configs:
+```yaml
+patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
+genomiser_enabled: true
+genomiser_remm_hg38: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/remm/ReMM.v0.4.hg38.tsv.gz"
+genomiser_memory_gb: 32
+genomiser_benchmark_truth_tsv: null
+```
+
+Check `genomiser_cli_jar` and `genomiser_data_dir` point to the existing
+installation. The runner passes the 2512 data versions and ReMM path via
+Java system properties; the official `application.properties` in the
+installation directory is loaded when present.
+
+5. Add the clinical table, ensuring **HP:0000648** is listed in
+`hpo_present` for every OA patient. Include *only confirmed observed*
+additional findings. In particular, missing or unexamined features are
+not negative HPO observations:
+
+```bash
+mkdir -p /DATA/casadei7/private_clinical
+chmod 700 /DATA/casadei7/private_clinical
+cp "$BASE/reference/patient_profiles.template.tsv" \
+   /DATA/casadei7/private_clinical/patient_profiles.tsv
+nano /DATA/casadei7/private_clinical/patient_profiles.tsv
+chmod 600 /DATA/casadei7/private_clinical/patient_profiles.tsv
+```
+
+Replace the example row with actual de-identified patient sample IDs
+matching the YAML `samples` keys.
+
+## Rerun ONLY phenotype ranking and Genomiser
+
+**Do not invoke the default `all` target simply to update patient HPO
+or the Genomiser comparison**: Snakemake may rebuild missing dependencies
+from expensive callers. First run `--dry-run` for exact targets.
+
+For LRS example patient `21930`:
+
+```bash
+cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/lrs
+OUT=/DATA/casadei7/nanopore/WGS/RESULTS
+snakemake -s Snakefile_LRS_update --cores 32 --dry-run \
+  "$OUT/21930/genomiser/21930.genomiser.manifest.json"
+snakemake -s Snakefile_LRS_update --use-conda --cores 32 \
+  --resources mem_mb=65000 \
+  "$OUT/21930/genomiser/21930.genomiser.manifest.json"
+snakemake -s Snakefile_LRS_postprocess --cores 32 --dry-run \
+  "$OUT/21930/gene_discovery/final/21930_gene_candidates.ranked.tsv"
+snakemake -s Snakefile_LRS_postprocess --use-conda --cores 32 \
+  "$OUT/21930/gene_discovery/final/21930_gene_candidates.ranked.tsv"
+```
+
+For SRS, use the actual `path` and `sample` in
+`config_srs_wgs.yaml`; they can differ from LRS:
+
+```bash
+cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/srs_wgs_pipeline
+SAMPLE=HG002
+OUT=/DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/srs_wgs_pipeline/srs_CNTRL_results
+snakemake -s Snakefile_SRS_WGS --cores 32 --dry-run \
+  "$OUT/$SAMPLE/genomiser/$SAMPLE.genomiser.manifest.json" \
+  "$OUT/$SAMPLE/gene_discovery/final/${SAMPLE}_gene_candidates.ranked.tsv"
+snakemake -s Snakefile_SRS_WGS --use-conda --cores 32 \
+  --resources mem_mb=65000 \
+  "$OUT/$SAMPLE/genomiser/$SAMPLE.genomiser.manifest.json" \
+  "$OUT/$SAMPLE/gene_discovery/final/${SAMPLE}_gene_candidates.ranked.tsv"
+```
+
+HG002 is a technical example, not a hereditary optic neuropathy patient,
+and must not be supplied with fabricated OA HPO observations. Replace
+`SAMPLE` and `OUT` with a genuine OA sample and its configured SRS result
+directory when running patient-specific clinical prioritization.
+
+When a dry run lists expensive calling jobs, check whether source outputs
+were deleted or paths changed. Restore retained source VCFs where possible
+rather than recomputing the entire pipeline.
+
 ## One private patient table for both LRS and SRS
 
 Copy `reference/patient_profiles.template.tsv` to a secure location,
@@ -91,29 +223,9 @@ python scripts/prepare_patient_profiles.py \
   --clinical-output /tmp/21930.clinical_context.json
 ```
 
-Then, from the LRS folder:
-
-```bash
-cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/lrs
-snakemake -s Snakefile_LRS_update --use-conda --cores 32 --dry-run
-snakemake -s Snakefile_LRS_update --use-conda --cores 32 --resources mem_mb=65000
-snakemake -s Snakefile_LRS_postprocess --use-conda --cores 32 --dry-run
-snakemake -s Snakefile_LRS_postprocess --use-conda --cores 32
-```
-
-For SRS:
-
-```bash
-cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/srs_wgs_pipeline
-snakemake -s Snakefile_SRS_WGS --use-conda --cores 32 --dry-run
-snakemake -s Snakefile_SRS_WGS --use-conda --cores 32 --resources mem_mb=65000
-```
-
-Adapt the total memory resource to the actual server. Keep all existing
-calling, filtering and annotation outputs; the new genome analysis is
-additive. Running `--dry-run` is not sufficient to prove the Java analysis
-works. Start by inspecting one positive control, its combined VCF, and
-its Genomiser report.
+For a normal full re-analysis, the original `rule all` target remains
+available, but it is unnecessary for phenotype-only updates. Use the exact
+targeted commands above to avoid unintended large re-runs.
 
 ## What is compared
 
@@ -150,12 +262,7 @@ configs. In LRS, the benchmark runs in
 RESULTS/<sample>/benchmark/<sample>.genomiser_vs_custom.tsv
 RESULTS/<sample>/benchmark/<sample>.genomiser_vs_custom.json
 ```
-Gene-level top-K recall is the proportion of independently solved truth
-entries with the causal gene in the top K. The SV-level comparison uses
-a provisional 500-bp positional tolerance for supported symbolic types
-and must be manually checked. The Genomiser variant TSV's `#RANK` is
-associated with its gene/MOI score; it must **not** be presented as an
-independent per-SV rank.
+Gene-level top-K recall is evaluated using a **reconstructed global gene order** for the custom ranking (independent of panel status) and the global Genomiser gene order. For independently solved SVs, the script also reports whether the corresponding allele appears in each method's output among the top-K genes. A provisional 500-bp positional tolerance is used for simple symbolic SV matches, which must be manually checked. The Genomiser variant TSV's `#RANK` corresponds to its gene/MOI model, **not** a separately ranked SV. Unsolved samples are skipped by the optional benchmark target.
 
 For a valid method comparison, stratify by LRS/SRS, variant class,
 clinical completeness, and candidate callability. Separate *variant
