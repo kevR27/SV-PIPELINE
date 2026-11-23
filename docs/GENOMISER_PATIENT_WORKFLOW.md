@@ -32,6 +32,110 @@ The original phenotype-only Exomiser comparison is no longer a mandatory
 reproducibility; they do not run by default.
 
 
+## Editable analysis configuration (required)
+
+The code now uses an **explicit YAML** passed to Exomiser 15.1.0 with
+`--analysis`, **not** `--preset genome`. The repository includes a copy
+of the upstream 15.1.0 **genome** preset:
+
+```text
+config/genomiser/genome_analysis.yml
+```
+
+The baseline has not been altered biologically; it includes coding,
+intronic, intergenic and regulatory variant evaluation using REVEL,
+MVP, AlphaMissense, ReMM and SpliceAI as available in the installed
+databases. It retains the upstream `PASS_ONLY` mode, phenotype-first
+priority filter and genome-wide regulatory and pathogenicity filters.
+This is a starting baseline, not an assertion that every input variant
+will survive every downstream filter.
+
+After `git pull`, edit directly on the server:
+
+```bash
+BASE=/DATA/casadei7/tools/SV-PIPELINE-main_v3
+nano "$BASE/config/genomiser/genome_analysis.yml"
+```
+
+Both LRS and SRS YAML configs have the required entry:
+
+```yaml
+genomiser_analysis_yaml: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/config/genomiser/genome_analysis.yml"
+```
+
+The runner loads this file with PyYAML, checks that it is a genuine
+genome-wide analysis with ReMM and population-frequency assessment,
+and refuses gene-panel/interval restrictions or a variantEffectFilter
+that removes intronic, regulatory or intergenic variant classes.
+Other analysis options can be changed in the YAML. **Every edit to the
+analysis YAML is a declared Snakemake input change**, so the
+per-patient Genomiser analysis will be rerun automatically on the
+next requested downstream target. Each result manifest records the
+exact analysis YAML SHA-256 and its selected steps and sources.
+
+Change one parameter at a time when benchmarking against solved
+controls. `analysisMode: FULL` can be used to retain failed variants
+for troubleshooting, but requires substantially more RAM/disk than
+`PASS_ONLY`. The runner keeps gene and variant TSV output enabled and
+writes `output-options.yml` automatically: editing the per-sample
+generated copy will *not* change a later run.
+
+For source and documentation:
+- Baseline: https://github.com/exomiser/Exomiser/blob/15.1.0/exomiser-cli/src/main/resources/examples/preset-genome-analysis.yml
+- Configuration: https://exomiser.readthedocs.io/en/stable/advanced_analysis.html
+- CLI `--analysis`: https://exomiser.readthedocs.io/en/stable/input_files_and_options.html
+
+## Reanalysis starting from the original VCFs
+
+**Recommended:** keep the original calling results, and rerun the
+variant-interpretation stage against those same files. Do not delete
+the VCFs or use `--forceall` on the complete pipeline unless you
+intend to repeat expensive upstream calling.
+
+Per patient, the Genomiser runner needs:
+
+1. Genome-wide small-variant `VCF.gz`: LRS Clair3
+   `RESULTS/<sample>/snp_clair3/<sample>.vcf.gz` or SRS
+   DeepVariant `RESULTS/<sample>/snp_deepvariant/<sample>.vcf.gz`.
+2. Genome-wide SV `VCF.gz`: LRS Jasmine-merged
+   `RESULTS/<sample>/sv/merged/<sample>_merged_SV.vcf.gz`
+   or SRS `RESULTS/<sample>/sv/integrated/<sample>_integrated_SV.vcf.gz`.
+3. The private `patient_profiles.tsv` containing the patient's
+   positive HPO terms; the pipeline builds a Phenopacket automatically.
+4. `config/genomiser/genome_analysis.yml` (editable analysis filters).
+5. Exomiser CLI 15.1.0 JAR with the GRCh38/phenotype 2512 databases
+   and correctly configured `application.properties`; indexed
+   ReMM v0.4 hg38 data.
+6. `envs/genomiser.yaml` (Snakemake creates or reuses the environment).
+
+Do not fabricate technical-control phenotypes. Note that the more extensive
+custom SV ranking can require its **existing** AnnotSV, read-depth, VEP,
+phasing and orthogonal-evidence tables if you intend to rebuild it too.
+Keep or regenerate those downstream dependencies separately.
+
+Once source VCFs exist, check Genomiser alone for sample 21930:
+
+```bash
+BASE=/DATA/casadei7/tools/SV-PIPELINE-main_v3
+OUT=/DATA/casadei7/nanopore/WGS/RESULTS
+SAMPLE=21930
+
+cd "$BASE/snakemake_pipelines/lrs"
+snakemake -s Snakefile_LRS_update -n --cores 32 \
+  "$OUT/$SAMPLE/genomiser/$SAMPLE.genomiser.manifest.json"
+```
+
+If the dry-run job list does **not** include genome variant calling,
+run the same command without `-n` and with `--use-conda`. Running
+the LRS postprocess final ranked TSV target afterwards ensures that
+the custom ranking is rebuilt when its inputs have changed.
+For SRS, use `Snakefile_SRS_WGS` and the output directory and
+sample ID configured in `config_srs_wgs.yaml`, not the LRS paths.
+
+To deliberately repeat Genomiser with **unchanged** YAML and VCFs,
+use `--forcerun genomiser_genome` on the requested sample output.
+This forces that analysis only, not the original callers.
+
 ## Required installation / resource verification on the Bologna server
 
 Because the 15.1.0 Exomiser CLI and its 2512 HG38/phenotype databases are
@@ -89,6 +193,7 @@ preflight or debugging.
 ```yaml
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
 genomiser_enabled: true
+genomiser_analysis_yaml: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/config/genomiser/genome_analysis.yml"
 genomiser_remm_hg38: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/remm/ReMM.v0.4.hg38.tsv.gz"
 genomiser_memory_gb: 32
 genomiser_benchmark_truth_tsv: null
