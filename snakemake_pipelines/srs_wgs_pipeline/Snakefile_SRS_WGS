@@ -248,24 +248,22 @@ SV_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/truvari", sample=SV_BEN
 
 # Default target: complete analysis and review tables. Figures have their own target.
 # Patient phenotype input is shared with LRS and the existing custom ranking.
-GENOMISER_ENABLED = bool(config.get("genomiser_enabled", False))
+# Genomiser is a mandatory genome-wide prioritisation stage.
+# The per-patient phenotype profile and ReMM database must be configured.
+from genomiser_requirements import require_genomiser
+GENOMISER_ENABLED = require_genomiser(config, SAMPLES)
 GENOMISER_SMALL_VCF = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
 GENOMISER_SV_VCF = PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz"
-if GENOMISER_ENABLED:
-    if not config.get("patient_profiles_tsv") or not config.get("genomiser_remm_hg38"):
-        raise ValueError("Set patient_profiles_tsv and genomiser_remm_hg38 before enabling Genomiser")
-    if config.get("patient_hpo_files"):
-        raise ValueError("Do not mix patient_profiles_tsv and patient_hpo_files")
 GENOMISER_BENCHMARK_SAMPLES = confirmed_benchmark_samples(
     config.get("genomiser_benchmark_truth_tsv"), SAMPLES
-) if GENOMISER_ENABLED else []
+)
 GENOMISER_BENCHMARK_TARGETS = expand(
     PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json",
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
-GENOMISER_TARGETS = (
-    expand(PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json", sample=SAMPLES)
-    if GENOMISER_ENABLED else []
+GENOMISER_TARGETS = expand(
+    PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json",
+    sample=SAMPLES,
 )
 
 rule all:
