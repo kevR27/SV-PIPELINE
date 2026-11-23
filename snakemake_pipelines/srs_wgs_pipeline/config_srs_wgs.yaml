@@ -50,11 +50,34 @@ deepvariant_gpu_image: "docker://google/deepvariant:1.10.0-gpu"
 annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations"
 annotsv_benign_af: 0.01            # AnnotSV setting; not the final AF filter.
 
+
+# ============================================================
+# PATIENT-SPECIFIC CLINICAL PROFILES + GENOMISER
+# ============================================================
+# Keep patient records on the secured server, OUTSIDE this public repository.
+# One row per patient, as in reference/patient_profiles.template.tsv.
+# When set, this same table drives BOTH the custom final HPO ranking and
+# Genomiser. Do not additionally set patient_hpo_files.
+patient_profiles_tsv: null
+# Genomiser is the genome preset of Exomiser CLI 15.1.0 (NOT Genomizer).
+# Enable only after the indexed GRCh38 ReMM file and full genome databases
+# have been installed and a private patient profile table exists.
+genomiser_enabled: false
+genomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
+genomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
+genomiser_remm_hg38: null
+genomiser_genome_data_version: "2512"
+genomiser_phenotype_data_version: "2512"
+genomiser_java: "java"
+genomiser_memory_gb: 32
+# Independent confirmed-truth file; benchmark is OPTIONAL and never changes scores.
+genomiser_benchmark_truth_tsv: null
+
 # One seed file for custom ranking and Exomiser. This is a FILE PATH.
 hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
 
 # Keep the custom ranking and compare with OFFLINE CLI phenotype matching.
-exomiser_enabled: true
+exomiser_enabled: false
 exomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
 # Root containing the EXTRACTED data folders; edit if downloaded elsewhere.
 exomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
