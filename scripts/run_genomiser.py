@@ -71,7 +71,7 @@ def main():
                      for path in folder.rglob("*.mv.db")):
             missing.append(str(folder) + " (no H2 .mv.db data files)")
     if missing:
-        raise FileNotFoundError("Genomiser resources are missing/empty:\\n" + "\\n".join(missing))
+        raise FileNotFoundError("Genomiser resources are missing/empty:\n" + "\n".join(missing))
     packet = json.loads(Path(args.phenopacket).read_text(encoding="utf-8"))
     if packet.get("subject", {}).get("id") != args.sample:
         raise ValueError("Phenopacket subject must match the sample ID")
