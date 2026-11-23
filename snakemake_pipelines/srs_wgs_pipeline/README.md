@@ -125,8 +125,9 @@ The additional filtering results are in `downstream_filtering/`; their plots
 are in `downstream_filtering/plots/`, alongside the main `plots/` folder.
 Check plot manifests for failed or skipped figures.
 
-LRS has different targets: see the [LRS run guide](../../README.md#3-run-the-lrs-workflow).
-Its current plotting target does not include this additional filtering.
+LRS now also includes additional filtering in its postprocessing workflow.
+Its command sequence and output folders differ; see the
+[LRS run guide](../../README.md#3-run-the-lrs-workflow).
 
 ## 4. Analysis steps and tools
 

@@ -55,39 +55,80 @@ snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml --use-conda 
 The postprocessing Snakefile normally selects samples with the required upstream files. Use the **postprocess_samples** configuration setting when you need to select specific ready samples. Snakemake can still schedule missing dependencies when a result is requested; always inspect a dry run before rebuilding earlier analyses.
 
 
-### LRS and SRS do not have identical filtering targets
+### Additional filtering is now included in LRS postprocessing
 
-The additional size/AF/chromosome/caller review filtering is currently wired
-into **SRS**, not into the active LRS Snakefiles. This is separate from the
-caller-quality filtering that already runs before LRS SV merging.
+The existing filtering script reads the final ranked SV-gene table. It keeps
+that original table and its ranks, and writes separate review views. These
+are additional review filters, separate from caller-quality filtering.
 
-| Workflow target | Does it include the additional review filtering? |
+| LRS postprocessing target | Additional filtering requested |
 | --- | --- |
-| LRS `Snakefile_LRS_update`: `all` | No; this runs the main calling and annotation stages |
-| LRS `Snakefile_LRS_postprocess`: `all` | No; this requests integrated evidence tables |
-| LRS postprocess: `all_thesis_plots` | No; it requests overview, Samplot, cohort, configured XCI and optional Atlas figures |
-| LRS postprocess: `final_thesis_analysis` | No; it adds final candidate tables, depth/HPO/pair review and R figures |
-| SRS: `all all_thesis_plots` | Yes; the plot target requests the additional filtering tables and their plots |
+| `all` | Filtering tables, alongside the integrated results |
+| `further_filtering` | Filtering tables only |
+| `further_filtering_plots` | Filtering tables and their figures |
+| `all_thesis_plots` | Filtering tables/figures plus the other overview figures |
+| `final_thesis_analysis` | Filtering tables/figures plus final thesis analyses |
 
-There is **no `further_filtering` target in the current LRS workflow**.
-The shared filtering scripts being present in the repository does not mean
-that the LRS Snakefiles execute them. LRS would need its own input/output
-rules before this becomes an automatic step; no workflow behavior was changed
-for this documentation update.
+The calling Snakefile, `Snakefile_LRS_update`, still runs first and does not
+run these extra filters. From the LRS folder, after calling has finished:
 
-After the main LRS analysis has finished, preview the combined downstream
-targets if you want the integrated results, final thesis analysis and figures:
+~~~bash
+conda activate snakemake
+
+# Preview the complete downstream analysis and figures.
+snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --rerun-incomplete -n -p all final_thesis_analysis all_thesis_plots
+
+# Run, or resume after fixing an error.
+set -o pipefail
+snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --rerun-incomplete -p all final_thesis_analysis all_thesis_plots \
+  2>&1 | tee "lrs_postprocess_$(date +%Y%m%d_%H%M%S).log"
+~~~
+
+For just the additional filtering and its figures, use:
 
 ~~~bash
 snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml \
   --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
-  --cores 32 --rerun-incomplete -n -p all final_thesis_analysis all_thesis_plots
+  --cores 32 --rerun-incomplete -p further_filtering_plots
 ~~~
 
-After checking the planned jobs and ready samples, run the same command
-without `-n`. Shared dependencies run once. This still does not request the
-SRS-only additional filtering. For the full Illumina command sequence, see
-[the SRS run guide](snakemake_pipelines/srs_wgs_pipeline/README.md#3-run-the-pipeline).
+Add `-n` first to inspect missing dependencies. Replace the target with
+`further_filtering` for tables alone. Shared steps run once; there is no need
+to run these smaller targets after the complete command. Check the printed
+ready-sample list: no ready samples means no per-sample filtering jobs. Set
+`postprocess_samples` explicitly only for samples whose upstream results are ready.
+
+The settings in `config_lrs.yaml` are:
+
+~~~yaml
+downstream_size_cutoff_bp: 1000
+downstream_max_population_af: 0.01
+downstream_inv_min_reads: 3
+downstream_inv_strong_reads: 5
+~~~
+
+These are also the defaults for older configs. Keep your server sample paths;
+do not replace your config just to add these four settings. Main size view:
+strictly >1 kb, with smaller and exactly 1 kb events kept separately. Measured
+AF <=1% and missing AF share the review group, with distinct AF status. Missing
+AF does not prove novelty. Inversions need at least 3 reported supporting reads;
+5 defines a higher-support group, not validation. Y/MT events are excluded from
+these views; nuclear mitochondrial genes remain. Uncertain annotations and
+support are flagged for review. See [the filtering guide](docs/DOWNSTREAM_SV_FILTERING.md).
+
+LRS tables: `<results>/<sample>/gene_discovery/further_filtering/`.
+LRS figures: `<results>/<sample>/plots/15_downstream_filtering/`.
+These preserve the previous manual-run paths. Snakemake reuses up-to-date
+outputs and recreates outdated ones; do not run manual filtering into the same
+folder while its Snakemake job is running. The existing `envs/plots.yaml` is
+used automatically with `--use-conda`; no new environment or script is needed.
+
+SRS keeps its existing behavior: `all all_thesis_plots` requests its complete
+analysis and additional filtering. See [the SRS run guide](snakemake_pipelines/srs_wgs_pipeline/README.md#3-run-the-pipeline).
 
 ## 4. What each LRS tool does
 

@@ -241,6 +241,10 @@ rule all:
             PATH + "{sample}/gene_discovery/final/{sample}_clinical_candidates.ranked.tsv",
             sample=POSTPROCESS_SAMPLES,
         ),
+        expand(
+            PATH + "{sample}/gene_discovery/further_filtering/filter_run.json",
+            sample=POSTPROCESS_SAMPLES,
+        ),
         atlas=lambda wc: ATLAS_ANNOTATION_TARGETS
 
 
@@ -756,6 +760,10 @@ include: "xci_analysis.smk"
 # Explicit target only. It is NOT part of rule all.
 rule all_thesis_plots:
     input:
+        expand(
+            PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
+            sample=POSTPROCESS_SAMPLES,
+        ),
         expand(
             PATH + "{sample}/plots/.thesis_plots.done",
             sample=POSTPROCESS_SAMPLES,

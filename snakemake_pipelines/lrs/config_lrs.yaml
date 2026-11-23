@@ -424,3 +424,10 @@ alphagenome_model_version: "ALL_FOLDS"
 alphagenome_prediction_min_gq: 20
 alphagenome_prediction_min_dp: 10
 alphagenome_native_cache_only: false # true redraws existing cached predictions without API.
+
+# Additional review filtering after final SV-gene ranking.
+# Postprocess all makes tables; all_thesis_plots also makes their figures.
+downstream_size_cutoff_bp: 1000      # Main view is strictly >1 kb; keep smaller events separately.
+downstream_max_population_af: 0.01  # Keep AF <=1% or missing; the AF status remains visible.
+downstream_inv_min_reads: 3         # Minimum reported caller support for inversions.
+downstream_inv_strong_reads: 5      # Separate higher-support group, not proof of validity.

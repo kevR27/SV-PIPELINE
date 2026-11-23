@@ -39,7 +39,31 @@ not relabelled as confirmed exon breakpoints. Whole-transcript effects have a
 separate scope note. Records with only proximal/regulatory annotation fail
 this requested genic view, but remain in the audit/excluded export.
 
-## Run on the two completed samples
+## Run through LRS Snakemake
+
+From `snakemake_pipelines/lrs`, after the main analysis is complete:
+
+```bash
+snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --rerun-incomplete -p further_filtering_plots
+```
+
+Add `-n` to preview jobs first. Use `further_filtering` for tables only.
+Postprocess `all` includes the tables; `all_thesis_plots` and
+`final_thesis_analysis` include tables and their figures. No manual Python
+command is needed when using these targets. Input is the final ranked SV-gene
+table, selected for each `POSTPROCESS_SAMPLES` sample. Check that the printed
+ready-sample list includes the intended samples.
+
+Config settings: `downstream_size_cutoff_bp: 1000`,
+`downstream_max_population_af: 0.01`, `downstream_inv_min_reads: 3`,
+`downstream_inv_strong_reads: 5`. The same defaults apply to older configs.
+Outputs use the same folders as the manual example below. Changing a threshold
+reruns filtering and its plots; it does not change the source ranks or call SVs.
+SRS keeps its own `downstream_filtering/` folder and existing plot dependency.
+
+## Optional manual run on completed samples
 
 From the repository root, using the existing plotting environment:
 

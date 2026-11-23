@@ -483,7 +483,72 @@ rule cohort_sv_recurrence:
         """
 
 
+# Additional review views use the final ranked table, never replace it.
+DOWNSTREAM_SIZE_CUTOFF = config.get("downstream_size_cutoff_bp", 1000)
+DOWNSTREAM_MAX_AF = config.get("downstream_max_population_af", 0.01)
+DOWNSTREAM_INV_MIN_READS = config.get("downstream_inv_min_reads", 3)
+DOWNSTREAM_INV_STRONG_READS = config.get("downstream_inv_strong_reads", 5)
+
+
+rule further_filtering:
+    input:
+        expand(PATH + "{sample}/gene_discovery/further_filtering/filter_run.json",
+               sample=POSTPROCESS_SAMPLES)
+
+
+rule further_filtering_plots:
+    input:
+        expand(PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
+               sample=POSTPROCESS_SAMPLES)
+
+
+rule filter_sv_candidates_for_review:
+    input:
+        candidates=rules.finalize_candidate_ranking.output.sv,
+        script=SCRIPTS + "/filter_sv_candidates_for_review.py"
+    output:
+        audit=PATH + "{sample}/gene_discovery/further_filtering/all_records.annotated.tsv",
+        settings=PATH + "{sample}/gene_discovery/further_filtering/filter_run.json",
+        files=PATH + "{sample}/gene_discovery/further_filtering/output_files.tsv"
+    params:
+        outdir=PATH + "{sample}/gene_discovery/further_filtering",
+        size_cutoff=DOWNSTREAM_SIZE_CUTOFF,
+        max_af=DOWNSTREAM_MAX_AF,
+        inv_min_reads=DOWNSTREAM_INV_MIN_READS,
+        inv_strong_reads=DOWNSTREAM_INV_STRONG_READS
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        python {input.script:q} --input {input.candidates:q} --sample {wildcards.sample:q} \
+            --out-dir {params.outdir:q} --size-cutoff {params.size_cutoff} \
+            --max-af {params.max_af} --inv-min-reads {params.inv_min_reads} \
+            --inv-strong-reads {params.inv_strong_reads}
+        """
+
+
+rule downstream_filtering_plots:
+    input:
+        audit=rules.filter_sv_candidates_for_review.output.audit,
+        settings=rules.filter_sv_candidates_for_review.output.settings,
+        script=PLOTS + "/plot_downstream_sv_filtering.py",
+        utils=PLOTS + "/plot_utils.py"
+    output:
+        marker=touch(PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done")
+    params:
+        filter_dir=PATH + "{sample}/gene_discovery/further_filtering",
+        outdir=PATH + "{sample}/plots/15_downstream_filtering"
+    conda:
+        CONDAENV + "plots.yaml"
+    shell:
+        """
+        python {input.script:q} --filter-dir {params.filter_dir:q} --out-dir {params.outdir:q}
+        """
+
+
 FINAL_THESIS_OUTPUTS = [
+    *expand(PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
+            sample=POSTPROCESS_SAMPLES),
     rules.build_hon_hpo_reference.output.tsv,
     *expand(
         PATH + "{sample}/plots/.thesis_plots.done",
