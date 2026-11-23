@@ -1,0 +1,2 @@
+sample_id	gene	truth_status	variant_class	chrom	pos	end	svtype
+EXAMPLE_001	OPA1	CONFIRMED	SV	chr3	100000	101000	DEL
