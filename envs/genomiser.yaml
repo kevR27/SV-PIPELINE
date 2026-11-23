@@ -1,0 +1,9 @@
+name: genomiser
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - openjdk=21
+  - bcftools=1.22
+  - htslib
