@@ -120,6 +120,20 @@ if MTDNA_SECONDARY_ENABLED:
         + expand(PATH + "{sample}/mtDNA/{sample}.clair3.secondary.tsv", sample=SAMPLES)
     )
 
+# Genomiser is optional and never changes the existing SV candidate ranking.
+GENOMISER_ENABLED = bool(config.get("genomiser_enabled", False))
+GENOMISER_SMALL_VCF = PATH + "{sample}/snp_clair3/{sample}.vcf.gz"
+GENOMISER_SV_VCF = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"
+if GENOMISER_ENABLED:
+    if not config.get("patient_profiles_tsv") or not config.get("genomiser_remm_hg38"):
+        raise ValueError("Set patient_profiles_tsv and genomiser_remm_hg38 before enabling Genomiser")
+    if config.get("patient_hpo_files"):
+        raise ValueError("Use patient_profiles_tsv instead of patient_hpo_files for a consistent comparison")
+GENOMISER_TARGETS = (
+    expand(PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json", sample=SAMPLES)
+    if GENOMISER_ENABLED else []
+)
+
 rule all:
     input:
         # QC
@@ -177,13 +191,13 @@ rule all:
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/sv/annotsv/{sample}_merged_SV.annotsv.panel_only.tsv", sample=SAMPLES),
 
+        GENOMISER_TARGETS,
+
         # Gene / phenotype discovery
         expand(PATH + "{sample}/gene_discovery/{sample}_SV_genes.txt", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_nonpanel_genes.txt", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/gene_discovery/{sample}_exomiser_comparison.tsv", sample=SAMPLES),
-        expand(PATH + "{sample}/gene_discovery/{sample}_exomiser_comparison.summary.json", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/{sample}_allele_disease_hypotheses.tsv", sample=SAMPLES),
@@ -1351,6 +1365,9 @@ rule tldr_mei_confirmation:
         test -s {output.table:q}
         """
 
+
+include: "../common/patient_profiles.smk"
+include: "../common/genomiser.smk"
 
 include: "../common/allele_assessment.smk"
 

@@ -6,21 +6,23 @@ The active seed file is:
 
 `reference/hon_hpo_seed_terms.tsv`
 
-Its path is explicit in both configs under `hon_hpo_seed_terms`. The custom
-ranking, LRS HPO-reference generation and Exomiser comparison all use that
-same setting. The older `discovery_hpo_file` key remains an alias; conflicting
+Its path is explicit in both configs under `hon_hpo_seed_terms`. The custom ranking and LRS HPO-reference generation use the same setting. The older `discovery_hpo_file` key remains an alias; conflicting
 paths are rejected. `hpo_terms` accepts IDs, not a file path.
 
-The supplied file contains 12 rows with two distinct roles:
+The current seed file has **6 rows**, all `CORE_OCULAR_HON`.
+The older six generic `MITO_SYNDROMIC_CONTEXT` rows have been removed.
 
-| Role | Rows | Use |
-|---|---:|---|
-| `CORE_OCULAR_HON` | 6 | Core ocular anchors; these form the default shared Exomiser query. |
-| `MITO_SYNDROMIC_CONTEXT` | 6 | Lower-weight generic mitochondrial context in the existing custom ranking. These are not assumed present in a patient or automatically sent to Exomiser. |
+These terms are shared **ontology anchors**, not a statement that all six
+findings have been observed in every patient. Individual patients' additional
+systemic or neurological HPO terms must be entered explicitly into the
+private `patient_profiles_tsv` table if clinically documented.
 
-These terms are ontology seeds, not a complete list of the manifestations
-of every syndromic optic neuropathy. The shared core query is cohort-level
-context; it is not an individual patient's clinical phenotype record.
+The supported workflow for patient-specific Genomiser analysis, age-onset
+ranges and independently evaluated diagnostic hypotheses is documented in
+`docs/GENOMISER_PATIENT_WORKFLOW.md`. Both the custom final ranking and the
+Genomiser genome preset consume the *same present HPO terms* for each patient;
+an absent term or suspected clinical diagnosis is not treated as a confirmed
+positive HPO feature.
 
 ## Earlier manual term list
 

@@ -191,11 +191,34 @@ patient_hpo_files: {}
 #   "21930": "/path/to/21930.hpo.tsv"
 
 
+
+# ============================================================
+# PATIENT-SPECIFIC CLINICAL PROFILES + GENOMISER
+# ============================================================
+# Keep patient records on the secured server, OUTSIDE this public repository.
+# One row per patient, as in reference/patient_profiles.template.tsv.
+# When set, this same table drives BOTH the custom final HPO ranking and
+# Genomiser. Do not additionally set patient_hpo_files.
+patient_profiles_tsv: null
+# Genomiser is the genome preset of Exomiser CLI 15.1.0 (NOT Genomizer).
+# Enable only after the indexed GRCh38 ReMM file and full genome databases
+# have been installed and a private patient profile table exists.
+genomiser_enabled: false
+genomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
+genomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
+genomiser_remm_hg38: null
+genomiser_genome_data_version: "2512"
+genomiser_phenotype_data_version: "2512"
+genomiser_java: "java"
+genomiser_memory_gb: 32
+# Independent confirmed-truth file; benchmark is OPTIONAL and never changes scores.
+genomiser_benchmark_truth_tsv: null
+
 # ============================================================
 # EXOMISER
 # ============================================================
 
-exomiser_enabled: true
+exomiser_enabled: false
 # Existing CLI installation; keep its lib/ folder beside the JAR.
 exomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
 # Root containing the EXTRACTED 2512_hg38/ and 2512_phenotype/ folders.

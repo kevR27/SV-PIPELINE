@@ -1,6 +1,7 @@
 name: SV evidence regression
 # Optional development checks; patient analysis does not run this workflow.
 on:
+  pull_request:
   workflow_dispatch:
 jobs:
   evidence:
@@ -17,8 +18,23 @@ jobs:
         run: |
           Rscript -e 'files <- c(list.files("r_plots", pattern="\\.R$", full.names=TRUE), "scripts/xci_cluster_methylation.R"); for (f in files) { cat("Parsing", f, "\\n"); parse(file=f) }'
       - run: snakemake -s Snakefile_LRS_update --list-rules
+        if: always()
         working-directory: snakemake_pipelines/lrs
       - run: snakemake -s Snakefile_LRS_postprocess --list-rules
+        if: always()
         working-directory: snakemake_pipelines/lrs
       - run: snakemake -s Snakefile_SRS_WGS --list-rules
+        if: always()
         working-directory: snakemake_pipelines/srs_wgs_pipeline
+
+      - name: Enable Genomiser rules for parser validation (LRS)
+        if: always()
+        working-directory: snakemake_pipelines/lrs
+        run: |
+          snakemake -s Snakefile_LRS_update --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz
+          snakemake -s Snakefile_LRS_postprocess --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz
+      - name: Enable Genomiser rules for parser validation (SRS)
+        if: always()
+        working-directory: snakemake_pipelines/srs_wgs_pipeline
+        run: |
+          snakemake -s Snakefile_SRS_WGS --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz

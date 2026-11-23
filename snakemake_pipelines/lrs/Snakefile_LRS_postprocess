@@ -28,6 +28,7 @@ CONDAENV = os.path.join(REPO_ROOT, "envs") + "/"
 SCRIPTS = os.path.join(REPO_ROOT, "scripts")
 sys.path.insert(0, SCRIPTS)
 from sv_evidence_common import hon_hpo_seed_path
+from benchmark_sample_selection import confirmed_benchmark_samples
 PLOTS = os.path.join(REPO_ROOT, "plots")
 
 COMPLEMENTARY_STRAGLR_BP_TOL = config.get(
@@ -211,12 +212,22 @@ if SKIPPED_POSTPROCESS_SAMPLES:
     )
 
 
+GENOMISER_ENABLED = bool(config.get("genomiser_enabled", False))
+GENOMISER_BENCHMARK_SAMPLES = confirmed_benchmark_samples(
+    config.get("genomiser_benchmark_truth_tsv"), POSTPROCESS_SAMPLES
+) if GENOMISER_ENABLED else []
+GENOMISER_BENCHMARK_TARGETS = expand(
+    PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json",
+    sample=GENOMISER_BENCHMARK_SAMPLES,
+)
+
 # Default post-processing target:
 # retain one compressed, authoritative SV-gene table per completed sample.
 # Large intermediate annotation copies are temporary and removed by Snakemake.
 # Thesis plots remain a separate explicit target.
 rule all:
     input:
+        GENOMISER_BENCHMARK_TARGETS,
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
             sample=POSTPROCESS_SAMPLES,
@@ -532,7 +543,6 @@ def existing_plot_inputs(wc):
 
 rule thesis_plots_sample:
     input:
-        exomiser_comparison=PATH + "{sample}/gene_discovery/{sample}_exomiser_comparison.tsv",
         integrated=rules.merge_integrated_annotations.output.tsv,
         candidate_events=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
         ranked_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
@@ -785,6 +795,7 @@ include: "../common/allele_assessment.smk"
 
 
 # Optional additive thesis-analysis layer. Existing rules/outputs are preserved.
+include: "../common/patient_profiles.smk"
 include: "thesis_extensions.smk"
 
 # Atlas reads original Clair3 alleles; LongPhase/VEP remain separate context.
@@ -794,3 +805,8 @@ ATLAS_VEP_TSV = PATH + "{sample}/snp_clair3/{sample}.longphase.vep.txt"
 ATLAS_SV_VCF = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"
 include: "../common/alphagenome_atlas.smk"
 
+
+# Optional genome-ranking benchmark. Genomiser itself runs in Snakefile_LRS_update.
+GENOMISER_CUSTOM_GENE = PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv"
+GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
+include: "../common/benchmark_genomiser.smk"

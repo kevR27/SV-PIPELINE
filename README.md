@@ -1,3 +1,16 @@
+## Patient-specific Genomiser whole-genome prioritization (optional)
+
+For one patient at a time, combine existing genome-wide SNV/indel and SV VCFs
+with **documented positive HPO terms** for noncoding, regulatory and coding
+variant prioritization. The configuration remains disabled by default until
+the server-side ReMM database and patient table are validated. Original LRS
+and SRS calling results remain unchanged.
+
+Start with [the dedicated installation and downstream-only execution
+guide](docs/GENOMISER_PATIENT_WORKFLOW.md). Patient files must be stored on
+the secured server, never committed to this repository. The optional
+benchmark uses only independently confirmed diagnoses.
+
 # SV-PIPELINE: Whole-genome variant analysis
 
 This repository contains two Snakemake workflows: **long-read sequencing (LRS)** from Oxford Nanopore and **short-read sequencing (SRS)** from Illumina. They analyze whole-genome data, identify structural variants (SVs), and organize evidence for hereditary optic neuropathy (HON) research. Nuclear genes involved in mitochondrial biology are an important research focus; mitochondrial-DNA findings are reviewed separately.

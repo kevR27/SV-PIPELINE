@@ -21,6 +21,8 @@ GNOMAD_SV_VCF = config.get("gnomad_sv_vcf")
 
 
 def patient_hpo_path(sample):
+    if config.get("patient_profiles_tsv"):
+        return PATH + f"{sample}/clinical/{sample}.patient_hpo.tsv"
     value = PATIENT_HPO_FILES.get(str(sample))
     return str(value) if value else None
 
