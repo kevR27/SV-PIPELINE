@@ -4,6 +4,7 @@ channels:
   - bioconda
 dependencies:
   - python=3.11
+  - pyyaml
   - openjdk=21
   - bcftools=1.22
   - htslib
