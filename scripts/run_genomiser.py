@@ -11,6 +11,8 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import yaml
+
 
 def run(args, **kwargs):
     subprocess.run([str(item) for item in args], check=True, **kwargs)
@@ -26,6 +28,60 @@ def checksum(path):
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+# Do not silently revert to the exome preset or exclude the noncoding genome.
+NONCODING_EFFECTS = {
+    "CODING_TRANSCRIPT_INTRON_VARIANT", "NON_CODING_TRANSCRIPT_INTRON_VARIANT",
+    "NON_CODING_TRANSCRIPT_EXON_VARIANT", "INTERGENIC_VARIANT",
+    "REGULATORY_REGION_VARIANT", "UPSTREAM_GENE_VARIANT",
+    "DOWNSTREAM_GENE_VARIANT", "FIVE_PRIME_UTR_INTRON_VARIANT",
+    "THREE_PRIME_UTR_INTRON_VARIANT",
+}
+
+
+def validate_analysis(path):
+    """Check the editable YAML before launching a memory-intensive genome run."""
+    path = Path(path)
+    with path.open(encoding="utf-8") as handle:
+        analysis = yaml.safe_load(handle)
+    if not isinstance(analysis, dict):
+        raise ValueError(f"{path}: expected a YAML analysis mapping")
+    if analysis.get("analysisMode") not in {"PASS_ONLY", "FULL"}:
+        raise ValueError("Genomiser analysisMode must be PASS_ONLY or FULL")
+    for field in ("inheritanceModes", "frequencySources", "pathogenicitySources", "steps"):
+        if not analysis.get(field):
+            raise ValueError(f"{path}: analysis must define nonempty {field}")
+    if "REMM" not in analysis["pathogenicitySources"]:
+        raise ValueError(
+            "Genomiser noncoding/regulatory prioritization requires REMM "
+            "in pathogenicitySources"
+        )
+    steps = analysis["steps"]
+    if not isinstance(steps, list) or any(
+        not isinstance(step, dict) or len(step) != 1 for step in steps
+    ):
+        raise ValueError("Genomiser steps must be a list of named filter mappings")
+    for step in steps:
+        name, options = next(iter(step.items()))
+        if name in {"intervalFilter", "genePanelFilter"}:
+            raise ValueError(
+                f"{name} would restrict genome-wide prioritization; "
+                "remove it from the Genomiser analysis YAML"
+            )
+        if name == "variantEffectFilter":
+            if not isinstance(options, dict):
+                raise ValueError("variantEffectFilter must be a YAML mapping")
+            removed = set(options.get("remove", []) or [])
+            excluded = sorted(removed & NONCODING_EFFECTS)
+            if excluded:
+                raise ValueError(
+                    "The analysis removes intronic/regulatory classes: "
+                    + ", ".join(excluded)
+                )
+    if not any("frequencyFilter" in step for step in steps):
+        raise ValueError("Include frequencyFilter to retain population-frequency evidence")
+    return analysis
 
 
 def prepare_vcf(vcf, sample, target, namefile):
@@ -47,6 +103,7 @@ def main():
     parser.add_argument("--small-vcf", required=True)
     parser.add_argument("--sv-vcf", required=True)
     parser.add_argument("--phenopacket", required=True)
+    parser.add_argument("--analysis", required=True, help="Editable Genomiser genome analysis YAML")
     parser.add_argument("--jar", required=True)
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--remm", required=True, help="ReMM hg38 BGZF file, with .tbi index")
@@ -60,7 +117,7 @@ def main():
     if args.memory_gb < 8:
         raise ValueError("A genome-wide run needs sufficient memory (at least 8 GB configured)")
     inputs = [Path(args.small_vcf), Path(args.sv_vcf), Path(args.phenopacket),
-              Path(args.jar), Path(args.remm), Path(args.remm + ".tbi")]
+              Path(args.analysis), Path(args.jar), Path(args.remm), Path(args.remm + ".tbi")]
     genome = Path(args.data_dir) / f"{args.genome_version}_hg38"
     phenotype = Path(args.data_dir) / f"{args.phenotype_version}_phenotype"
     missing = [str(path) for path in inputs if not path.is_file() or path.stat().st_size == 0]
@@ -72,6 +129,7 @@ def main():
             missing.append(str(folder) + " (no H2 .mv.db data files)")
     if missing:
         raise FileNotFoundError("Genomiser resources are missing/empty:\n" + "\n".join(missing))
+    analysis = validate_analysis(args.analysis)
     packet = json.loads(Path(args.phenopacket).read_text(encoding="utf-8"))
     if packet.get("subject", {}).get("id") != args.sample:
         raise ValueError("Phenopacket subject must match the sample ID")
@@ -122,7 +180,8 @@ def main():
         "-jar", str(Path(args.jar).resolve()), "analyse",
         "--sample", str(Path(args.phenopacket).resolve()),
         "--vcf", str(combined.resolve()), "--assembly", "hg38",
-        "--preset", "genome", "--output", str(options_file.resolve())
+        "--analysis", str(Path(args.analysis).resolve()),
+        "--output", str(options_file.resolve())
     ]
     log = out / f"{prefix}.log"
     with log.open("w", encoding="utf-8") as handle:
@@ -141,6 +200,11 @@ def main():
         "original_sv_vcf_sample": old_sv,
         "combined_vcf": str(combined.resolve()),
         "phenopacket_sha256": checksum(args.phenopacket),
+        "analysis_yaml": str(Path(args.analysis).resolve()),
+        "analysis_yaml_sha256": checksum(args.analysis),
+        "analysis_mode": analysis["analysisMode"],
+        "pathogenicity_sources": analysis["pathogenicitySources"],
+        "analysis_steps": [next(iter(step)) for step in analysis["steps"]],
         "combined_vcf_sha256": checksum(combined),
         "genome_data_version": args.genome_version,
         "phenotype_data_version": args.phenotype_version,
