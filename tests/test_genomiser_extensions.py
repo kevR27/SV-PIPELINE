@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from prepare_patient_profiles import load_profile, make_profile, terms
 from genomiser_requirements import require_genomiser
+from run_genomiser import build_java_command, validate_analysis
 from benchmark_genomiser import (chromosome, sequential_gene_ranks,
                                  custom_global_gene_ranks, genomiser_global_gene_ranks,
                                  sv_matches)
@@ -98,6 +100,60 @@ class BenchmarkTests(unittest.TestCase):
         self.assertFalse(sv_matches(genomiser, {**truth, "svtype": "DUP"}, "genomiser", 20))
 
 
+class EditableGenomeAnalysisTests(unittest.TestCase):
+    def baseline(self):
+        return ROOT / "config" / "genomiser" / "genome_analysis.yml"
+
+    def test_baseline_is_valid_genome_analysis(self):
+        config = validate_analysis(self.baseline())
+        self.assertEqual(config["analysisMode"], "PASS_ONLY")
+        self.assertIn("REMM", config["pathogenicitySources"])
+        self.assertIn("SPLICE_AI", config["pathogenicitySources"])
+
+    def test_reject_exome_like_interval_filter(self):
+        import yaml
+        analysis = validate_analysis(self.baseline())
+        analysis["steps"].append({"genePanelFilter": {"geneSymbols": ["OPA1"]}})
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = Path(directory) / "analysis.yml"
+            filepath.write_text(yaml.safe_dump(analysis), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "genePanelFilter"):
+                validate_analysis(filepath)
+
+    def test_reject_intron_removal(self):
+        import yaml
+        analysis = validate_analysis(self.baseline())
+        analysis["steps"].append({
+            "variantEffectFilter": {"remove": ["CODING_TRANSCRIPT_INTRON_VARIANT"]}
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = Path(directory) / "analysis.yml"
+            filepath.write_text(yaml.safe_dump(analysis), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "intronic/regulatory"):
+                validate_analysis(filepath)
+
+    def test_uses_custom_analysis_not_preset(self):
+        args = SimpleNamespace(
+            java="java",
+            memory_gb=32,
+            jar="/soft/exomiser-cli-15.1.0.jar",
+            data_dir="/data/exomiser",
+            genome_version="2512",
+            phenotype_version="2512",
+            remm="/data/ReMM.v0.4.hg38.tsv.gz",
+            phenopacket="/private/patient.phenopacket.json",
+            analysis=str(self.baseline()),
+        )
+        command = build_java_command(
+            args, Path("/data/one.genomiser.input.vcf.gz"),
+            Path("/data/output-options.yml")
+        )
+        self.assertEqual(command[command.index("--analysis") + 1],
+                         str(self.baseline().resolve()))
+        self.assertNotIn("--preset", command)
+        self.assertEqual(command[command.index("--assembly") + 1], "hg38")
+
+
 class MandatoryGenomiserTests(unittest.TestCase):
     def settings(self):
         return {
@@ -107,6 +163,7 @@ class MandatoryGenomiserTests(unittest.TestCase):
             "genomiser_data_dir": "/data/exomiser",
             "genomiser_remm_hg38": "/data/remm/ReMM.v0.4.hg38.tsv.gz",
             "genomiser_memory_gb": 32,
+            "genomiser_analysis_yaml": "/software/config/genomiser/genome_analysis.yml",
         }
 
     def test_mandatory_enabled_config(self):

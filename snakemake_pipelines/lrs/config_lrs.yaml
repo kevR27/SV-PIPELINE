@@ -205,6 +205,8 @@ patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
 # Genomiser genome mode runs for every sample in the normal LRS/SRS targets.
 # The workflow rejects genomiser_enabled: false; do not disable it.
 genomiser_enabled: true
+# Editable, version-pinned genome-wide analysis (not the exome preset).
+genomiser_analysis_yaml: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/config/genomiser/genome_analysis.yml"
 genomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
 genomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
 genomiser_remm_hg38: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/remm/ReMM.v0.4.hg38.tsv.gz"

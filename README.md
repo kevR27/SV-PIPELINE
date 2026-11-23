@@ -6,6 +6,12 @@ variant prioritization. Both workflows now require this stage in the default
 analysis; missing ReMM resources or patient profiles cause an explicit failure.
 Original LRS and SRS calling results remain unchanged.
 
+The genome-wide biological settings are editable in
+[`config/genomiser/genome_analysis.yml`](config/genomiser/genome_analysis.yml),
+initially copied from the official 15.1.0 genome preset. The runner passes
+this file with `--analysis` and records its SHA-256 for each patient.
+Neither the Conda environment nor the original Exomiser preset needs editing.
+
 Start with [the dedicated installation and downstream-only execution
 guide](docs/GENOMISER_PATIENT_WORKFLOW.md). Patient files must be stored on
 the secured server, never committed to this repository. The separate
