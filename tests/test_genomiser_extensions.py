@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from prepare_patient_profiles import load_profile, make_profile, terms
+from genomiser_requirements import require_genomiser
 from benchmark_genomiser import (chromosome, sequential_gene_ranks,
                                  custom_global_gene_ranks, genomiser_global_gene_ranks,
                                  sv_matches)
@@ -95,6 +96,49 @@ class BenchmarkTests(unittest.TestCase):
         self.assertTrue(sv_matches(custom, truth, "custom", 20))
         self.assertTrue(sv_matches(genomiser, truth, "genomiser", 20))
         self.assertFalse(sv_matches(genomiser, {**truth, "svtype": "DUP"}, "genomiser", 20))
+
+
+class MandatoryGenomiserTests(unittest.TestCase):
+    def settings(self):
+        return {
+            "genomiser_enabled": True,
+            "patient_profiles_tsv": "/private/patients.tsv",
+            "genomiser_cli_jar": "/software/exomiser-cli.jar",
+            "genomiser_data_dir": "/data/exomiser",
+            "genomiser_remm_hg38": "/data/remm/ReMM.v0.4.hg38.tsv.gz",
+            "genomiser_memory_gb": 32,
+        }
+
+    def test_mandatory_enabled_config(self):
+        self.assertTrue(require_genomiser(self.settings(), ["21930"]))
+
+    def test_explicit_disable_is_rejected(self):
+        settings = self.settings()
+        settings["genomiser_enabled"] = False
+        with self.assertRaisesRegex(ValueError, "required"):
+            require_genomiser(settings, ["21930"])
+
+    def test_missing_patient_profiles_is_rejected(self):
+        settings = self.settings()
+        settings["patient_profiles_tsv"] = None
+        with self.assertRaisesRegex(ValueError, "patient_profiles_tsv"):
+            require_genomiser(settings, ["21930"])
+
+    def test_missing_remm_is_rejected(self):
+        settings = self.settings()
+        settings["genomiser_remm_hg38"] = ""
+        with self.assertRaisesRegex(ValueError, "genomiser_remm_hg38"):
+            require_genomiser(settings, ["21930"])
+
+    def test_no_samples_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "at least one sample"):
+            require_genomiser(self.settings(), [])
+
+    def test_patient_hpo_override_is_rejected(self):
+        settings = self.settings()
+        settings["patient_hpo_files"] = {"21930": "/private/other.hpo"}
+        with self.assertRaisesRegex(ValueError, "do not also"):
+            require_genomiser(settings, ["21930"])
 
 
 if __name__ == "__main__":
