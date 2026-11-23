@@ -643,4 +643,5 @@ FINAL_THESIS_OUTPUTS = [
 
 rule final_thesis_analysis:
     input:
-        FINAL_THESIS_OUTPUTS
+        FINAL_THESIS_OUTPUTS,
+        GENOMISER_TARGETS
