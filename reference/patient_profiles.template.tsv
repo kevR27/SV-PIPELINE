@@ -1,0 +1,2 @@
+sample_id	sex	hpo_present	hpo_absent	onset_min_years	onset_max_years	onset_status	diagnostic_hypothesis	hypothesis_status
+EXAMPLE_001	UNKNOWN_SEX	HP:0000648;HP:0007663		12	16	estimated	Hereditary optic neuropathy	suspected
