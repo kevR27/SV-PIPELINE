@@ -54,6 +54,41 @@ snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml --use-conda 
 
 The postprocessing Snakefile normally selects samples with the required upstream files. Use the **postprocess_samples** configuration setting when you need to select specific ready samples. Snakemake can still schedule missing dependencies when a result is requested; always inspect a dry run before rebuilding earlier analyses.
 
+
+### LRS and SRS do not have identical filtering targets
+
+The additional size/AF/chromosome/caller review filtering is currently wired
+into **SRS**, not into the active LRS Snakefiles. This is separate from the
+caller-quality filtering that already runs before LRS SV merging.
+
+| Workflow target | Does it include the additional review filtering? |
+| --- | --- |
+| LRS `Snakefile_LRS_update`: `all` | No; this runs the main calling and annotation stages |
+| LRS `Snakefile_LRS_postprocess`: `all` | No; this requests integrated evidence tables |
+| LRS postprocess: `all_thesis_plots` | No; it requests overview, Samplot, cohort, configured XCI and optional Atlas figures |
+| LRS postprocess: `final_thesis_analysis` | No; it adds final candidate tables, depth/HPO/pair review and R figures |
+| SRS: `all all_thesis_plots` | Yes; the plot target requests the additional filtering tables and their plots |
+
+There is **no `further_filtering` target in the current LRS workflow**.
+The shared filtering scripts being present in the repository does not mean
+that the LRS Snakefiles execute them. LRS would need its own input/output
+rules before this becomes an automatic step; no workflow behavior was changed
+for this documentation update.
+
+After the main LRS analysis has finished, preview the combined downstream
+targets if you want the integrated results, final thesis analysis and figures:
+
+~~~bash
+snakemake -s Snakefile_LRS_postprocess --configfile config_lrs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --rerun-incomplete -n -p all final_thesis_analysis all_thesis_plots
+~~~
+
+After checking the planned jobs and ready samples, run the same command
+without `-n`. Shared dependencies run once. This still does not request the
+SRS-only additional filtering. For the full Illumina command sequence, see
+[the SRS run guide](snakemake_pipelines/srs_wgs_pipeline/README.md#3-run-the-pipeline).
+
 ## 4. What each LRS tool does
 
 | Step / tool | Input | Role in the workflow |
