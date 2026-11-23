@@ -13,6 +13,8 @@ SRS_PATIENT_HPO = config.get("patient_hpo_files", {}) or {}
 
 
 def srs_patient_hpo_path(sample):
+    if config.get("patient_profiles_tsv"):
+        return PATH + f"{sample}/clinical/{sample}.patient_hpo.tsv"
     entry = SRS_PATIENT_HPO.get(str(sample))
     return str(entry) if entry else None
 
