@@ -11,11 +11,18 @@ rule prepare_patient_profile:
         packet=PATIENT_PROFILE_DIR + "{sample}.phenopacket.json",
         hpo=PATIENT_PROFILE_DIR + "{sample}.patient_hpo.tsv",
         context=PATIENT_PROFILE_DIR + "{sample}.clinical_context.json"
+    params:
+        profiles=PATIENT_PROFILE_SOURCE or ""
     conda:
         CONDAENV + "monarch.yaml"
     shell:
         """
         set -euo pipefail
-        test -n "{PATIENT_PROFILE_SOURCE or ''}"
-        python {input.script:q} --profiles {input.profiles:q}             --sample {wildcards.sample:q}             --hpo-seeds {input.hpo_seeds:q}             --phenopacket {output.packet:q}             --hpo-output {output.hpo:q}             --clinical-output {output.context:q}
+        test -n {params.profiles:q}
+        python {input.script:q} --profiles {input.profiles:q} \
+            --sample {wildcards.sample:q} \
+            --hpo-seeds {input.hpo_seeds:q} \
+            --phenopacket {output.packet:q} \
+            --hpo-output {output.hpo:q} \
+            --clinical-output {output.context:q}
         """
