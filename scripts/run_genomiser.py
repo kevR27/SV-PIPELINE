@@ -63,9 +63,13 @@ def main():
               Path(args.jar), Path(args.remm), Path(args.remm + ".tbi")]
     genome = Path(args.data_dir) / f"{args.genome_version}_hg38"
     phenotype = Path(args.data_dir) / f"{args.phenotype_version}_phenotype"
-    inputs += [genome / f"{args.genome_version}_hg38_genome.mv.db",
-               phenotype / f"{args.phenotype_version}_phenotype.mv.db"]
     missing = [str(path) for path in inputs if not path.is_file() or path.stat().st_size == 0]
+    for folder in (genome, phenotype):
+        if not folder.is_dir():
+            missing.append(str(folder))
+        elif not any(path.is_file() and path.stat().st_size > 0
+                     for path in folder.rglob("*.mv.db")):
+            missing.append(str(folder) + " (no H2 .mv.db data files)")
     if missing:
         raise FileNotFoundError("Genomiser resources are missing/empty:\n" + "\n".join(missing))
     packet = json.loads(Path(args.phenopacket).read_text(encoding="utf-8"))

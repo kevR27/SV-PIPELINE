@@ -212,10 +212,19 @@ if SKIPPED_POSTPROCESS_SAMPLES:
     )
 
 
-GENOMISER_ENABLED = bool(config.get("genomiser_enabled", False))
+# Every postprocessed patient must also receive genome-wide Genomiser results.
+# The separate LRS update workflow produces the discovery VCFs used here.
+from genomiser_requirements import require_genomiser
+GENOMISER_ENABLED = require_genomiser(config, SAMPLES)
+GENOMISER_SMALL_VCF = PATH + "{sample}/snp_clair3/{sample}.vcf.gz"
+GENOMISER_SV_VCF = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"
+GENOMISER_TARGETS = expand(
+    PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json",
+    sample=POSTPROCESS_SAMPLES,
+)
 GENOMISER_BENCHMARK_SAMPLES = confirmed_benchmark_samples(
     config.get("genomiser_benchmark_truth_tsv"), POSTPROCESS_SAMPLES
-) if GENOMISER_ENABLED else []
+)
 GENOMISER_BENCHMARK_TARGETS = expand(
     PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json",
     sample=GENOMISER_BENCHMARK_SAMPLES,
@@ -227,6 +236,7 @@ GENOMISER_BENCHMARK_TARGETS = expand(
 # Thesis plots remain a separate explicit target.
 rule all:
     input:
+        GENOMISER_TARGETS,
         GENOMISER_BENCHMARK_TARGETS,
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
@@ -770,6 +780,7 @@ include: "xci_analysis.smk"
 # Explicit target only. It is NOT part of rule all.
 rule all_thesis_plots:
     input:
+        GENOMISER_TARGETS,
         expand(
             PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
             sample=POSTPROCESS_SAMPLES,
@@ -796,6 +807,7 @@ include: "../common/allele_assessment.smk"
 
 # Optional additive thesis-analysis layer. Existing rules/outputs are preserved.
 include: "../common/patient_profiles.smk"
+include: "../common/genomiser.smk"
 include: "thesis_extensions.smk"
 
 # Atlas reads original Clair3 alleles; LongPhase/VEP remain separate context.
@@ -806,7 +818,7 @@ ATLAS_SV_VCF = PATH + "{sample}/sv/merged/{sample}_merged_SV.vcf.gz"
 include: "../common/alphagenome_atlas.smk"
 
 
-# Optional genome-ranking benchmark. Genomiser itself runs in Snakefile_LRS_update.
+# Optional independently solved-sample benchmark; Genomiser itself is required here.
 GENOMISER_CUSTOM_GENE = PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv"
 GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
 include: "../common/benchmark_genomiser.smk"

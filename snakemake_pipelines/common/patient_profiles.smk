@@ -1,10 +1,10 @@
 # One clinical table shared by LRS and SRS. The table lives outside GitHub.
-PATIENT_PROFILE_SOURCE = config.get("patient_profiles_tsv")
+PATIENT_PROFILE_SOURCE = config["patient_profiles_tsv"]
 PATIENT_PROFILE_DIR = PATH + "{sample}/clinical/"
 
 rule prepare_patient_profile:
     input:
-        profiles=lambda wc: PATIENT_PROFILE_SOURCE if PATIENT_PROFILE_SOURCE else [],
+        profiles=PATIENT_PROFILE_SOURCE,
         hpo_seeds=hon_hpo_seed_path(config, REPO_ROOT),
         script=SCRIPTS + "/prepare_patient_profiles.py"
     output:
@@ -12,7 +12,7 @@ rule prepare_patient_profile:
         hpo=PATIENT_PROFILE_DIR + "{sample}.patient_hpo.tsv",
         context=PATIENT_PROFILE_DIR + "{sample}.clinical_context.json"
     params:
-        profiles=PATIENT_PROFILE_SOURCE or ""
+        profiles=PATIENT_PROFILE_SOURCE
     conda:
         CONDAENV + "monarch.yaml"
     shell:

@@ -307,6 +307,7 @@ rule build_snv_sv_candidates:
 
 rule finalize_candidate_ranking:
     input:
+        genomiser=rules.genomiser_genome.output.manifest,
         genes=rules.integrate_depth_into_final_candidates.output.genes,
         sv=rules.integrate_depth_into_final_candidates.output.sv,
         snv_sv=rules.build_snv_sv_candidates.output.tsv,
@@ -643,4 +644,5 @@ FINAL_THESIS_OUTPUTS = [
 
 rule final_thesis_analysis:
     input:
-        FINAL_THESIS_OUTPUTS
+        FINAL_THESIS_OUTPUTS,
+        GENOMISER_TARGETS

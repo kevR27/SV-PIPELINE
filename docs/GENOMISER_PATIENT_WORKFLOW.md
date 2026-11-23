@@ -2,10 +2,20 @@
 
 ## Status
 
-This is an **opt-in implementation**. The Snakemake workflow structure has
-been updated, but it has **not** been validated on the laboratory server,
-real ONT/Illumina VCFs, or the local ReMM database. Keep
-`genomiser_enabled: false` until the checks below succeed.
+**Genomiser is now mandatory** for every patient in the normal LRS
+`Snakefile_LRS_update`, LRS `Snakefile_LRS_postprocess`, and SRS
+`Snakefile_SRS_WGS` analyses. Their default `all` targets require its
+per-sample manifest; the separate thesis plot/analysis targets also require
+it. Setting `genomiser_enabled: false` raises an explicit configuration error.
+The LRS and SRS final candidate-ranking rules also depend on the
+Genomiser manifest, so directly requesting an updated final ranked TSV
+cannot bypass the required genome analysis. Genomiser does not alter
+the custom ranking algorithm; this is an execution dependency only.
+
+**This does not mean the laboratory server has been validated.** Before
+running either workflow, install the GRCh38 ReMM database/index and populate
+the secured patient profile table. Missing prerequisites now stop the pipeline;
+they no longer allow analysis to finish without Genomiser.
 
 **Genomiser** is the `--preset genome` analysis in **Exomiser CLI 15.1.0**.
 It analyses coding and noncoding variants jointly with the phenotype. It is
@@ -22,7 +32,7 @@ The original phenotype-only Exomiser comparison is no longer a mandatory
 reproducibility; they do not run by default.
 
 
-## Install / verify resources on the Bologna server
+## Required installation / resource verification on the Bologna server
 
 Because the 15.1.0 Exomiser CLI and its 2512 HG38/phenotype databases are
 already configured for the existing phenotype-only comparison, **do not
@@ -191,15 +201,17 @@ expected disease into the benchmark. Ontology IDs are syntax-validated;
 verify the IDs and their meanings against the current HPO release before
 clinical use.
 
-## Configure
+## Required configuration
 
+The shipped YAML files already specify the secured patient table and ReMM
+paths, but those files must exist on the server before execution.
 In BOTH `snakemake_pipelines/lrs/config_lrs.yaml` and
 `snakemake_pipelines/srs_wgs_pipeline/config_srs_wgs.yaml`, set:
 
 ```yaml
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
 genomiser_enabled: true
-genomiser_remm_hg38: "/DATA/casadei7/reference/ReMM.v0.4.hg38.tsv.gz"
+genomiser_remm_hg38: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/remm/ReMM.v0.4.hg38.tsv.gz"
 genomiser_memory_gb: 32
 genomiser_benchmark_truth_tsv: null
 ```
@@ -223,9 +235,20 @@ python scripts/prepare_patient_profiles.py \
   --clinical-output /tmp/21930.clinical_context.json
 ```
 
-For a normal full re-analysis, the original `rule all` target remains
-available, but it is unnecessary for phenotype-only updates. Use the exact
-targeted commands above to avoid unintended large re-runs.
+For a normal full re-analysis, `rule all` always requires Genomiser.
+To update only the phenotype ranking and Genomiser, use the targeted
+commands above: sequencing and variant calling do not need to be repeated
+when their outputs are intact.
+
+All configured OA patients must have a genuine clinical row with
+`HP:0000648` in `hpo_present`; never invent an optic atrophy
+phenotype for a technical control such as HG002. The default SRS HG002
+sample is a test and cannot be analysed as an OA patient unless you replace
+it with an appropriately phenotyped patient or supply legitimate clinical
+observations for the control itself.
+
+**Benchmarking remains separately conditional on independently confirmed
+diagnostic truth.** The Genomiser stage itself is never conditional on truth.
 
 ## What is compared
 

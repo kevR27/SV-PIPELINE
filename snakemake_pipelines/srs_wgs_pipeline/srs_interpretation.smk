@@ -228,6 +228,7 @@ rule srs_snv_sv_candidates:
 
 rule srs_finalize_candidate_ranking:
     input:
+        genomiser=rules.genomiser_genome.output.manifest,
         genes=rules.srs_integrate_large_sv_depth.output.genes,
         sv=rules.srs_integrate_large_sv_depth.output.sv,
         pairs=rules.srs_snv_sv_candidates.output.tsv,

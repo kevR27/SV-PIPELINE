@@ -1,15 +1,15 @@
-## Patient-specific Genomiser whole-genome prioritization (optional)
+## Required Genomiser whole-genome prioritization (LRS and SRS)
 
 For one patient at a time, combine existing genome-wide SNV/indel and SV VCFs
 with **documented positive HPO terms** for noncoding, regulatory and coding
-variant prioritization. The configuration remains disabled by default until
-the server-side ReMM database and patient table are validated. Original LRS
-and SRS calling results remain unchanged.
+variant prioritization. Both workflows now require this stage in the default
+analysis; missing ReMM resources or patient profiles cause an explicit failure.
+Original LRS and SRS calling results remain unchanged.
 
 Start with [the dedicated installation and downstream-only execution
 guide](docs/GENOMISER_PATIENT_WORKFLOW.md). Patient files must be stored on
-the secured server, never committed to this repository. The optional
-benchmark uses only independently confirmed diagnoses.
+the secured server, never committed to this repository. The separate
+benchmark uses only independently confirmed diagnoses when available.
 
 # SV-PIPELINE: Whole-genome variant analysis
 
