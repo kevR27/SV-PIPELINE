@@ -44,28 +44,89 @@ Conda environments come from **../../envs/**, but external databases, tool model
 
 ## 3. Run the pipeline
 
-Start in this folder. Change the example Conda prefix if your environments are stored elsewhere.
+Use the sequence below for a complete SRS run, including the additional
+filtering tables and figures. Run it in Bash. Change the repository path,
+Conda prefix and core count if needed.
+
+### Step 1: activate Snakemake and enter this folder
 
 ~~~bash
-cd /path/to/SV-PIPELINE/snakemake_pipelines/srs_wgs_pipeline
-
-# Preview jobs and file dependencies
-snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 --dry-run -p
-
-# Run the full analysis, including the downstream candidate tables
-snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 --rerun-incomplete -p all
-
-# Run only the coverage/alignment QC target
-snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 quality_control
-
-# Produce figures and the associated review/filter views
-snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 all_thesis_plots
-
-# Generate downstream filtering tables without requesting all plots
-snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ --cores 32 further_filtering
+conda activate snakemake
+cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/srs_wgs_pipeline
 ~~~
 
-The **all** target includes the main analysis and downstream interpretation. The **all_thesis_plots** target is separate. Requesting a specific output may still schedule missing upstream rules, so check a dry run before running only part of an older dataset.
+First check your sample paths, reference, results directory and optional-tool
+settings in `config_srs_wgs.yaml`. Keep your own server configuration when
+updating the code from GitHub.
+
+### Step 2: preview the complete run
+
+~~~bash
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --rerun-incomplete -n -p all all_thesis_plots
+~~~
+
+Resolve errors before continuing. A dry run checks the planned jobs and their
+file dependencies; it does not execute the tools or prove that all resources
+are usable.
+
+### Step 3: run or resume the complete workflow
+
+~~~bash
+set -o pipefail
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --rerun-incomplete -p all all_thesis_plots \
+  2>&1 | tee "srs_complete_$(date +%Y%m%d_%H%M%S).log"
+~~~
+
+Use this same command after fixing an error. Snakemake reuses completed,
+up-to-date results and schedules missing, incomplete or outdated steps.
+Do not delete the results folder to resume. GitHub updates do not update
+your server copy automatically.
+
+### Which target includes the additional filtering?
+
+| Target | Requested results |
+| --- | --- |
+| `all` | Main analysis, annotation, candidate rankings and downstream interpretation; does not request the additional review filtering |
+| `further_filtering` | Additional filtering tables only |
+| `all_thesis_plots` | Overview figures, additional filtering tables and their figures, Samplot and optional Atlas figures when enabled |
+| `all all_thesis_plots` | Complete analysis plus the filtering and figures above |
+
+**You do not need a separate `further_filtering` command after requesting
+`all all_thesis_plots`.** The filtering plots depend on the filtering tables,
+so Snakemake creates those tables first. Initial caller-quality filters are a
+different step and are already part of the main analysis.
+
+To request only one part of an existing analysis, use the same command with
+the desired target: `quality_control`, `further_filtering`, or
+`all_thesis_plots`. A target can still schedule missing upstream analyses;
+preview it with `-n -p` first. Optional modules run only when configured.
+
+### Optional: prepare environments before the run
+
+This is not a required separate step: `--use-conda` creates missing environments
+during execution. To prepare them in advance:
+
+~~~bash
+snakemake -s Snakefile_SRS_WGS --configfile config_srs_wgs.yaml \
+  --use-conda --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --conda-create-envs-only --cores 32 all all_thesis_plots
+~~~
+
+This prepares software environments. It does not download all external
+annotation databases, VEP caches, Exomiser data or licensed MELT resources.
+
+After completion, read each sample's `qc/<sample>.wgs_qc_summary.tsv`,
+then `gene_discovery/final/<sample>_clinical_candidates.ranked.tsv`.
+The additional filtering results are in `downstream_filtering/`; their plots
+are in `downstream_filtering/plots/`, alongside the main `plots/` folder.
+Check plot manifests for failed or skipped figures.
+
+LRS has different targets: see the [LRS run guide](../../README.md#3-run-the-lrs-workflow).
+Its current plotting target does not include this additional filtering.
 
 ## 4. Analysis steps and tools
 
