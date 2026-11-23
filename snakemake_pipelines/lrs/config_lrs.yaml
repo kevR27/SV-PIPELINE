@@ -197,16 +197,17 @@ patient_hpo_files: {}
 # ============================================================
 # Keep patient records on the secured server, OUTSIDE this public repository.
 # One row per patient, as in reference/patient_profiles.template.tsv.
-# When set, this same table drives BOTH the custom final HPO ranking and
+# This same table drives BOTH the custom final HPO ranking and
 # Genomiser. Do not additionally set patient_hpo_files.
-patient_profiles_tsv: null
-# Genomiser is the genome preset of Exomiser CLI 15.1.0 (NOT Genomizer).
-# Enable only after the indexed GRCh38 ReMM file and full genome databases
-# have been installed and a private patient profile table exists.
-genomiser_enabled: false
+# Required for every configured patient. Keep real clinical data outside GitHub.
+# Each row must contain observed HPO terms; use HP:0000648 for OA patients.
+patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
+# Genomiser genome mode runs for every sample in the normal LRS/SRS targets.
+# The workflow rejects genomiser_enabled: false; do not disable it.
+genomiser_enabled: true
 genomiser_cli_jar: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/exomiser-cli-15.1.0.jar"
 genomiser_data_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0/data"
-genomiser_remm_hg38: null
+genomiser_remm_hg38: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/remm/ReMM.v0.4.hg38.tsv.gz"
 genomiser_genome_data_version: "2512"
 genomiser_phenotype_data_version: "2512"
 genomiser_java: "java"
