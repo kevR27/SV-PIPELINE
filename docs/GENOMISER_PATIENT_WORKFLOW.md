@@ -7,6 +7,10 @@
 `Snakefile_SRS_WGS` analyses. Their default `all` targets require its
 per-sample manifest; the separate thesis plot/analysis targets also require
 it. Setting `genomiser_enabled: false` raises an explicit configuration error.
+The LRS and SRS final candidate-ranking rules also depend on the
+Genomiser manifest, so directly requesting an updated final ranked TSV
+cannot bypass the required genome analysis. Genomiser does not alter
+the custom ranking algorithm; this is an execution dependency only.
 
 **This does not mean the laboratory server has been validated.** Before
 running either workflow, install the GRCh38 ReMM database/index and populate
