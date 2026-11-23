@@ -28,6 +28,7 @@ CONDAENV = os.path.join(REPO_ROOT, "envs") + "/"
 SCRIPTS = os.path.join(REPO_ROOT, "scripts")
 sys.path.insert(0, SCRIPTS)
 from sv_evidence_common import hon_hpo_seed_path
+from benchmark_sample_selection import confirmed_benchmark_samples
 PLOTS = os.path.join(REPO_ROOT, "plots")
 
 COMPLEMENTARY_STRAGLR_BP_TOL = config.get(
@@ -212,9 +213,12 @@ if SKIPPED_POSTPROCESS_SAMPLES:
 
 
 GENOMISER_ENABLED = bool(config.get("genomiser_enabled", False))
-GENOMISER_BENCHMARK_TARGETS = (
-    expand(PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json", sample=POSTPROCESS_SAMPLES)
-    if GENOMISER_ENABLED and config.get("genomiser_benchmark_truth_tsv") else []
+GENOMISER_BENCHMARK_SAMPLES = confirmed_benchmark_samples(
+    config.get("genomiser_benchmark_truth_tsv"), POSTPROCESS_SAMPLES
+) if GENOMISER_ENABLED else []
+GENOMISER_BENCHMARK_TARGETS = expand(
+    PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json",
+    sample=GENOMISER_BENCHMARK_SAMPLES,
 )
 
 # Default post-processing target:
