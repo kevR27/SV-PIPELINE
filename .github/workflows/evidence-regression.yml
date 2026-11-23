@@ -1,6 +1,7 @@
 name: SV evidence regression
 # Optional development checks; patient analysis does not run this workflow.
 on:
+  pull_request:
   workflow_dispatch:
 jobs:
   evidence:
