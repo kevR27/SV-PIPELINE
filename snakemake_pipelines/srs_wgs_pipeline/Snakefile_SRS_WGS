@@ -255,6 +255,10 @@ if GENOMISER_ENABLED:
         raise ValueError("Set patient_profiles_tsv and genomiser_remm_hg38 before enabling Genomiser")
     if config.get("patient_hpo_files"):
         raise ValueError("Do not mix patient_profiles_tsv and patient_hpo_files")
+GENOMISER_BENCHMARK_TARGETS = (
+    expand(PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json", sample=SAMPLES)
+    if GENOMISER_ENABLED and config.get("genomiser_benchmark_truth_tsv") else []
+)
 GENOMISER_TARGETS = (
     expand(PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json", sample=SAMPLES)
     if GENOMISER_ENABLED else []
@@ -321,6 +325,7 @@ rule all:
             expand(PATH + "{sample}/diagnostic_review/{sample}.mitochondrial_gene_ranking.tsv", sample=SAMPLES),
             SAMPLOT_TARGETS,
             GENOMISER_TARGETS,
+            GENOMISER_BENCHMARK_TARGETS,
             CANDIDATE_BENCHMARK_TARGETS,
             SV_BENCHMARK_TARGETS,
         ],
@@ -1596,3 +1601,6 @@ include: "../common/alphagenome_atlas.smk"
 include: "../common/patient_profiles.smk"
 include: "../common/genomiser.smk"
 include: "srs_interpretation.smk"
+GENOMISER_CUSTOM_GENE = PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv"
+GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
+include: "../common/benchmark_genomiser.smk"
