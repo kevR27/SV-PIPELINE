@@ -23,6 +23,7 @@ def require_genomiser(config, samples):
         "genomiser_cli_jar",
         "genomiser_data_dir",
         "genomiser_remm_hg38",
+        "genomiser_analysis_yaml",
     )
     missing = [
         name for name in required
