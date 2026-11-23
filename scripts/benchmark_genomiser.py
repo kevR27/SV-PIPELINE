@@ -30,7 +30,8 @@ def gene(value_):
 
 
 def chrom(value_):
-    return value_.strip().upper().removeprefix("CHR").replace("M", "MT")
+    normalized = value_.strip().upper().removeprefix("CHR")
+    return "MT" if normalized in {"M", "MT"} else normalized
 
 
 def positive_int(row, *fields):
