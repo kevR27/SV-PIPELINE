@@ -1,0 +1,126 @@
+"""Run only LRS downstream SV review filtering on existing ranked TSV files.
+
+From snakemake_pipelines/lrs:
+    snakemake -s Snakefile_LRS_further_filtering --cores 8 --use-conda \
+        --conda-prefix /home/casadei7/snakemake_envs/envs/ --rerun-incomplete -n -p
+
+The workflow finds input tables in RESULTS/<sample>/gene_discovery/final/.
+It does not depend on the sample list, BAMs, VCFs, or other upstream outputs.
+"""
+
+from pathlib import Path
+
+configfile: "config_lrs.yaml"
+
+ROOT = Path(config["path"]).expanduser().resolve()
+REPO = Path(workflow.basedir).resolve().parents[1]
+FILTER_SCRIPT = REPO / "scripts/filter_sv_candidates_for_review.py"
+PLOT_SCRIPT = REPO / "plots/plot_downstream_sv_filtering.py"
+PLOT_UTILS = REPO / "plots/plot_utils.py"
+PLOTS_ENV = REPO / "envs/plots.yaml"
+
+SIZE_CUTOFF = int(config.get("downstream_size_cutoff_bp", 1000))
+MAX_AF = float(config.get("downstream_max_population_af", 0.01))
+INV_MIN = int(config.get("downstream_inv_min_reads", 3))
+INV_STRONG = int(config.get("downstream_inv_strong_reads", 5))
+
+# Discover the original final ranked SV-gene tables, not filtered exports.
+# Prefer a plain TSV if both .tsv and .tsv.gz are present for the same sample.
+inputs = {}
+for suffix in ("_sv_gene_candidates.ranked.tsv.gz", "_sv_gene_candidates.ranked.tsv"):
+    for file in sorted(ROOT.glob(f"*/gene_discovery/final/*{suffix}")):
+        sample = file.name[:-len(suffix)]
+        if sample != file.parent.parent.parent.name:
+            print(f"[skip] ID and sample directory disagree: {file}")
+            continue
+        if not file.is_file() or file.stat().st_size == 0:
+            print(f"[skip] missing or empty input: {file}")
+            continue
+        inputs[sample] = str(file)
+
+SAMPLES = sorted(inputs)
+if not SAMPLES:
+    raise ValueError(
+        f"No ranked SV-gene tables found under {ROOT}. "
+        "Restore <sample>/gene_discovery/final/<sample>_sv_gene_candidates.ranked.tsv "
+        "(or .tsv.gz), then rerun."
+    )
+
+print(f"[LRS further filtering] {len(SAMPLES)} sample(s): {', '.join(SAMPLES)}")
+
+# These five sets of figures are always produced by the existing plotting script.
+# Track each PNG/PDF/SVG so a missing figure can be recreated on the next run.
+figure_names = [
+    ("filter_outcomes", "{sample}_filter_outcomes"),
+    ("retained_types_and_context", "{sample}_large_types"),
+    ("retained_types_and_context", "{sample}_small_types"),
+    ("callers_and_population", "{sample}_callers_and_population"),
+    ("inversion_support", "{sample}_inversion_support"),
+]
+plot_outputs = [
+    str(ROOT / "{sample}" / "plots/15_downstream_filtering" / folder / f"{prefix}.{ext}")
+    for folder, prefix in figure_names
+    for ext in ("pdf", "png", "svg")
+]
+
+
+rule all:
+    input:
+        expand(str(ROOT / "{sample}/gene_discovery/further_filtering/filter_run.json"), sample=SAMPLES),
+        expand(plot_outputs, sample=SAMPLES)
+
+
+rule filter_sv_candidates:
+    input:
+        candidates=lambda wc: inputs[wc.sample],
+        script=str(FILTER_SCRIPT)
+    output:
+        audit=str(ROOT / "{sample}/gene_discovery/further_filtering/all_records.annotated.tsv"),
+        settings=str(ROOT / "{sample}/gene_discovery/further_filtering/filter_run.json"),
+        manifest=str(ROOT / "{sample}/gene_discovery/further_filtering/output_files.tsv")
+    params:
+        outdir=str(ROOT / "{sample}/gene_discovery/further_filtering"),
+        size=SIZE_CUTOFF,
+        af=MAX_AF,
+        inv_min=INV_MIN,
+        inv_strong=INV_STRONG
+    conda:
+        str(PLOTS_ENV)
+    shell:
+        """
+        set -euo pipefail
+        python {input.script:q} \
+            --input {input.candidates:q} \
+            --sample {wildcards.sample:q} \
+            --out-dir {params.outdir:q} \
+            --size-cutoff {params.size} \
+            --max-af {params.af} \
+            --inv-min-reads {params.inv_min} \
+            --inv-strong-reads {params.inv_strong}
+        test -s {output.audit:q}
+        test -s {output.settings:q}
+        test -s {output.manifest:q}
+        """
+
+
+rule plot_filtered_candidates:
+    input:
+        audit=rules.filter_sv_candidates.output.audit,
+        settings=rules.filter_sv_candidates.output.settings,
+        manifest=rules.filter_sv_candidates.output.manifest,
+        script=str(PLOT_SCRIPT),
+        utils=str(PLOT_UTILS)
+    output:
+        plot_outputs
+    params:
+        filter_dir=str(ROOT / "{sample}/gene_discovery/further_filtering"),
+        outdir=str(ROOT / "{sample}/plots/15_downstream_filtering")
+    conda:
+        str(PLOTS_ENV)
+    shell:
+        """
+        set -euo pipefail
+        python {input.script:q} \
+            --filter-dir {params.filter_dir:q} \
+            --out-dir {params.outdir:q}
+        """
