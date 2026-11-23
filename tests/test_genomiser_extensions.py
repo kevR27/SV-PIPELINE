@@ -118,6 +118,17 @@ class MandatoryGenomiserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "required"):
             require_genomiser(settings, ["21930"])
 
+    def test_cli_string_true_is_accepted(self):
+        settings = self.settings()
+        settings["genomiser_enabled"] = "true"
+        self.assertTrue(require_genomiser(settings, ["21930"]))
+
+    def test_cli_string_false_is_rejected(self):
+        settings = self.settings()
+        settings["genomiser_enabled"] = "false"
+        with self.assertRaisesRegex(ValueError, "required"):
+            require_genomiser(settings, ["21930"])
+
     def test_missing_patient_profiles_is_rejected(self):
         settings = self.settings()
         settings["patient_profiles_tsv"] = None
