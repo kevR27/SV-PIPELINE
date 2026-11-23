@@ -246,6 +246,20 @@ SV_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/truvari", sample=SV_BEN
 
 
 # Default target: complete analysis and review tables. Figures have their own target.
+# Patient phenotype input is shared with LRS and the existing custom ranking.
+GENOMISER_ENABLED = bool(config.get("genomiser_enabled", False))
+GENOMISER_SMALL_VCF = PATH + "{sample}/snp_deepvariant/{sample}.vcf.gz"
+GENOMISER_SV_VCF = PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz"
+if GENOMISER_ENABLED:
+    if not config.get("patient_profiles_tsv") or not config.get("genomiser_remm_hg38"):
+        raise ValueError("Set patient_profiles_tsv and genomiser_remm_hg38 before enabling Genomiser")
+    if config.get("patient_hpo_files"):
+        raise ValueError("Do not mix patient_profiles_tsv and patient_hpo_files")
+GENOMISER_TARGETS = (
+    expand(PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json", sample=SAMPLES)
+    if GENOMISER_ENABLED else []
+)
+
 rule all:
     input:
         atlas=lambda wc: ATLAS_ANNOTATION_TARGETS,
@@ -299,8 +313,6 @@ rule all:
             expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.panel_only.txt", sample=SAMPLES),
             expand(PATH + "{sample}/sv/vep/{sample}_SV_VEP.summary.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/gene_discovery/{sample}_ranked_candidates.tsv", sample=SAMPLES),
-            expand(PATH + "{sample}/gene_discovery/{sample}_exomiser_comparison.tsv", sample=SAMPLES),
-            expand(PATH + "{sample}/gene_discovery/{sample}_exomiser_comparison.summary.json", sample=SAMPLES),
             expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/gene_discovery/{sample}_allele_assessment.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_with_supporting_evidence.tsv", sample=SAMPLES),
@@ -308,6 +320,7 @@ rule all:
             expand(PATH + "{sample}/diagnostic_review/{sample}.clinical_candidates.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/diagnostic_review/{sample}.mitochondrial_gene_ranking.tsv", sample=SAMPLES),
             SAMPLOT_TARGETS,
+            GENOMISER_TARGETS,
             CANDIDATE_BENCHMARK_TARGETS,
             SV_BENCHMARK_TARGETS,
         ],
@@ -1439,7 +1452,6 @@ rule all_thesis_plots:
 # Overview figures use the complete candidate table, not the filtered subset.
 rule thesis_plots_sample:
     input:
-        exomiser_comparison=rules.compare_exomiser_hon.output.tsv,
         final_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
         depth_summary=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth.tsv",
         depth_bins_final=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth_bins.tsv",
@@ -1581,4 +1593,6 @@ ATLAS_SV_VCF = PATH + "{sample}/sv/integrated/{sample}_integrated_SV.vcf.gz"
 include: "../common/alphagenome_atlas.smk"
 
 # SRS-specific interpretation, without changes to the LRS Snakefiles.
+include: "../common/patient_profiles.smk"
+include: "../common/genomiser.smk"
 include: "srs_interpretation.smk"
