@@ -93,8 +93,8 @@ class BenchmarkTests(unittest.TestCase):
         genomiser = {"GENE_SYMBOL": "OPA1", "CONTIG": "3", "START": "1000",
                      "END": "2000", "ALT": "<DEL>"}
         self.assertTrue(sv_matches(custom, truth, "custom", 20))
-        self.assertTrue(sv_match(genomiser, truth, "genomiser", 20))
-        self.assertFalse(sv_match(genomiser, {**truth, "svtype": "DUP"}, "genomiser", 20))
+        self.assertTrue(sv_matches(genomiser, truth, "genomiser", 20))
+        self.assertFalse(sv_matches(genomiser, {**truth, "svtype": "DUP"}, "genomiser", 20))
 
 
 if __name__ == "__main__":
