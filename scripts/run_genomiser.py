@@ -97,6 +97,28 @@ def prepare_vcf(vcf, sample, target, namefile):
     return str(target), observed[0]
 
 
+def build_java_command(args, combined, options_file):
+    """Build the command with an editable genome analysis, never the preset."""
+    # The CLI may be invoked from an arbitrary Snakemake working directory.
+    # Load the installation properties explicitly, as recommended by Exomiser.
+    install_properties = Path(args.jar).resolve().parent / "application.properties"
+    java_command = [args.java, f"-Xmx{args.memory_gb}g"]
+    if install_properties.is_file():
+        java_command.append(f"-Dspring.config.location={install_properties}")
+    java_command += [
+        f"-Dexomiser.data-directory={Path(args.data_dir).resolve()}",
+        f"-Dexomiser.hg38.data-version={args.genome_version}",
+        f"-Dexomiser.phenotype.data-version={args.phenotype_version}",
+        f"-Dexomiser.hg38.remm-path={Path(args.remm).resolve()}",
+        "-jar", str(Path(args.jar).resolve()), "analyse",
+        "--sample", str(Path(args.phenopacket).resolve()),
+        "--vcf", str(combined.resolve()), "--assembly", "hg38",
+        "--analysis", str(Path(args.analysis).resolve()),
+        "--output", str(options_file.resolve())
+    ]
+    return java_command
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sample", required=True)
@@ -166,23 +188,7 @@ def main():
         "outputFormats: [TSV_GENE, TSV_VARIANT, HTML]\n",
         encoding="utf-8",
     )
-    # The CLI may be invoked from an arbitrary Snakemake working directory.
-    # Load the installation properties explicitly, as recommended by Exomiser.
-    install_properties = Path(args.jar).resolve().parent / "application.properties"
-    java_command = [args.java, f"-Xmx{args.memory_gb}g"]
-    if install_properties.is_file():
-        java_command.append(f"-Dspring.config.location={install_properties}")
-    java_command += [
-        f"-Dexomiser.data-directory={Path(args.data_dir).resolve()}",
-        f"-Dexomiser.hg38.data-version={args.genome_version}",
-        f"-Dexomiser.phenotype.data-version={args.phenotype_version}",
-        f"-Dexomiser.hg38.remm-path={Path(args.remm).resolve()}",
-        "-jar", str(Path(args.jar).resolve()), "analyse",
-        "--sample", str(Path(args.phenopacket).resolve()),
-        "--vcf", str(combined.resolve()), "--assembly", "hg38",
-        "--analysis", str(Path(args.analysis).resolve()),
-        "--output", str(options_file.resolve())
-    ]
+    java_command = build_java_command(args, combined, options_file)
     log = out / f"{prefix}.log"
     with log.open("w", encoding="utf-8") as handle:
         run(java_command, stdout=handle, stderr=subprocess.STDOUT)
