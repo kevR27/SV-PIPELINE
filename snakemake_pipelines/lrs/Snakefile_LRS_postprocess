@@ -792,7 +792,6 @@ include: "../common/allele_assessment.smk"
 
 # Optional additive thesis-analysis layer. Existing rules/outputs are preserved.
 include: "../common/patient_profiles.smk"
-include: "../common/patient_profiles.smk"
 include: "thesis_extensions.smk"
 
 # Atlas reads original Clair3 alleles; LongPhase/VEP remain separate context.
