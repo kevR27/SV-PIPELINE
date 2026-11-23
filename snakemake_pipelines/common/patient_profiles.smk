@@ -1,0 +1,21 @@
+# One clinical table shared by LRS and SRS. The table lives outside GitHub.
+PATIENT_PROFILE_SOURCE = config.get("patient_profiles_tsv")
+PATIENT_PROFILE_DIR = PATH + "{sample}/clinical/"
+
+rule prepare_patient_profile:
+    input:
+        profiles=lambda wc: PATIENT_PROFILE_SOURCE if PATIENT_PROFILE_SOURCE else [],
+        hpo_seeds=hon_hpo_seed_path(config, REPO_ROOT),
+        script=SCRIPTS + "/prepare_patient_profiles.py"
+    output:
+        packet=PATIENT_PROFILE_DIR + "{sample}.phenopacket.json",
+        hpo=PATIENT_PROFILE_DIR + "{sample}.patient_hpo.tsv",
+        context=PATIENT_PROFILE_DIR + "{sample}.clinical_context.json"
+    conda:
+        CONDAENV + "monarch.yaml"
+    shell:
+        """
+        set -euo pipefail
+        test -n "{PATIENT_PROFILE_SOURCE or ''}"
+        python {input.script:q} --profiles {input.profiles:q}             --sample {wildcards.sample:q}             --hpo-seeds {input.hpo_seeds:q}             --phenopacket {output.packet:q}             --hpo-output {output.hpo:q}             --clinical-output {output.context:q}
+        """
