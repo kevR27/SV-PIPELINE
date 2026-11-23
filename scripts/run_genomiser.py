@@ -104,8 +104,13 @@ def main():
         "outputFormats: [TSV_GENE, TSV_VARIANT, HTML]\n",
         encoding="utf-8",
     )
-    java_command = [
-        args.java, f"-Xmx{args.memory_gb}g",
+    # The CLI may be invoked from an arbitrary Snakemake working directory.
+    # Load the installation properties explicitly, as recommended by Exomiser.
+    install_properties = Path(args.jar).resolve().parent / "application.properties"
+    java_command = [args.java, f"-Xmx{args.memory_gb}g"]
+    if install_properties.is_file():
+        java_command.append(f"-Dspring.config.location={install_properties}")
+    java_command += [
         f"-Dexomiser.data-directory={Path(args.data_dir).resolve()}",
         f"-Dexomiser.hg38.data-version={args.genome_version}",
         f"-Dexomiser.phenotype.data-version={args.phenotype_version}",
