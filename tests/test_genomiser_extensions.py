@@ -6,11 +6,12 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from prepare_patient_profiles import load_profile, make_profile, terms
+from prepare_patient_profiles import load_profile, make_profile, terms, main as prepare_profiles_main
 from genomiser_requirements import require_genomiser
 from run_genomiser import build_java_command, validate_analysis
 from benchmark_genomiser import (chromosome, sequential_gene_ranks,
@@ -82,6 +83,50 @@ class PatientProfileTests(unittest.TestCase):
                          ["HP:0000603"])
         self.assertNotIn("HP:0000603",
                          [f["type"]["id"] for f in packet["phenotypicFeatures"]])
+
+    def test_profile_files_use_same_union_for_genomiser_and_custom_ranking(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            clinical = root / "patients.tsv"
+            seeds = root / "seeds.tsv"
+            packet_file = root / "patient.phenopacket.json"
+            hpo_file = root / "patient.patient_hpo.tsv"
+            context_file = root / "patient.clinical_context.json"
+            clinical.write_text(
+                "sample_id\\thpo_present\\thpo_absent\\n"
+                "TEST01\\tHP:0000648;HP:0001250\\tHP:0000603\\n",
+                encoding="utf-8"
+            )
+            seeds.write_text(
+                "hpo_id\\thpo_label\\thon_seed_role\\n"
+                "HP:0000648\\tOptic atrophy\\tCORE_OCULAR_HON\\n"
+                "HP:0007663\\tReduced visual acuity\\tCORE_OCULAR_HON\\n"
+                "HP:0000603\\tCentral scotoma\\tCORE_OCULAR_HON\\n",
+                encoding="utf-8"
+            )
+            arguments = [
+                "prepare_patient_profiles.py",
+                "--profiles", str(clinical),
+                "--sample", "TEST01",
+                "--hpo-seeds", str(seeds),
+                "--phenopacket", str(packet_file),
+                "--hpo-output", str(hpo_file),
+                "--clinical-output", str(context_file),
+            ]
+            with patch.object(sys, "argv", arguments):
+                prepare_profiles_main()
+            packet = json.loads(packet_file.read_text())
+            context = json.loads(context_file.read_text())
+            with hpo_file.open(newline="") as handle:
+                hpo_rows = list(csv.DictReader(handle, delimiter="\\t"))
+            packet_terms = {row["type"]["id"] for row in packet["phenotypicFeatures"]}
+            hpo_terms = {row["hpo_id"] for row in hpo_rows}
+            self.assertEqual(packet_terms, hpo_terms)
+            self.assertEqual(packet_terms, {"HP:0000648", "HP:0001250", "HP:0007663"})
+            self.assertEqual(context["hpo_present"], ["HP:0000648", "HP:0001250"])
+            self.assertEqual(context["hpo_hon_reference_added"], ["HP:0007663"])
+            self.assertEqual(context["hpo_hon_reference_excluded_as_absent"],
+                             ["HP:0000603"])
 
     def test_invalid_hpo_is_rejected(self):
         with self.assertRaises(ValueError):
