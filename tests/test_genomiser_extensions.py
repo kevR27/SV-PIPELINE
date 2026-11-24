@@ -109,6 +109,7 @@ class PatientProfileTests(unittest.TestCase):
                 "--profiles", str(clinical),
                 "--sample", "TEST01",
                 "--hpo-seeds", str(seeds),
+                "--include-shared-hon-seeds",
                 "--phenopacket", str(packet_file),
                 "--hpo-output", str(hpo_file),
                 "--clinical-output", str(context_file),
@@ -127,6 +128,44 @@ class PatientProfileTests(unittest.TestCase):
             self.assertEqual(context["hpo_hon_reference_added"], ["HP:0007663"])
             self.assertEqual(context["hpo_hon_reference_excluded_as_absent"],
                              ["HP:0000603"])
+
+    def test_default_does_not_impute_shared_hon_terms(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            clinical = root / "patients.tsv"
+            seeds = root / "seeds.tsv"
+            packet_file = root / "patient.phenopacket.json"
+            hpo_file = root / "patient.patient_hpo.tsv"
+            context_file = root / "patient.clinical_context.json"
+            clinical.write_text(
+                "sample_id\\thpo_present\\thpo_absent\\n"
+                "TEST01\\tHP:0000648\\t\\n",
+                encoding="utf-8",
+            )
+            seeds.write_text(
+                "hpo_id\\thpo_label\\thon_seed_role\\n"
+                "HP:0000648\\tOptic atrophy\\tCORE_OCULAR_HON\\n"
+                "HP:0000603\\tCentral scotoma\\tCORE_OCULAR_HON\\n",
+                encoding="utf-8",
+            )
+            args = [
+                "prepare_patient_profiles.py", "--profiles", str(clinical),
+                "--sample", "TEST01", "--hpo-seeds", str(seeds),
+                "--phenopacket", str(packet_file),
+                "--hpo-output", str(hpo_file),
+                "--clinical-output", str(context_file),
+            ]
+            with patch.object(sys, "argv", args):
+                prepare_profiles_main()
+            packet = json.loads(packet_file.read_text())
+            context = json.loads(context_file.read_text())
+            self.assertEqual(
+                [f["type"]["id"] for f in packet["phenotypicFeatures"]],
+                ["HP:0000648"],
+            )
+            self.assertEqual(context["hpo_scoring_terms"], ["HP:0000648"])
+            self.assertEqual(context["hpo_hon_reference_added"], [])
+            self.assertEqual(context["hpo_absent"], [])
 
     def test_invalid_hpo_is_rejected(self):
         with self.assertRaises(ValueError):
