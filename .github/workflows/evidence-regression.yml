@@ -29,13 +29,13 @@ jobs:
 
       - name: Parse BAM-free VCF-only Genomiser entry point
         if: always()
-        working-directory: snakemake_pipelines/lrs
+        working-directory: snakemake_pipelines/genomiser_vcf_only
         run: |
-          snakemake -s Snakefile_Genomiser_VCF_only --list-rules
+          snakemake -s Snakefile --list-rules
           python - <<'PY'
           import subprocess
           result = subprocess.run(
-              ["snakemake", "-s", "Snakefile_Genomiser_VCF_only", "--list-rules"],
+              ["snakemake", "-s", "Snakefile", "--list-rules"],
               check=True, capture_output=True, text=True
           )
           expected = {"all", "prepare_patient_profile", "genomiser_genome"}
