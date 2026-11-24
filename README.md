@@ -21,6 +21,15 @@ with its separate [VCF-only configuration](snakemake_pipelines/genomiser_vcf_onl
 See the [BAM-free guide](docs/GENOMISER_VCF_ONLY.md): no variant calling,
 read-depth, or phasing jobs can be scheduled in this workflow.
 
+If you want to **recompute the LRS downstream clinical ranking and filtering**
+without the original BAM, use
+[the archived LRS downstream reanalysis workflow](snakemake_pipelines/lrs_downstream_reanalysis/README.md).
+It recognizes patient folders automatically (e.g. `11446/`), using saved
+Clair3/Jasmine VCFs, allele assessment, prior phenotype/gene tables,
+LongPhase, STR/MEI and mosdepth-bin outputs. The [inventory script](scripts/audit_saved_lrs_outputs.py)
+reports missing upstream files before reanalysis. This is different from
+the two-VCF-only Genomiser workflow above.
+
 Start with [the dedicated installation and downstream-only execution
 guide](docs/GENOMISER_PATIENT_WORKFLOW.md). Patient files must be stored on
 the secured server, never committed to this repository. The separate
@@ -45,6 +54,7 @@ This page explains the LRS workflow and the shared code. For Illumina-specific s
 | **snakemake_pipelines/lrs/thesis_extensions.smk** | Additional depth, HPO, SNV–SV and final-ranking rules. |
 | **snakemake_pipelines/lrs/xci_analysis.smk** | Chromosome-X phasing, methylation and XCI analysis. |
 | **snakemake_pipelines/srs_wgs_pipeline/** | Separate Illumina workflow and configuration. |
+| **snakemake_pipelines/lrs_downstream_reanalysis/** | Auto-discovered LRS downstream reanalysis from archived output files, without BAMs. |
 | **snakemake_pipelines/common/** | Rules shared by both workflows: allele assessment, AnnotSV auditing, Exomiser and optional AlphaGenome. |
 | **scripts/** | Python and R scripts that read, filter, annotate and summarize the results. |
 | **plots/** and **r_plots/** | Scripts for figures, candidate review and visual summaries. |

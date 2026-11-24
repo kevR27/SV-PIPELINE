@@ -44,6 +44,19 @@ jobs:
               raise SystemExit(f"Unexpected VCF-only jobs: {found}; expected: {expected}")
           PY
 
+      - name: Parse archived LRS downstream reanalysis without BAM rules
+        if: always()
+        working-directory: snakemake_pipelines/lrs_downstream_reanalysis
+        run: |
+          snakemake -s Snakefile --list-rules --config input_root=/tmp sample_ids=11446 > /tmp/saved_lrs_rules.txt
+          grep -qx 'finalize_candidate_ranking' /tmp/saved_lrs_rules.txt
+          grep -qx 'genomiser_genome' /tmp/saved_lrs_rules.txt
+          grep -qx 'saved_evidence_plots' /tmp/saved_lrs_rules.txt
+          if grep -Eq '^(binned_read_depth|samplot_candidate_breakpoints|assess_sv_alleles)$' /tmp/saved_lrs_rules.txt; then
+            echo "Unexpected BAM-dependent or upstream assessment rule registered"
+            exit 1
+          fi
+
       - name: Enable Genomiser rules for parser validation (LRS)
         if: always()
         working-directory: snakemake_pipelines/lrs

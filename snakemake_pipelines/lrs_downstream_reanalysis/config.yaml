@@ -1,0 +1,22 @@
+# Rerun LRS interpretation and supported downstream plots from archived results.
+# All genome-wide calling and BAM-dependent preprocessing must already be done.
+#
+# The workflow discovers numeric sample folders automatically. For example,
+# <input_root>/11446/ is recognised as sample 11446, and its files are found
+# using the original naming convention; no per-sample BAM/VCF path is needed.
+#
+# Set a subset instead, if some folders are not ready:
+# sample_ids: ["11446", "21930"]
+sample_ids: auto
+
+# Parent folder containing <sample>/snp_clair3/, <sample>/sv/merged/,
+# <sample>/gene_discovery/, <sample>/coverage/binned/, and other saved results.
+input_root: "/DATA/casadei7/nanopore/WGS/RESULTS"
+
+# Inherit ranking thresholds and paths to reference/Monarch/MitoCarta/annotation
+# resources. This is NOT used to read BAM paths or sample IDs.
+original_lrs_config: "../lrs/config_lrs.yaml"
+
+# Use the same Genomiser clinical table, HON reference HPO terms and
+# genome-wide analysis YAML as the main LRS configuration.
+# Their paths are inherited from original_lrs_config.
