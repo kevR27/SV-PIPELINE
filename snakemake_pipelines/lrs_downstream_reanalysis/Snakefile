@@ -1,0 +1,108 @@
+"""Rebuild LRS downstream interpretation from archived BAM-derived outputs.
+
+Sample IDs are discovered from the directories below input_root, or selected
+by their folder names. The original LRS downstream rules are reused, without
+defining any BAM-based coverage/caller/Samplot rule.
+"""
+
+import os
+from pathlib import Path
+import yaml
+
+configfile: "config.yaml"
+
+WORKFLOW_DIR = Path(workflow.basedir).resolve()
+ROOT = WORKFLOW_DIR.parents[1]
+SETTINGS_PATH = (WORKFLOW_DIR / config.get("original_lrs_config", "../lrs/config_lrs.yaml")).resolve()
+if not SETTINGS_PATH.is_file():
+    raise ValueError(f"Original LRS configuration not found: {SETTINGS_PATH}")
+
+with SETTINGS_PATH.open(encoding="utf-8") as handle:
+    settings = yaml.safe_load(handle) or {}
+if not isinstance(settings, dict):
+    raise ValueError("Original LRS settings must be a YAML mapping.")
+user_settings = dict(config)
+result_root = Path(
+    user_settings.get("input_root") or settings["path"]
+).expanduser().resolve()
+requested = user_settings.get("sample_ids", "auto")
+
+if requested in ("auto", None):
+    if not result_root.is_dir():
+        raise ValueError(f"input_root directory does not exist: {result_root}")
+    selected = sorted(
+        (entry.name for entry in result_root.iterdir()
+         if entry.is_dir() and entry.name.isdecimal()),
+        key=lambda name: (int(name), name)
+    )
+elif isinstance(requested, list):
+    selected = [str(sample) for sample in requested]
+elif isinstance(requested, (str, int)):
+    selected = [str(requested)]
+else:
+    raise ValueError("sample_ids must be auto, a sample ID, or a list of sample IDs.")
+
+if not selected:
+    raise ValueError(
+        f"No numeric patient directories found in {result_root}; "
+        "set sample_ids: [\"11446\"] in config.yaml for explicit selection."
+    )
+if len(set(selected)) != len(selected):
+    raise ValueError("sample_ids includes duplicate patient IDs.")
+if any(not sample or "/" in sample or sample in {".", ".."}
+       for sample in selected):
+    raise ValueError("Sample IDs must be folder names without path separators.")
+
+# Reuse the existing analysis reference, gene databases and ranking settings.
+# The imported LRS postprocess pipeline expects 'samples', but this entry
+# point deliberately has no BAM paths. No BAM rule is scheduled.
+config.clear()
+config.update(settings)
+config.update(user_settings)
+config["samples"] = {sample: None for sample in selected}
+config["postprocess_samples"] = selected
+config["path"] = str(result_root) + "/"
+config["bam_free_downstream"] = True
+config["xci_samples"] = []
+# AlphaGenome may be switched on separately in the full workflow, but this
+# archived-data reanalysis does not assume its cache or native model data.
+config["alphagenome_atlas_enabled"] = False
+config["alphagenome_native_plots_enabled"] = False
+
+print("[LRS archived downstream] input_root:", result_root)
+print("[LRS archived downstream] selected sample IDs:", ", ".join(selected))
+print("[LRS archived downstream] BAM-independent reanalysis; new coverage, Samplot and XCI are not run")
+
+# Includes the original phenotype ranking, annotation integration,
+# allele-event prioritization, cohort recurrence, final candidate ranking,
+# Genomiser and further filtering. Missing BAM-derived upstream TSVs/bins
+# remain explicit external prerequisites rather than silently re-called.
+include: "../lrs/Snakefile_LRS_postprocess"
+
+
+# Optional plots that can be rebuilt from existing tabular files and
+# coverage bins. This target intentionally excludes Samplot, XCI and
+# sequencing QC plots that need BAMs or archived QC outputs.
+rule saved_evidence_plots:
+    input:
+        expand(
+            PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
+            sample=POSTPROCESS_SAMPLES
+        ),
+        expand(
+            PATH + "{sample}/plots_r/population_gene_effect/{sample}_population_gene_effect.pdf",
+            sample=POSTPROCESS_SAMPLES
+        ),
+        expand(
+            PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.pdf",
+            sample=POSTPROCESS_SAMPLES
+        ),
+        expand(
+            PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.pdf",
+            sample=POSTPROCESS_SAMPLES
+        ),
+        expand(
+            PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.pdf",
+            sample=POSTPROCESS_SAMPLES
+        ),
+        COHORT_PLOT_OUTPUTS
