@@ -6,6 +6,9 @@
 # ============================================================
 # 1. SAMPLES, RESULTS AND REFERENCE — edit these first
 # ============================================================
+# HG002 is retained here solely as a technical SRS validation example.
+# Before running clinical Genomiser from this Snakefile, replace it with
+# actual patient sample IDs and BAMs; never assign HON phenotypes to HG002.
 samples:
   HG002: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/test_data/SRS_WGS/HG002/HG002.GRCh38.sorted.bam"
 
@@ -61,9 +64,10 @@ annotsv_benign_af: 0.01            # AnnotSV setting; not the final AF filter.
 # Required for every configured patient. Keep real clinical data outside GitHub.
 # Each row must contain observed HPO terms; use HP:0000648 for OA patients.
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
-# Default: score only clinically observed HPO terms (blank means unknown).
-# Set true only for a separate legacy HON-seeded sensitivity analysis.
-hpo_include_shared_hon_seeds: false
+# Match clinical HON ranking in LRS: add shared HON reference terms for
+# computational scoring; only patient hpo_present terms are confirmed findings.
+# Blank findings remain unknown and hpo_absent requires explicit documentation.
+hpo_include_shared_hon_seeds: true
 # Genomiser genome mode runs for every sample in the normal LRS/SRS targets.
 # The workflow rejects genomiser_enabled: false; do not disable it.
 genomiser_enabled: true

@@ -3,9 +3,12 @@
 # ============================================================
 
 samples:
-  # Always quote sample IDs that are numeric.
-  "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
-  "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
+  # Active clinical HON patients only. Always quote numeric sample IDs.
+  # Technical validation controls are kept below as inactive references:
+  # "21930": "/DATA/casadei7/nanopore/WGS/CONTROL/21930/21930.merged.sort.bam"
+  # "25428": "/DATA/casadei7/nanopore/WGS/CONTROL/25428/25428.merged.sort.bam"
+  # Existing control results are not deleted or scheduled for clinical
+  # Genomiser/HPO ranking by the default LRS Snakemake workflows.
   "14996": "/DATA/casadei7/nanopore/WGS/14996_HMW_bam/14996_HMW_merged.bam"
   "13048": "/DATA/casadei7/nanopore/WGS/2026_04_02_WGS_13048/bam/WGS_2026_04_02.bam"
 
@@ -202,9 +205,10 @@ patient_hpo_files: {}
 # Required for every configured patient. Keep real clinical data outside GitHub.
 # Each row must contain observed HPO terms; use HP:0000648 for OA patients.
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
-# Default: score only clinically observed HPO terms (blank means unknown).
-# Set true only for a separate legacy HON-seeded sensitivity analysis.
-hpo_include_shared_hon_seeds: false
+# Clinical cohort analysis uses observed patient HPO terms PLUS six shared
+# HON reference terms for computational ranking (not new clinical findings).
+# Unknown/blank findings must never be treated as explicitly absent.
+hpo_include_shared_hon_seeds: true
 # Genomiser genome mode runs for every sample in the normal LRS/SRS targets.
 # The workflow rejects genomiser_enabled: false; do not disable it.
 genomiser_enabled: true
@@ -306,9 +310,9 @@ methylation_units: "percent"  # modkit bedMethyl column 11
 # xci_samples:
 #   - "sample_A"
 #   - "sample_B"
-xci_samples: 
-  - "21930"
-  - "25428"
+xci_samples:
+  # Technical controls 21930 and 25428 are excluded from patient analysis.
+  # Apply XCI only to samples verified to be XX and with suitable ONT methylation.
   - "14996"
   - "13048"
 
