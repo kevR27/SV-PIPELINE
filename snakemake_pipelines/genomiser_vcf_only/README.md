@@ -19,18 +19,23 @@ Do not copy the entire LRS Snakemake directory or any BAMs here.
 
 ## Upload only the required variant files for each sample
 
-Example for `21930`:
+Example for the clinical HON patient `14996` (the other active
+patient is `13048`):
 
 ```text
-/DATA/casadei7/nanopore/WGS/RESULTS/21930/
+/DATA/casadei7/nanopore/WGS/RESULTS/14996/
   snp_clair3/
-    21930.vcf.gz
-    21930.vcf.gz.tbi
+    14996.vcf.gz
+    14996.vcf.gz.tbi
   sv/
     merged/
-      21930_merged_SV.vcf.gz
-      21930_merged_SV.vcf.gz.tbi
+      14996_merged_SV.vcf.gz
+      14996_merged_SV.vcf.gz.tbi
 ```
+
+Validation controls `21930` and `25428` are **not** in this
+workflow's `vcf_samples`. The original LRS/SRS config files were
+restored and are not modified by this separate analysis.
 
 The two `.vcf.gz` files are mandatory. Matching indexes are
 recommended (or use `.csi` when appropriate). Do not supply panel-only
@@ -55,22 +60,42 @@ chmod 600 /DATA/casadei7/private_clinical/patient_profiles.tsv
 nano /DATA/casadei7/private_clinical/patient_profiles.tsv
 ```
 
-Replace the example sample with the actual identifiers in
-`vcf_samples`. One row per patient; include documented `hpo_present`
-and, if available, explicitly assessed `hpo_absent`. By default, only patient-observed HPO terms are scored. Blank cells are unknown, not HPO absences. For a separate legacy HON-seeded sensitivity analysis, set `hpo_include_shared_hon_seeds: true` in `config.yaml`.
+Use the corrected clinical `patient_profiles.tsv`, with `HP:0000648`
+confirmed for all 10 HON patients. Missing fields are unknown, not
+negative observations. Only explicitly documented absent findings belong
+in `hpo_absent`. This VCF-only config intentionally sets
+`hpo_include_shared_hon_seeds: true` to retain the six shared
+computational HON reference terms alongside confirmed patient findings.
+The shared terms are **not** additional clinically confirmed findings.
 Do not fabricate phenotypes or copy private clinical data into GitHub.
 
-## Run
+## Run using the same Snakemake options as the original pipeline
+
+Update `main` on the server, confirm the existing VCF input paths and
+private patient table, then run from this **separate** directory.
 
 ```bash
 cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/genomiser_vcf_only
 
-nano config.yaml
+snakemake -s Snakefile --configfile config.yaml \
+  --use-conda \
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --dry-run -p
 
-snakemake -s Snakefile --cores 8 --dry-run
-snakemake -s Snakefile --use-conda --cores 8 \
-  --resources mem_mb=45000 --printshellcmds
+# Run only after the dry run schedules the expected patient-profile and
+# Genomiser jobs, and only after verifying the VCFs/Exomiser/ReMM resources:
+snakemake -s Snakefile --configfile config.yaml \
+  --use-conda \
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --resources mem_mb=45000 -p
 ```
+
+The `path` key points to
+`/DATA/casadei7/nanopore/WGS/GENOMISER_VCF_ONLY_RESULTS`
+so output files are kept **separate** from
+`/DATA/casadei7/nanopore/WGS/RESULTS`.
+Only patients `14996` and `13048` are configured for now;
+add further clinical patients as their original genome-wide VCFs become available.
 
 The run creates `<path>/<sample>/clinical/` and
 `<path>/<sample>/genomiser/`. It does not generate the original
