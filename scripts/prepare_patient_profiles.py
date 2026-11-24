@@ -119,8 +119,11 @@ def make_profile(row, sample, labels, hon_seed_terms=()):
             for item in scoring_terms
         },
         "hpo_scoring_note": (
-            "Shared HON reference terms are used for computational scoring. "
-            "Only hpo_present represents patient-observed findings."
+            ("Shared HON reference terms have been added for an explicit "
+             "sensitivity analysis; only hpo_present represents patient-observed findings.")
+            if reference_added else
+            "Only explicitly patient-observed HPO terms are used for scoring; "
+            "blank clinical fields remain unknown."
         ),
         "onset_min_years": minimum,
         "onset_max_years": maximum,
@@ -137,6 +140,10 @@ def main():
     parser.add_argument("--profiles", required=True)
     parser.add_argument("--sample", required=True)
     parser.add_argument("--hpo-seeds", required=True)
+    parser.add_argument(
+        "--include-shared-hon-seeds", action="store_true",
+        help="Opt-in legacy analysis: add cohort HON reference terms to scoring"
+    )
     parser.add_argument("--phenopacket", required=True)
     parser.add_argument("--hpo-output", required=True)
     parser.add_argument("--clinical-output", required=True)
@@ -158,7 +165,7 @@ def main():
         raise ValueError("HON seed table is empty")
     packet, context = make_profile(
         load_profile(args.profiles, args.sample), args.sample, labels,
-        hon_seed_terms=shared_hon_terms
+        hon_seed_terms=shared_hon_terms if args.include_shared_hon_seeds else ()
     )
     for filename in (args.phenopacket, args.hpo_output, args.clinical_output):
         Path(filename).parent.mkdir(parents=True, exist_ok=True)
