@@ -32,20 +32,21 @@ snakemake_pipelines/
 ```
 
 Run it from its own directory. The shared code and Conda environment
-remain in the main repository, and existing patient result folders
-are unchanged.
+remain in the main repository; **the original LRS and SRS pipeline configs
+are unchanged**. The VCF-only results go to a distinct directory:
+`/DATA/casadei7/nanopore/WGS/GENOMISER_VCF_ONLY_RESULTS`.
 
 ## 1. Inputs to restore
 
 For each patient, restore the original **genome-wide** VCFs, not the
-panel-only or filtered review VCFs. Example sample `21930`:
+panel-only or filtered review VCFs. Example clinical patient `14996`:
 
 ```text
-/DATA/casadei7/nanopore/WGS/RESULTS/21930/
-  snp_clair3/21930.vcf.gz
-  snp_clair3/21930.vcf.gz.tbi
-  sv/merged/21930_merged_SV.vcf.gz
-  sv/merged/21930_merged_SV.vcf.gz.tbi
+/DATA/casadei7/nanopore/WGS/RESULTS/14996/
+  snp_clair3/14996.vcf.gz
+  snp_clair3/14996.vcf.gz.tbi
+  sv/merged/14996_merged_SV.vcf.gz
+  sv/merged/14996_merged_SV.vcf.gz.tbi
 ```
 
 The tabix indexes are strongly recommended; `.csi` indexes are
@@ -92,8 +93,11 @@ names from `reference/patient_profiles.template.tsv`. The shipped example
 `EXAMPLE_001` must be replaced by actual de-identified patient IDs.
 Include **only clinically documented findings** in `hpo_present`.
 For patients with documented optic atrophy, include `HP:0000648`;
-the pipeline scores only clinically observed HPO terms by default.\nShared HON reference terms are optional for a separate sensitivity run\n(`hpo_include_shared_hon_seeds: true`), not assumed patient findings,
-not clinically verified observations.
+the active VCF-only config sets `hpo_include_shared_hon_seeds: true`
+so computational phenotype prioritization includes the six shared HON
+reference terms in addition to documented patient findings. These shared
+reference terms are **not individually confirmed patient observations**.
+Blank cells remain unknown; `hpo_absent` requires explicit documentation.
 
 ## 3. Configure the VCF-only entry point
 
@@ -102,8 +106,11 @@ cd "$BASE/snakemake_pipelines/genomiser_vcf_only"
 nano config.yaml
 ```
 
-The `vcf_samples` field maps each sample ID to its actual VCF paths.
-The `path` field controls the output directory. All other Genomiser
+The `vcf_samples` field lists clinical patients `14996` and `13048`
+with their original LRS VCF paths. Technical controls `21930` and
+`25428` are excluded. Update or extend the paths after verifying that
+both VCFs exist for each patient. The `path` field points to a **dedicated
+output directory**, so no original pipeline result is overwritten. All other Genomiser
 resources have the same defaults as the LRS/SRS workflows; adjust if
 installed elsewhere. Edit `vcf_samples` to add patients or SRS VCFs.
 There is **no BAM configuration field**.
@@ -113,7 +120,7 @@ There is **no BAM configuration field**.
 ```bash
 BASE=/DATA/casadei7/tools/SV-PIPELINE-main_v3
 OUT=/DATA/casadei7/nanopore/WGS/RESULTS
-SAMPLE=21930
+SAMPLE=14996
 bcftools query -l "$OUT/$SAMPLE/snp_clair3/$SAMPLE.vcf.gz"
 bcftools query -l "$OUT/$SAMPLE/sv/merged/${SAMPLE}_merged_SV.vcf.gz"
 
@@ -121,25 +128,37 @@ python "$BASE/scripts/prepare_patient_profiles.py" \
   --profiles /DATA/casadei7/private_clinical/patient_profiles.tsv \
   --sample "$SAMPLE" \
   --hpo-seeds "$BASE/reference/hon_hpo_seed_terms.tsv" \
+  --include-shared-hon-seeds \
   --phenopacket "/DATA/casadei7/private_clinical/${SAMPLE}.phenopacket.json" \
   --hpo-output "/DATA/casadei7/private_clinical/${SAMPLE}.patient_hpo.tsv" \
   --clinical-output "/DATA/casadei7/private_clinical/${SAMPLE}.clinical_context.json"
 ```
 
-Verify that the HPO TSV and Phenopacket contain only observed patient phenotypes before running Genomiser unless deliberately using the seeded sensitivity mode.
+Verify that the Phenopacket contains confirmed patient terms plus the
+shared HON reference terms, distinguished in the clinical context JSON;
+shared terms must not be described as confirmed patient observations.
 
-## 5. Run without BAMs
+## 5. Run without BAMs using the usual Snakemake options
 
 ```bash
 cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/genomiser_vcf_only
 
-# Verify the job graph: only patient-profile and Genomiser jobs.
-snakemake -s Snakefile --cores 8 --dry-run
+# Dry run: use the same options as the original LRS pipeline.
+snakemake -s Snakefile --configfile config.yaml \
+  --use-conda \
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --dry-run -p
 
-# Analyse the configured VCF samples; budget one 32-GB Java job at a time.
-snakemake -s Snakefile --use-conda \
-  --cores 8 --resources mem_mb=45000 --printshellcmds
+# Actual run after validating the input VCFs and database files:
+snakemake -s Snakefile --configfile config.yaml \
+  --use-conda \
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --resources mem_mb=45000 -p
 ```
+
+This does not change the original `Snakefile_LRS_update` or
+`Snakefile_LRS_postprocess` workflows. Genomiser-only output is isolated;
+the original LRS/SRS BAMs, VCFs, rankings and QC results are not modified.
 
 The Genomiser result files are written under
 `<path>/<sample>/genomiser/`, including

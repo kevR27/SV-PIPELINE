@@ -2,21 +2,27 @@
 # Copy existing genome-wide SNV/indel and merged SV VCFs into the paths below,
 # or replace these paths with their actual locations.
 #
-# To analyse additional LRS or SRS patients, add rows under vcf_samples.
-# All listed patients are analysed when invoking the default 'all' target.
+# Only clinical HON cases with existing VCFs are listed below.
+# Technical validation controls 21930 and 25428 are deliberately excluded.
+# Add other clinically characterized patients once both VCF inputs exist.
+# Existing VCF locations are unchanged; no BAMs or callers are rerun.
 vcf_samples:
-  "21930":
-    small_vcf: "/DATA/casadei7/nanopore/WGS/RESULTS/21930/snp_clair3/21930.vcf.gz"
-    sv_vcf: "/DATA/casadei7/nanopore/WGS/RESULTS/21930/sv/merged/21930_merged_SV.vcf.gz"
+  "14996":
+    small_vcf: "/DATA/casadei7/nanopore/WGS/RESULTS/14996/snp_clair3/14996.vcf.gz"
+    sv_vcf: "/DATA/casadei7/nanopore/WGS/RESULTS/14996/sv/merged/14996_merged_SV.vcf.gz"
+  "13048":
+    small_vcf: "/DATA/casadei7/nanopore/WGS/RESULTS/13048/snp_clair3/13048.vcf.gz"
+    sv_vcf: "/DATA/casadei7/nanopore/WGS/RESULTS/13048/sv/merged/13048_merged_SV.vcf.gz"
 
-# Where the new clinical and Genomiser result folders will be created.
-path: "/DATA/casadei7/nanopore/WGS/RESULTS"
+# Isolated Genomiser results: never overwrite the original LRS/SRS results.
+path: "/DATA/casadei7/nanopore/WGS/GENOMISER_VCF_ONLY_RESULTS"
 
 # Clinical data stay PRIVATE on the server: one row per patient.
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
-# Default: score only clinically observed HPO terms (blank means unknown).
-# Set true only for a separate legacy HON-seeded sensitivity analysis.
-hpo_include_shared_hon_seeds: false
+# Requested HON computational profile: confirmed patient HPO findings PLUS
+# shared HON reference terms; these are NOT additional confirmed clinical findings.
+# Blank patient findings remain unknown, never presumed absent.
+hpo_include_shared_hon_seeds: true
 hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
 
 # Required Genomiser analysis and resources.

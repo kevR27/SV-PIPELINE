@@ -32,70 +32,6 @@ The original phenotype-only Exomiser comparison is no longer a mandatory
 reproducibility; they do not run by default.
 
 
-## Current clinical LRS setup (HON patients, November 2026)
-
-The normal LRS entrypoints remain **`Snakefile_LRS_update`** followed
-by **`Snakefile_LRS_postprocess`**. Do not switch to the standalone
-`genomiser_vcf_only` workflow for this clinical production run.
-
-The active `snakemake_pipelines/lrs/config_lrs.yaml` `samples:` currently
-contains patients **14996** and **13048**. Technical validation
-controls **21930** and **25428** are commented out, not deleted;
-their previously generated results remain on disk. All `rule all`
-targets in these LRS entrypoints use active patient samples only.
-To extend the cohort, add the additional real patients and their
-correct BAM paths to the `samples:` mapping.
-
-The active LRS setting is **`hpo_include_shared_hon_seeds: true`**.
-Thus computational scoring combines documented `hpo_present` findings
-with the six shared HON reference features (where optic atrophy
-`HP:0000648` is confirmed). These additional reference features are
-**not patient-level clinical confirmations**. Blank clinical cells
-remain unknown; only explicitly assessed negative findings belong in
-`hpo_absent`. This analysis choice is intentional for this study.
-To compare with an observed-only sensitivity analysis, set the flag
-to `false` and rerun the phenotype and Genomiser targets; label
-the resulting outputs separately for interpretation.
-
-Update the server checkout and place the **private**
-`patient_profiles_confirmed_OA.tsv` at the configured
-`patient_profiles_tsv` path, typically
-`/DATA/casadei7/private_clinical/patient_profiles.tsv`.
-Never commit the patient TSV to GitHub.
-
-From the usual LRS directory, verify the genotype files before
-submitting jobs:
-
-```bash
-BASE=/DATA/casadei7/tools/SV-PIPELINE-main_v3
-OUT=/DATA/casadei7/nanopore/WGS/RESULTS
-cd "$BASE/snakemake_pipelines/lrs"
-
-for SAMPLE in 14996 13048; do
-  test -s "$OUT/$SAMPLE/snp_clair3/$SAMPLE.vcf.gz" || echo "MISSING small VCF $SAMPLE"
-  test -s "$OUT/$SAMPLE/sv/merged/${SAMPLE}_merged_SV.vcf.gz" || echo "MISSING SV VCF $SAMPLE"
-done
-
-snakemake -s Snakefile_LRS_update --cores 32 -n \
-  "$OUT/14996/genomiser/14996.genomiser.manifest.json"
-
-# Once the dry run has no unexpected costly variant-calling jobs:
-snakemake -s Snakefile_LRS_update --use-conda --cores 32 \
-  --resources mem_mb=45000 \
-  "$OUT/14996/genomiser/14996.genomiser.manifest.json"
-
-# The established downstream workflow:
-snakemake -s Snakefile_LRS_postprocess --cores 32 -n
-```
-
-Only execute `Snakefile_LRS_postprocess` after its dry run shows
-the intended ready patient samples and no unexpected jobs. If it
-prints `ready samples: none`, inspect missing upstream postprocessing
-inputs rather than assuming the analysis is complete. Standard
-`rule all` on `Snakefile_LRS_update` can schedule variant calling
-and substantial auxiliary analyses; request explicit downstream
-targets when only Genomiser/HPO needs refresh.
-
 ## Editable analysis configuration (required)
 
 The code now uses an **explicit YAML** passed to Exomiser 15.1.0 with
@@ -177,12 +113,12 @@ custom SV ranking can require its **existing** AnnotSV, read-depth, VEP,
 phasing and orthogonal-evidence tables if you intend to rebuild it too.
 Keep or regenerate those downstream dependencies separately.
 
-Once source VCFs exist, check Genomiser alone for clinical sample 14996:
+Once source VCFs exist, check Genomiser alone for sample 21930:
 
 ```bash
 BASE=/DATA/casadei7/tools/SV-PIPELINE-main_v3
 OUT=/DATA/casadei7/nanopore/WGS/RESULTS
-SAMPLE=14996
+SAMPLE=21930
 
 cd "$BASE/snakemake_pipelines/lrs"
 snakemake -s Snakefile_LRS_update -n --cores 32 \
@@ -291,20 +227,20 @@ matching the YAML `samples` keys.
 or the Genomiser comparison**: Snakemake may rebuild missing dependencies
 from expensive callers. First run `--dry-run` for exact targets.
 
-For LRS clinical patient `14996`:
+For LRS example patient `21930`:
 
 ```bash
 cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/lrs
 OUT=/DATA/casadei7/nanopore/WGS/RESULTS
 snakemake -s Snakefile_LRS_update --cores 32 --dry-run \
-  "$OUT/14996/genomiser/21930.genomiser.manifest.json"
+  "$OUT/21930/genomiser/21930.genomiser.manifest.json"
 snakemake -s Snakefile_LRS_update --use-conda --cores 32 \
   --resources mem_mb=65000 \
-  "$OUT/14996/genomiser/21930.genomiser.manifest.json"
+  "$OUT/21930/genomiser/21930.genomiser.manifest.json"
 snakemake -s Snakefile_LRS_postprocess --cores 32 --dry-run \
-  "$OUT/14996/gene_discovery/final/14996_gene_candidates.ranked.tsv"
+  "$OUT/21930/gene_discovery/final/21930_gene_candidates.ranked.tsv"
 snakemake -s Snakefile_LRS_postprocess --use-conda --cores 32 \
-  "$OUT/14996/gene_discovery/final/14996_gene_candidates.ranked.tsv"
+  "$OUT/21930/gene_discovery/final/21930_gene_candidates.ranked.tsv"
 ```
 
 For SRS, use the actual `path` and `sample` in
