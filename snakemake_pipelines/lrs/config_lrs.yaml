@@ -202,6 +202,9 @@ patient_hpo_files: {}
 # Required for every configured patient. Keep real clinical data outside GitHub.
 # Each row must contain observed HPO terms; use HP:0000648 for OA patients.
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
+# Default: score only clinically observed HPO terms (blank means unknown).
+# Set true only for a separate legacy HON-seeded sensitivity analysis.
+hpo_include_shared_hon_seeds: false
 # Genomiser genome mode runs for every sample in the normal LRS/SRS targets.
 # The workflow rejects genomiser_enabled: false; do not disable it.
 genomiser_enabled: true
