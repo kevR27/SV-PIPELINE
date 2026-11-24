@@ -57,9 +57,7 @@ nano /DATA/casadei7/private_clinical/patient_profiles.tsv
 
 Replace the example sample with the actual identifiers in
 `vcf_samples`. One row per patient; include documented `hpo_present`
-and, if available, explicitly assessed `hpo_absent`. The pipeline
-automatically adds the shared HON seed terms to computational scoring
-for patients with documented optic atrophy (`HP:0000648`).
+and, if available, explicitly assessed `hpo_absent`. By default, only patient-observed HPO terms are scored. Blank cells are unknown, not HPO absences. For a separate legacy HON-seeded sensitivity analysis, set `hpo_include_shared_hon_seeds: true` in `config.yaml`.
 Do not fabricate phenotypes or copy private clinical data into GitHub.
 
 ## Run
