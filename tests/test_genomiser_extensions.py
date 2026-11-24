@@ -93,15 +93,15 @@ class PatientProfileTests(unittest.TestCase):
             hpo_file = root / "patient.patient_hpo.tsv"
             context_file = root / "patient.clinical_context.json"
             clinical.write_text(
-                "sample_id\\thpo_present\\thpo_absent\\n"
-                "TEST01\\tHP:0000648;HP:0001250\\tHP:0000603\\n",
+                "sample_id\thpo_present\thpo_absent\n"
+                "TEST01\tHP:0000648;HP:0001250\tHP:0000603\n",
                 encoding="utf-8"
             )
             seeds.write_text(
-                "hpo_id\\thpo_label\\thon_seed_role\\n"
-                "HP:0000648\\tOptic atrophy\\tCORE_OCULAR_HON\\n"
-                "HP:0007663\\tReduced visual acuity\\tCORE_OCULAR_HON\\n"
-                "HP:0000603\\tCentral scotoma\\tCORE_OCULAR_HON\\n",
+                "hpo_id\thpo_label\thon_seed_role\n"
+                "HP:0000648\tOptic atrophy\tCORE_OCULAR_HON\n"
+                "HP:0007663\tReduced visual acuity\tCORE_OCULAR_HON\n"
+                "HP:0000603\tCentral scotoma\tCORE_OCULAR_HON\n",
                 encoding="utf-8"
             )
             arguments = [
@@ -118,7 +118,7 @@ class PatientProfileTests(unittest.TestCase):
             packet = json.loads(packet_file.read_text())
             context = json.loads(context_file.read_text())
             with hpo_file.open(newline="") as handle:
-                hpo_rows = list(csv.DictReader(handle, delimiter="\\t"))
+                hpo_rows = list(csv.DictReader(handle, delimiter="\t"))
             packet_terms = {row["type"]["id"] for row in packet["phenotypicFeatures"]}
             hpo_terms = {row["hpo_id"] for row in hpo_rows}
             self.assertEqual(packet_terms, hpo_terms)
