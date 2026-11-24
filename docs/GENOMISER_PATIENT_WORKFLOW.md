@@ -205,9 +205,11 @@ Java system properties; the official `application.properties` in the
 installation directory is loaded when present.
 
 5. Add the clinical table, ensuring **HP:0000648** is listed in
-`hpo_present` for every OA patient. Include *only confirmed observed*
-additional findings. In particular, missing or unexamined features are
-not negative HPO observations:
+`hpo_present` for every patient with documented optic atrophy. Include
+*only confirmed observed* additional findings. The six shared HON
+reference terms are added automatically for computational ranking; do not
+copy them into each row unless they are truly observed. Missing or
+unexamined features are not negative HPO observations:
 
 ```bash
 mkdir -p /DATA/casadei7/private_clinical
@@ -284,13 +286,29 @@ Keep one tab-separated row per sample, with the following columns:
 - `diagnostic_hypothesis` and `hypothesis_status`: reviewer annotations, not
   confirmed genetic diagnoses or scoring features.
 
-The six `CORE_OCULAR_HON` terms in `reference/hon_hpo_seed_terms.tsv` are
-**shared reference ontology seeds only**. Do **not** assign all six to each
-patient unless the patient actually exhibits each finding.
+The six `CORE_OCULAR_HON` terms in `reference/hon_hpo_seed_terms.tsv`
+are now **automatically added to the scoring phenotype profile** for patients
+whose clinical `hpo_present` includes confirmed optic atrophy (`HP:0000648`).
+Every patient's effective Genomiser phenotype query is:
 
-Additional neurological/syndromic findings should remain in a given
-patient's `hpo_present` when clinically documented, even though generic
-mitochondrial/syndromic seeds were removed from the cohort template.
+`HON shared seed terms + individually observed HPO terms - explicitly absent HON terms`
+
+The union is deduplicated. A seed listed in `hpo_absent` is excluded rather
+than treated as both present and absent. No HON profile is imputed into
+technical controls or other samples without documented optic atrophy.
+
+**Important phenotype provenance:** These reference seeds are used as
+computational disease-profile assumptions; they are **not six confirmed
+clinical observations for every patient**. Keep only genuinely observed
+findings in the private TSV's `hpo_present` column and record examined,
+absent findings in `hpo_absent`. Do not copy the six defaults into every
+patient's clinical record. Additional neurological/syndromic findings
+remain patient-specific.
+
+This changes phenotype-based prioritization, and adding HPO terms does not
+guarantee more genes: the `priorityScoreFilter` may become more selective.
+Interpret output as an HON-seeded research ranking, not a diagnosis. Compare
+against a patient-only phenotype sensitivity run if necessary.
 
 The importer generates:
 ```
@@ -298,13 +316,15 @@ RESULTS/<sample>/clinical/<sample>.patient_hpo.tsv
 RESULTS/<sample>/clinical/<sample>.phenopacket.json
 RESULTS/<sample>/clinical/<sample>.clinical_context.json
 ```
-Both your final custom phenotype comparison and Genomiser use the same
-**present** HPO set. Absent HPO, age-at-onset estimates and clinical diagnostic
-hypotheses are retained for independent manual review, *not* made into
-numerical priors for either algorithm. They therefore cannot leak the
-expected disease into the benchmark. Ontology IDs are syntax-validated;
-verify the IDs and their meanings against the current HPO release before
-clinical use.
+The Phenopacket and `patient_hpo.tsv` now contain the same **combined**
+scoring HPO set, keeping Genomiser and the custom phenotype ranking comparable.
+In `clinical_context.json`, `hpo_present` contains strictly the patient's
+observed findings, while `hpo_hon_reference_added`,
+`hpo_hon_reference_excluded_as_absent`, `hpo_scoring_terms`, and
+`hpo_scoring_term_sources` record exactly which reference terms were
+introduced. Neither age-at-onset estimates nor suspected diagnoses are
+converted into numerical priors. Validate ontology IDs and clinical
+annotations before interpretation.
 
 ## Required configuration
 
