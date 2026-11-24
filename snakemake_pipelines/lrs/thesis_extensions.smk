@@ -137,40 +137,43 @@ rule build_final_candidate_tables:
         """
 
 
-rule binned_read_depth:
-    input:
-        bam=lambda wc: BAMS[wc.sample]
-    output:
-        regions=PATH + "{sample}/coverage/binned/{sample}.10kb.regions.bed.gz",
-        summary=PATH + "{sample}/coverage/binned/{sample}.10kb.mosdepth.summary.txt"
-    params:
-        prefix=PATH + "{sample}/coverage/binned/{sample}.10kb",
-        bin_bp=DEPTH_BASE_BIN_BP,
-        mapq=DEPTH_MIN_MAPQ
-    threads:
-        8
-    conda:
-        CONDAENV + "mosdepth.yaml"
-    shell:
-        """
-        set -euo pipefail
-        mkdir -p "$(dirname {output.regions:q})"
-        mosdepth \
-            --threads {threads} \
-            --no-per-base \
-            --by {params.bin_bp} \
-            --mapq {params.mapq} \
-            {params.prefix:q} \
-            {input.bam:q}
-        test -s {output.regions:q}
-        test -s {output.summary:q}
-        """
+# Existing 10 kb mosdepth bins are an external input when no BAM is present.
+# Never register a rule that could recompute coverage in BAM-free mode.
+if not BAM_FREE_DOWNSTREAM:
+    rule binned_read_depth:
+        input:
+            bam=lambda wc: BAMS[wc.sample]
+        output:
+            regions=PATH + "{sample}/coverage/binned/{sample}.10kb.regions.bed.gz",
+            summary=PATH + "{sample}/coverage/binned/{sample}.10kb.mosdepth.summary.txt"
+        params:
+            prefix=PATH + "{sample}/coverage/binned/{sample}.10kb",
+            bin_bp=DEPTH_BASE_BIN_BP,
+            mapq=DEPTH_MIN_MAPQ
+        threads:
+            8
+        conda:
+            CONDAENV + "mosdepth.yaml"
+        shell:
+            """
+            set -euo pipefail
+            mkdir -p "$(dirname {output.regions:q})"
+            mosdepth \
+                --threads {threads} \
+                --no-per-base \
+                --by {params.bin_bp} \
+                --mapq {params.mapq} \
+                {params.prefix:q} \
+                {input.bam:q}
+            test -s {output.regions:q}
+            test -s {output.summary:q}
+            """
 
 
 rule summarize_large_sv_depth:
     input:
         candidates=rules.build_final_candidate_tables.output.sv,
-        coverage=rules.binned_read_depth.output.regions,
+        coverage=PATH + "{sample}/coverage/binned/{sample}.10kb.regions.bed.gz",
         script=SCRIPTS + "/summarize_large_sv_depth.py"
     output:
         summary=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth.tsv",
