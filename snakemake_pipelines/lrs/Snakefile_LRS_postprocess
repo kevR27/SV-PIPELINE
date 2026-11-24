@@ -2,7 +2,12 @@ import os
 import shlex
 import sys
 
-configfile: "config_lrs.yaml"
+# Reuse this established postprocessing DAG from the dedicated BAM-free
+# reanalysis wrapper. In normal LRS usage, keep the original configuration.
+if not config.get("bam_free_downstream", False):
+    configfile: "config_lrs.yaml"
+
+BAM_FREE_DOWNSTREAM = bool(config.get("bam_free_downstream", False))
 
 # ============================================================
 # LRS DOWNSTREAM / THESIS POST-PROCESSING
@@ -665,51 +670,53 @@ rule prepare_samplot_gene_annotation:
         """
 
 
-rule samplot_candidate_breakpoints:
-    input:
-        # Use the mechanism-aware event ranking so read-level review includes
-        # small, large and breakpoint-defined candidates rather than only the
-        # highest generic gene scores.
-        integrated=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
-        bam=lambda wc: BAMS[wc.sample],
-        genes=rules.prepare_samplot_gene_annotation.output.bed,
-        gene_index=rules.prepare_samplot_gene_annotation.output.index,
-        script=PLOTS + "/run_samplot_candidates.py"
-    output:
-        manifest=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/samplot_manifest.tsv",
-        marker=touch(PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done")
-    params:
-        outdir=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME,
-        top_n=SAMPLOT_TOP_N,
-        min_mapq=SAMPLOT_MIN_MAPQ,
-        long_read_min=SAMPLOT_LONG_READ_MIN,
-        zoom=SAMPLOT_ZOOM_BP,
-        window=SAMPLOT_WINDOW_BP,
-        large_threshold=SAMPLOT_LARGE_SV_THRESHOLD
-    conda:
-        CONDAENV + "samplot.yaml"
-    shell:
-        """
-        set -euo pipefail
-        mkdir -p {params.outdir:q}
+# Samplot requires read alignments. Never define this rule in BAM-free mode.
+if not BAM_FREE_DOWNSTREAM:
+    rule samplot_candidate_breakpoints:
+        input:
+            # Use the mechanism-aware event ranking so read-level review includes
+            # small, large and breakpoint-defined candidates rather than only the
+            # highest generic gene scores.
+            integrated=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
+            bam=lambda wc: BAMS[wc.sample],
+            genes=rules.prepare_samplot_gene_annotation.output.bed,
+            gene_index=rules.prepare_samplot_gene_annotation.output.index,
+            script=PLOTS + "/run_samplot_candidates.py"
+        output:
+            manifest=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/samplot_manifest.tsv",
+            marker=touch(PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done")
+        params:
+            outdir=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME,
+            top_n=SAMPLOT_TOP_N,
+            min_mapq=SAMPLOT_MIN_MAPQ,
+            long_read_min=SAMPLOT_LONG_READ_MIN,
+            zoom=SAMPLOT_ZOOM_BP,
+            window=SAMPLOT_WINDOW_BP,
+            large_threshold=SAMPLOT_LARGE_SV_THRESHOLD
+        conda:
+            CONDAENV + "samplot.yaml"
+        shell:
+            """
+            set -euo pipefail
+            mkdir -p {params.outdir:q}
 
-        python {input.script:q} \
-            --input {input.integrated:q} \
-            --bam {input.bam:q} \
-            --reference {REF:q} \
-            --sample {wildcards.sample} \
-            --out-dir {params.outdir:q} \
-            --top-n {params.top_n} \
-            --min-mapq {params.min_mapq} \
-            --long-read-min {params.long_read_min} \
-            --zoom {params.zoom} \
-            --window {params.window} \
-            --large-sv-threshold {params.large_threshold} \
-            --gene-annotation {input.genes:q}
+            python {input.script:q} \
+                --input {input.integrated:q} \
+                --bam {input.bam:q} \
+                --reference {REF:q} \
+                --sample {wildcards.sample} \
+                --out-dir {params.outdir:q} \
+                --top-n {params.top_n} \
+                --min-mapq {params.min_mapq} \
+                --long-read-min {params.long_read_min} \
+                --zoom {params.zoom} \
+                --window {params.window} \
+                --large-sv-threshold {params.large_threshold} \
+                --gene-annotation {input.genes:q}
 
-        test -s {output.manifest:q}
-        touch {output.marker:q}
-        """
+            test -s {output.manifest:q}
+            touch {output.marker:q}
+            """
 
 
 def cohort_sample_args():
@@ -802,7 +809,11 @@ rule all_thesis_plots:
         atlas=lambda wc: ATLAS_OVERVIEW_TARGETS + ATLAS_NATIVE_TARGETS
 
 
-include: "../common/allele_assessment.smk"
+# A BAM-free run consumes previously saved allele-assessment TSVs as
+# external inputs. Do not register the upstream assessment rule, whose
+# dependencies would otherwise pull read/caller-stage outputs into the DAG.
+if not BAM_FREE_DOWNSTREAM:
+    include: "../common/allele_assessment.smk"
 
 
 # Optional additive thesis-analysis layer. Existing rules/outputs are preserved.
