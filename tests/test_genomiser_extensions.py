@@ -36,6 +36,53 @@ class PatientProfileTests(unittest.TestCase):
         self.assertEqual(clinical["onset_min_years"], 12)
         self.assertNotIn("diseases", packet)
 
+    def test_shared_hon_seeds_combine_with_observed_hpo(self):
+        case = self.base()
+        case["hpo_present"] += ";HP:0001250"
+        seeds = [
+            "HP:0000648", "HP:0007663", "HP:0000543",
+            "HP:0000529", "HP:0000603", "HP:0000576"
+        ]
+        packet, context = make_profile(case, "TEST01", {}, hon_seed_terms=seeds)
+        scored = {feature["type"]["id"] for feature in packet["phenotypicFeatures"]}
+        self.assertEqual(
+            scored,
+            {"HP:0000648", "HP:0007663", "HP:0001250",
+             "HP:0000529", "HP:0000603", "HP:0000576"}
+        )
+        self.assertEqual(context["hpo_present"],
+                         ["HP:0000648", "HP:0001250", "HP:0007663"])
+        self.assertEqual(context["hpo_hon_reference_excluded_as_absent"],
+                         ["HP:0000543"])
+        self.assertEqual(context["hpo_scoring_term_sources"]["HP:0000603"],
+                         "SHARED_HON_REFERENCE")
+        self.assertEqual(context["hpo_scoring_term_sources"]["HP:0001250"],
+                         "PATIENT_OBSERVED")
+        self.assertEqual(context["hpo_scoring_terms"], sorted(scored))
+
+    def test_no_hon_profile_imputed_to_non_oa_control(self):
+        case = self.base()
+        case["hpo_present"] = "HP:0001250"
+        case["hpo_absent"] = ""
+        packet, context = make_profile(
+            case, "TEST01", {}, hon_seed_terms=["HP:0000648", "HP:0007663"]
+        )
+        self.assertEqual([f["type"]["id"] for f in packet["phenotypicFeatures"]],
+                         ["HP:0001250"])
+        self.assertFalse(context["hpo_hon_seed_profile_applied"])
+
+    def test_observed_absence_overrides_shared_seed(self):
+        case = self.base()
+        case["hpo_absent"] = "HP:0000603"
+        packet, context = make_profile(
+            case, "TEST01", {}, hon_seed_terms=["HP:0000648", "HP:0000603"]
+        )
+        self.assertNotIn("HP:0000603", context["hpo_scoring_terms"])
+        self.assertEqual(context["hpo_hon_reference_excluded_as_absent"],
+                         ["HP:0000603"])
+        self.assertNotIn("HP:0000603",
+                         [f["type"]["id"] for f in packet["phenotypicFeatures"]])
+
     def test_invalid_hpo_is_rejected(self):
         with self.assertRaises(ValueError):
             terms("HP:0000648;HELLO")
