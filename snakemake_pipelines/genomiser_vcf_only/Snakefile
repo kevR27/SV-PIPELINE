@@ -1,0 +1,58 @@
+"""Run mandatory Genomiser from existing SNV/indel and merged SV VCFs only.
+
+This is a separate, BAM-free entry point. It intentionally does not include
+the LRS or SRS variant-calling, depth, methylation, phasing or plot rules.
+Patient profiles and Genomiser analysis remain mandatory.
+"""
+
+import os
+import sys
+
+configfile: "config.yaml"
+
+REPO_ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
+SCRIPTS = os.path.join(REPO_ROOT, "scripts")
+CONDAENV = os.path.join(REPO_ROOT, "envs") + "/"
+sys.path.insert(0, SCRIPTS)
+
+from sv_evidence_common import hon_hpo_seed_path
+from genomiser_requirements import require_genomiser
+
+PATH = os.path.abspath(os.path.expanduser(config["path"])).rstrip("/") + "/"
+VCF_INPUTS = {
+    str(sample): entry
+    for sample, entry in config.get("vcf_samples", {}).items()
+}
+SAMPLES = list(VCF_INPUTS)
+if not SAMPLES:
+    raise ValueError("Add at least one sample to vcf_samples in the VCF-only config.")
+
+for sample, entry in VCF_INPUTS.items():
+    if not isinstance(entry, dict):
+        raise ValueError(f"{sample}: provide small_vcf and sv_vcf paths.")
+    for key in ("small_vcf", "sv_vcf"):
+        value = entry.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{sample}: missing {key} path.")
+        if not value.endswith(".vcf.gz"):
+            raise ValueError(f"{sample}: {key} must be a .vcf.gz file.")
+    if entry["small_vcf"] == entry["sv_vcf"]:
+        raise ValueError(f"{sample}: small_vcf and sv_vcf must be different files.")
+
+# Snakemake treats these paths as existing external inputs: no BAM or upstream
+# caller is defined here, so a missing VCF causes an input error, not re-calling.
+GENOMISER_SMALL_VCF = lambda wc: VCF_INPUTS[wc.sample]["small_vcf"]
+GENOMISER_SV_VCF = lambda wc: VCF_INPUTS[wc.sample]["sv_vcf"]
+
+GENOMISER_ENABLED = require_genomiser(config, SAMPLES)
+GENOMISER_TARGETS = expand(
+    PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json",
+    sample=SAMPLES
+)
+
+rule all:
+    input:
+        GENOMISER_TARGETS
+
+include: "../common/patient_profiles.smk"
+include: "../common/genomiser.smk"
