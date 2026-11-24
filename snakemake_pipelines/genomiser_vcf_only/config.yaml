@@ -14,6 +14,9 @@ path: "/DATA/casadei7/nanopore/WGS/RESULTS"
 
 # Clinical data stay PRIVATE on the server: one row per patient.
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
+# Default: score only clinically observed HPO terms (blank means unknown).
+# Set true only for a separate legacy HON-seeded sensitivity analysis.
+hpo_include_shared_hon_seeds: false
 hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
 
 # Required Genomiser analysis and resources.

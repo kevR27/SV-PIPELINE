@@ -3,9 +3,7 @@
 For one patient at a time, combine existing genome-wide SNV/indel and SV VCFs
 with **shared HON HPO reference seeds plus each patient's documented HPO
 observations** for noncoding, regulatory and coding variant prioritization.
-Shared seeds are applied only to patients with documented optic atrophy;
-explicitly absent terms are excluded, and provenance is retained in
-`clinical_context.json`. Both workflows now require this stage in the default
+By default the phenotype query contains **only documented patient HPO findings**; blanks are unknown, not negative observations. An explicit `hpo_include_shared_hon_seeds: true` option permits a separately labeled legacy HON-seeded sensitivity analysis. Both workflows now require this stage in the default
 analysis; missing ReMM resources or patient profiles cause an explicit failure.
 Original LRS and SRS calling results remain unchanged.
 

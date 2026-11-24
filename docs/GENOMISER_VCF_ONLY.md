@@ -92,9 +92,7 @@ names from `reference/patient_profiles.template.tsv`. The shipped example
 `EXAMPLE_001` must be replaced by actual de-identified patient IDs.
 Include **only clinically documented findings** in `hpo_present`.
 For patients with documented optic atrophy, include `HP:0000648`;
-the pipeline augments the Genomiser query with the six shared HON
-reference HPO terms and patient-specific terms, excluding documented
-absences. The added seeds remain computational reference assumptions,
+the pipeline scores only clinically observed HPO terms by default.\nShared HON reference terms are optional for a separate sensitivity run\n(`hpo_include_shared_hon_seeds: true`), not assumed patient findings,
 not clinically verified observations.
 
 ## 3. Configure the VCF-only entry point
@@ -128,8 +126,7 @@ python "$BASE/scripts/prepare_patient_profiles.py" \
   --clinical-output "/DATA/casadei7/private_clinical/${SAMPLE}.clinical_context.json"
 ```
 
-Verify that the HPO TSV and Phenopacket contain the intended combined
-phenotypes before running Genomiser.
+Verify that the HPO TSV and Phenopacket contain only observed patient phenotypes before running Genomiser unless deliberately using the seeded sensitivity mode.
 
 ## 5. Run without BAMs
 
