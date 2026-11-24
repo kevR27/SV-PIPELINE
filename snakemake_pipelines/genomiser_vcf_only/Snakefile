@@ -8,7 +8,7 @@ Patient profiles and Genomiser analysis remain mandatory.
 import os
 import sys
 
-configfile: "config_genomiser_vcf_only.yaml"
+configfile: "config.yaml"
 
 REPO_ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
 SCRIPTS = os.path.join(REPO_ROOT, "scripts")

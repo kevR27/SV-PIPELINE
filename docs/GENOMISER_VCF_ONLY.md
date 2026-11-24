@@ -1,6 +1,6 @@
 # Running Genomiser from existing VCFs without any BAM
 
-Use the **standalone** `Snakefile_Genomiser_VCF_only` for reanalysis when
+Use the **standalone** `snakemake_pipelines/genomiser_vcf_only/Snakefile` for reanalysis when
 the LRS/SRS calling work is already complete and only the genome-wide
 SNV/indel VCF and merged SV VCF were retained or restored.
 
@@ -14,6 +14,26 @@ Phenopacket/HPO and clinical provenance outputs. This does **not**
 reconstruct the full custom SV ranking or read-level evidence. That
 requires additional AnnotSV/VEP/caller/clinical context outputs, and some
 existing postprocess rules depend on BAMs.
+
+## Directory layout
+
+The standalone Snakemake workflow is kept outside both LRS and SRS,
+under `snakemake_pipelines/genomiser_vcf_only/`:
+
+```text
+snakemake_pipelines/
+  genomiser_vcf_only/
+    Snakefile
+    config.yaml
+    README.md
+  common/
+    patient_profiles.smk
+    genomiser.smk
+```
+
+Run it from its own directory. The shared code and Conda environment
+remain in the main repository, and existing patient result folders
+are unchanged.
 
 ## 1. Inputs to restore
 
@@ -80,8 +100,8 @@ not clinically verified observations.
 ## 3. Configure the VCF-only entry point
 
 ```bash
-cd "$BASE/snakemake_pipelines/lrs"
-nano config_genomiser_vcf_only.yaml
+cd "$BASE/snakemake_pipelines/genomiser_vcf_only"
+nano config.yaml
 ```
 
 The `vcf_samples` field maps each sample ID to its actual VCF paths.
@@ -114,13 +134,13 @@ phenotypes before running Genomiser.
 ## 5. Run without BAMs
 
 ```bash
-cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/lrs
+cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/genomiser_vcf_only
 
 # Verify the job graph: only patient-profile and Genomiser jobs.
-snakemake -s Snakefile_Genomiser_VCF_only --cores 8 --dry-run
+snakemake -s Snakefile --cores 8 --dry-run
 
 # Analyse the configured VCF samples; budget one 32-GB Java job at a time.
-snakemake -s Snakefile_Genomiser_VCF_only --use-conda \
+snakemake -s Snakefile --use-conda \
   --cores 8 --resources mem_mb=45000 --printshellcmds
 ```
 

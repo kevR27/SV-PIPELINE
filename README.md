@@ -16,8 +16,8 @@ this file with `--analysis` and records its SHA-256 for each patient.
 Neither the Conda environment nor the original Exomiser preset needs editing.
 
 If you have retained the genome-wide SNV/indel VCF and merged SV VCF but **no BAM**,
-use [`Snakefile_Genomiser_VCF_only`](snakemake_pipelines/lrs/Snakefile_Genomiser_VCF_only)
-with its separate [VCF-only configuration](snakemake_pipelines/lrs/config_genomiser_vcf_only.yaml).
+use [dedicated VCF-only Snakefile](snakemake_pipelines/genomiser_vcf_only/Snakefile)
+with its separate [VCF-only configuration](snakemake_pipelines/genomiser_vcf_only/config.yaml).
 See the [BAM-free guide](docs/GENOMISER_VCF_ONLY.md): no variant calling,
 read-depth, or phasing jobs can be scheduled in this workflow.
 

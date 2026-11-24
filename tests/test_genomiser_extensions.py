@@ -157,8 +157,8 @@ class PatientProfileTests(unittest.TestCase):
 
 class VcfOnlyWorkflowTests(unittest.TestCase):
     def test_bam_free_entrypoint_contains_only_genomiser_rules(self):
-        snakefile = (ROOT / "snakemake_pipelines" / "lrs" /
-                     "Snakefile_Genomiser_VCF_only").read_text(encoding="utf-8")
+        snakefile = (ROOT / "snakemake_pipelines" / "genomiser_vcf_only" /
+                     "Snakefile").read_text(encoding="utf-8")
         self.assertIn('include: "../common/patient_profiles.smk"', snakefile)
         self.assertIn('include: "../common/genomiser.smk"', snakefile)
         self.assertNotIn("bam=lambda", snakefile)
@@ -171,8 +171,8 @@ class VcfOnlyWorkflowTests(unittest.TestCase):
 
     def test_vcf_only_config_has_no_bams(self):
         import yaml
-        path = (ROOT / "snakemake_pipelines" / "lrs" /
-                "config_genomiser_vcf_only.yaml")
+        path = (ROOT / "snakemake_pipelines" / "genomiser_vcf_only" /
+                "config.yaml")
         cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
         self.assertNotIn("samples", cfg)
         self.assertNotIn("bam", cfg)
