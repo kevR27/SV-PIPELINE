@@ -27,6 +27,23 @@ jobs:
         if: always()
         working-directory: snakemake_pipelines/srs_wgs_pipeline
 
+      - name: Parse BAM-free VCF-only Genomiser entry point
+        if: always()
+        working-directory: snakemake_pipelines/lrs
+        run: |
+          snakemake -s Snakefile_Genomiser_VCF_only --list-rules
+          python - <<'PY'
+          import subprocess
+          result = subprocess.run(
+              ["snakemake", "-s", "Snakefile_Genomiser_VCF_only", "--list-rules"],
+              check=True, capture_output=True, text=True
+          )
+          expected = {"all", "prepare_patient_profile", "genomiser_genome"}
+          found = set(result.stdout.splitlines())
+          if found != expected:
+              raise SystemExit(f"Unexpected VCF-only jobs: {found}; expected: {expected}")
+          PY
+
       - name: Enable Genomiser rules for parser validation (LRS)
         if: always()
         working-directory: snakemake_pipelines/lrs

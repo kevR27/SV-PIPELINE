@@ -155,6 +155,38 @@ class PatientProfileTests(unittest.TestCase):
                 load_profile(path, "TEST01")
 
 
+class VcfOnlyWorkflowTests(unittest.TestCase):
+    def test_bam_free_entrypoint_contains_only_genomiser_rules(self):
+        snakefile = (ROOT / "snakemake_pipelines" / "lrs" /
+                     "Snakefile_Genomiser_VCF_only").read_text(encoding="utf-8")
+        self.assertIn('include: "../common/patient_profiles.smk"', snakefile)
+        self.assertIn('include: "../common/genomiser.smk"', snakefile)
+        self.assertNotIn("bam=lambda", snakefile)
+        self.assertNotIn("bai=lambda", snakefile)
+        self.assertNotIn("rule clair3_snp_calling:", snakefile)
+        self.assertNotIn("rule jasmine_merge:", snakefile)
+        self.assertNotIn("Snakefile_LRS_update", snakefile)
+        self.assertIn('VCF_INPUTS[wc.sample]["small_vcf"]', snakefile)
+        self.assertIn('VCF_INPUTS[wc.sample]["sv_vcf"]', snakefile)
+
+    def test_vcf_only_config_has_no_bams(self):
+        import yaml
+        path = (ROOT / "snakemake_pipelines" / "lrs" /
+                "config_genomiser_vcf_only.yaml")
+        cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+        self.assertNotIn("samples", cfg)
+        self.assertNotIn("bam", cfg)
+        self.assertTrue(cfg["vcf_samples"])
+        for sample, inputs in cfg["vcf_samples"].items():
+            self.assertTrue(str(sample))
+            self.assertTrue(inputs["small_vcf"].endswith(".vcf.gz"))
+            self.assertTrue(inputs["sv_vcf"].endswith(".vcf.gz"))
+            self.assertNotEqual(inputs["small_vcf"], inputs["sv_vcf"])
+        self.assertEqual(cfg["genomiser_enabled"], True)
+        self.assertTrue(cfg["patient_profiles_tsv"])
+        self.assertTrue(cfg["genomiser_analysis_yaml"])
+
+
 class BenchmarkTests(unittest.TestCase):
     def test_chromosome_normalization(self):
         self.assertEqual(chromosome("chrMT"), "MT")

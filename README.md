@@ -15,6 +15,12 @@ initially copied from the official 15.1.0 genome preset. The runner passes
 this file with `--analysis` and records its SHA-256 for each patient.
 Neither the Conda environment nor the original Exomiser preset needs editing.
 
+If you have retained the genome-wide SNV/indel VCF and merged SV VCF but **no BAM**,
+use [`Snakefile_Genomiser_VCF_only`](snakemake_pipelines/lrs/Snakefile_Genomiser_VCF_only)
+with its separate [VCF-only configuration](snakemake_pipelines/lrs/config_genomiser_vcf_only.yaml).
+See the [BAM-free guide](docs/GENOMISER_VCF_ONLY.md): no variant calling,
+read-depth, or phasing jobs can be scheduled in this workflow.
+
 Start with [the dedicated installation and downstream-only execution
 guide](docs/GENOMISER_PATIENT_WORKFLOW.md). Patient files must be stored on
 the secured server, never committed to this repository. The separate
