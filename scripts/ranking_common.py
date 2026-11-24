@@ -652,43 +652,27 @@ def load_hpo_background(edges_path: str):
     return parents, all_gene_terms
 
 
-def load_hpo_seed_groups(path: str) -> dict[str, set[str]]:
-    """Load core HON seeds separately from lower-weight syndromic context."""
-    groups = {"core": set(), "context": set()}
-    with open(path, encoding="utf-8") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        for row in reader:
-            value = str(
-                row.get("hpo_id")
-                or row.get("HPO_ID")
-                or row.get("term")
-                or ""
-            ).strip()
-            if not value.startswith("HP:"):
-                continue
-            role = str(row.get("hon_seed_role", "") or "").upper()
-            if "MITO_SYNDROMIC_CONTEXT" in role:
-                groups["context"].add(value)
-            else:
-                groups["core"].add(value)
-    return groups
-
-
 def load_hpo_seed_terms(path: str) -> set[str]:
-    groups = load_hpo_seed_groups(path)
-    return set(groups["core"]) | set(groups["context"])
+    """Load the shared ocular HON query; ignore retired context rows."""
+    terms = set()
+    with open(path, encoding="utf-8") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            value = str(row.get("hpo_id") or row.get("HPO_ID") or row.get("term") or "").strip()
+            role = str(row.get("hon_seed_role") or "").strip().upper()
+            if value.startswith("HP:") and role in {"", "CORE_OCULAR_HON"}:
+                terms.add(value)
+    if not terms:
+        raise ValueError(f"No core HON HPO terms in {path}")
+    return terms
+
+
+# Compatibility helpers for older consumers; context no longer affects ranking.
+def load_hpo_seed_groups(path: str) -> dict[str, set[str]]:
+    return {"core": load_hpo_seed_terms(path), "context": set()}
 
 
 def combine_hon_semantic(core_score: float, context_score: float) -> float:
-    """Keep ocular HON relevance primary while allowing mitochondrial context.
-
-    Context-only similarity is capped at 0.35, so generic hearing/ataxia/
-    metabolic overlap can support discovery but cannot by itself reach the
-    MODERATE/HIGH phenotype tiers. Patient-specific HPO is handled separately.
-    """
-    core = min(max(core_score or 0.0, 0.0), 1.0)
-    context = min(max(context_score or 0.0, 0.0), 1.0)
-    return min(1.0, max(core, 0.35 * context))
+    return min(max(core_score or 0.0, 0.0), 1.0)
 
 
 def load_gene_hpo_terms(path: str) -> dict[str, set[str]]:
@@ -712,50 +696,30 @@ def load_gene_hpo_terms(path: str) -> dict[str, set[str]]:
     return terms
 
 
-def generic_hon_semantic_components(
-    phenotype_path: str,
-    seed_path: str,
-    edges_path: str,
-) -> dict[str, dict[str, float]]:
-    engine = semantic_engine(edges_path)
-    groups = load_hpo_seed_groups(seed_path)
-    gene_terms = load_gene_hpo_terms(phenotype_path)
-
-    result = {}
-    for gene, terms in gene_terms.items():
-        core = engine["normalized_query_coverage"](
-            groups["core"],
-            terms,
-        )
-        context = (
-            engine["normalized_query_coverage"](
-                groups["context"],
-                terms,
-            )
-            if groups["context"]
-            else 0.0
-        )
-        result[gene] = {
-            "core": core,
-            "context": context,
-            "combined": combine_hon_semantic(core, context),
-        }
-    return result
-
-
 def generic_hon_semantic_map(
     phenotype_path: str,
     seed_path: str,
     edges_path: str,
 ) -> dict[str, float]:
-    components = generic_hon_semantic_components(
-        phenotype_path,
-        seed_path,
-        edges_path,
-    )
+    engine = semantic_engine(edges_path)
+    query = load_hpo_seed_terms(seed_path)
     return {
-        gene: values["combined"]
-        for gene, values in components.items()
+        gene: engine["normalized_query_coverage"](query, terms)
+        for gene, terms in load_gene_hpo_terms(phenotype_path).items()
+    }
+
+
+def generic_hon_semantic_components(
+    phenotype_path: str,
+    seed_path: str,
+    edges_path: str,
+) -> dict[str, dict[str, float]]:
+    """Compatibility view of the core-only result."""
+    return {
+        gene: {"core": score, "context": 0.0, "combined": score}
+        for gene, score in generic_hon_semantic_map(
+            phenotype_path, seed_path, edges_path
+        ).items()
     }
 
 

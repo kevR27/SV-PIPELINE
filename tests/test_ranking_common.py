@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from ranking_common import (
     gene_relevance,
+    load_hpo_seed_terms,
+    combine_hon_semantic,
     inferred_effect_class,
     mechanism_inheritance_summary,
     semantic_engine,
@@ -67,6 +69,29 @@ class TestRankingCommon(unittest.TestCase):
                 engine["normalized_bma"](pleiotropic_gene, query),
                 1.0,
             )
+
+    def test_core_only_query_ignores_retired_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            seeds = Path(tmp) / "seeds.tsv"
+            seeds.write_text(
+                "hpo_id\thon_seed_role\n"
+                "HP:0000648\tCORE_OCULAR_HON\n"
+                "HP:0001251\tMITO_SYNDROMIC_CONTEXT\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(load_hpo_seed_terms(str(seeds)), {"HP:0000648"})
+            self.assertEqual(combine_hon_semantic(0.0, 1.0), 0.0)
+            self.assertEqual(combine_hon_semantic(0.2, 1.0), 0.2)
+
+    def test_empty_core_query_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            seeds = Path(tmp) / "seeds.tsv"
+            seeds.write_text(
+                "hpo_id\thon_seed_role\nHP:0001251\tMITO_SYNDROMIC_CONTEXT\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError):
+                load_hpo_seed_terms(str(seeds))
 
     def test_partial_duplication_is_possible_disruption_not_pure_copy_gain(self):
         self.assertEqual(

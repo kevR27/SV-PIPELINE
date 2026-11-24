@@ -25,11 +25,10 @@ from pathlib import Path
 from ranking_common import (
     GENE_TIER_PRIORITY,
     MISSING,
-    combine_hon_semantic,
     gene_relevance,
     inheritance_class,
     known,
-    load_hpo_seed_groups,
+    load_hpo_seed_terms,
     parse_moi,
     semantic_engine,
     summarize_gencc,
@@ -87,7 +86,7 @@ def main() -> int:
 
     genes = read_list(args.genes) - INVALID_GENE_LABELS
     panel = read_list(args.panel)
-    hon_seed_groups = load_hpo_seed_groups(args.hpo_seeds)
+    hon_seed_terms = load_hpo_seed_terms(args.hpo_seeds)
     semantic = semantic_engine(args.edges)
 
     pheno = defaultdict(
@@ -248,21 +247,9 @@ def main() -> int:
         p = pheno[gene]
         a = annotsv[gene]
 
-        hon_core_similarity = semantic["normalized_query_coverage"](
-            hon_seed_groups["core"],
+        hon_similarity = semantic["normalized_query_coverage"](
+            hon_seed_terms,
             p["hpos"],
-        )
-        hon_context_similarity = (
-            semantic["normalized_query_coverage"](
-                hon_seed_groups["context"],
-                p["hpos"],
-            )
-            if hon_seed_groups["context"]
-            else 0.0
-        )
-        hon_similarity = combine_hon_semantic(
-            hon_core_similarity,
-            hon_context_similarity,
         )
         phenotype_score_0_10 = 10.0 * hon_similarity
 
@@ -344,10 +331,10 @@ def main() -> int:
             "human_HPO_count": len(p["hpos"]),
             "optic_neuropathy_anchor_HPO_count": len(p["anchors"]),
             "HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED": round(
-                hon_core_similarity, 6
+                hon_similarity, 6
             ),
             "HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED": round(
-                hon_context_similarity, 6
+                0.0, 6
             ),
             "HON_SEMANTIC_SIMILARITY_NORMALIZED": round(hon_similarity, 6),
             "HON_SEMANTIC_SCORE_0_10": round(phenotype_score_0_10, 3),

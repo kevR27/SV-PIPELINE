@@ -24,7 +24,7 @@ from ranking_common import (
     event_sort_tuple,
     first_existing,
     gene_relevance,
-    generic_hon_semantic_components,
+    generic_hon_semantic_map,
     known,
     mechanism_inheritance_summary,
     number,
@@ -468,7 +468,7 @@ def main():
 
     hon_semantic_by_gene = {}
     if args.phenotypes and args.hpo_seeds and args.edges:
-        hon_semantic_by_gene = generic_hon_semantic_components(
+        hon_semantic_by_gene = generic_hon_semantic_map(
             args.phenotypes,
             args.hpo_seeds,
             args.edges,
@@ -682,44 +682,23 @@ def main():
         gene = str(row.get(gene_col, ".")).strip().upper()
 
         if gene in hon_semantic_by_gene:
-            semantic_components = hon_semantic_by_gene[gene]
-            hon_core = float(semantic_components["core"])
-            hon_context = float(semantic_components["context"])
-            hon = float(semantic_components["combined"])
-            phenotype_scope = (
-                "GENERIC_HON_CORE_PLUS_CAPPED_MITO_CONTEXT_RESNIK_BMA_POSTPROCESS"
-            )
+            hon = float(hon_semantic_by_gene[gene])
+            phenotype_scope = "GENERIC_HON_CORE_ONLY_RESNIK_POSTPROCESS"
+        elif number(row.get("HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED")) is not None:
+            hon = number(row.get("HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED"))
+            phenotype_scope = "UPSTREAM_HON_CORE_RESNIK"
         elif "HON_SEMANTIC_SIMILARITY_NORMALIZED" in out.columns:
+            # Historical combined scores cannot be assumed to be core-only.
             hon = number(row.get("HON_SEMANTIC_SIMILARITY_NORMALIZED")) or 0.0
-            hon_core = (
-                number(row.get("HON_CORE_SEMANTIC_SIMILARITY_NORMALIZED"))
-                or hon
-            )
-            hon_context = (
-                number(
-                    row.get(
-                        "HON_MITO_SYNDROMIC_CONTEXT_SIMILARITY_NORMALIZED"
-                    )
-                )
-                or 0.0
-            )
-            phenotype_scope = "UPSTREAM_HON_RESNIK_BMA"
+            phenotype_scope = "LEGACY_HON_COMBINED_SCORE_REBUILD_RECOMMENDED"
         elif "PHENOTYPE_SCORE" in out.columns:
-            hon = min(
-                1.0,
-                max(
-                    0.0,
-                    (number(row.get("PHENOTYPE_SCORE")) or 0.0) / 10.0,
-                ),
-            )
-            hon_core = hon
-            hon_context = 0.0
+            hon = min(1.0, max(0.0, (number(row.get("PHENOTYPE_SCORE")) or 0.0) / 10.0))
             phenotype_scope = "LEGACY_HON_SCORE_FALLBACK"
         else:
             hon = 0.0
-            hon_core = 0.0
-            hon_context = 0.0
             phenotype_scope = "NO_HON_PHENOTYPE_EVIDENCE"
+        hon_core = hon
+        hon_context = 0.0
 
         gencc = summarize_gencc(
             [str(row.get("GENCC", "."))],
