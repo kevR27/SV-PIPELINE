@@ -138,14 +138,14 @@ class PatientProfileTests(unittest.TestCase):
             hpo_file = root / "patient.patient_hpo.tsv"
             context_file = root / "patient.clinical_context.json"
             clinical.write_text(
-                "sample_id\\thpo_present\\thpo_absent\\n"
-                "TEST01\\tHP:0000648\\t\\n",
+                "sample_id\thpo_present\thpo_absent\n"
+                "TEST01\tHP:0000648\t\n",
                 encoding="utf-8",
             )
             seeds.write_text(
-                "hpo_id\\thpo_label\\thon_seed_role\\n"
-                "HP:0000648\\tOptic atrophy\\tCORE_OCULAR_HON\\n"
-                "HP:0000603\\tCentral scotoma\\tCORE_OCULAR_HON\\n",
+                "hpo_id\thpo_label\thon_seed_role\n"
+                "HP:0000648\tOptic atrophy\tCORE_OCULAR_HON\n"
+                "HP:0000603\tCentral scotoma\tCORE_OCULAR_HON\n",
                 encoding="utf-8",
             )
             args = [
