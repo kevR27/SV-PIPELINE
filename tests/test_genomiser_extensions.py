@@ -194,6 +194,22 @@ class PatientProfileTests(unittest.TestCase):
                 load_profile(path, "TEST01")
 
 
+class ClinicalLrsConfigurationTests(unittest.TestCase):
+    def test_controls_excluded_from_clinical_lrs_runs(self):
+        import yaml
+        cfg = yaml.safe_load(
+            (ROOT / "snakemake_pipelines" / "lrs" / "config_lrs.yaml")
+            .read_text(encoding="utf-8")
+        )
+        self.assertNotIn("21930", cfg["samples"])
+        self.assertNotIn("25428", cfg["samples"])
+        self.assertIn("14996", cfg["samples"])
+        self.assertIn("13048", cfg["samples"])
+        self.assertTrue(cfg["hpo_include_shared_hon_seeds"])
+        self.assertNotIn("21930", cfg.get("xci_samples", []))
+        self.assertNotIn("25428", cfg.get("xci_samples", []))
+
+
 class VcfOnlyWorkflowTests(unittest.TestCase):
     def test_bam_free_entrypoint_contains_only_genomiser_rules(self):
         snakefile = (ROOT / "snakemake_pipelines" / "genomiser_vcf_only" /
