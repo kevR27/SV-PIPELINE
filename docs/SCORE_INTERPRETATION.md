@@ -219,16 +219,12 @@ Generic hereditary optic-neuropathy relevance is calculated with
 gene-HPO background. Each HON query term is matched to its best gene-associated
 HPO term and the result is normalized to the HON query's own self-similarity.
 This avoids penalizing pleiotropic genes simply because they have many additional
-phenotype annotations. The reference is now split into two roles:
-
-- **core HON ocular terms**, which remain the primary phenotype signal;
-- **mitochondrial/syndromic context terms** such as hearing impairment, ataxia,
-  lactic acidosis, external ophthalmoplegia, ptosis and exercise intolerance.
-
-The syndromic component is deliberately capped: generic context-only similarity
-cannot by itself reach the MODERATE/HIGH phenotype tiers. This prevents broad
-mitochondrial features from outranking true optic-neuropathy similarity while
-still allowing them to support discovery.
+phenotype annotations. The shared query uses only core ocular HON terms. Generic mitochondrial and
+syndromic context terms no longer contribute to the score. Documented
+patient-specific manifestations remain eligible in patient-specific analyses,
+and MitoCarta annotation remains independent. The legacy context output column
+is retained as zero for schema compatibility. Rebuild historical ranking
+tables if they were generated with the older combined query.
 
 Important fields include:
 
