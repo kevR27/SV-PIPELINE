@@ -206,9 +206,7 @@ installation directory is loaded when present.
 
 5. Add the clinical table, ensuring **HP:0000648** is listed in
 `hpo_present` for every patient with documented optic atrophy. Include
-*only confirmed observed* additional findings. The six shared HON
-reference terms are added automatically for computational ranking; do not
-copy them into each row unless they are truly observed. Missing or
+*only confirmed observed* additional findings. The six shared HON reference terms are **not** added by default. Only observed HPO terms enter the phenotype query, and blank means unknown. Missing or
 unexamined features are not negative HPO observations:
 
 ```bash
@@ -287,28 +285,18 @@ Keep one tab-separated row per sample, with the following columns:
   confirmed genetic diagnoses or scoring features.
 
 The six `CORE_OCULAR_HON` terms in `reference/hon_hpo_seed_terms.tsv`
-are now **automatically added to the scoring phenotype profile** for patients
-whose clinical `hpo_present` includes confirmed optic atrophy (`HP:0000648`).
-Every patient's effective Genomiser phenotype query is:
+remain disease-reference annotations. **They are not patient findings.**
+By default both the Genomiser Phenopacket and custom-ranking HPO TSV
+contain **only the documented `hpo_present` terms**. Empty cells
+are unknown, not negative observations. Explicitly documented negative
+findings may be stored in `hpo_absent` and are not added as positives.
 
-`HON shared seed terms + individually observed HPO terms - explicitly absent HON terms`
-
-The union is deduplicated. A seed listed in `hpo_absent` is excluded rather
-than treated as both present and absent. No HON profile is imputed into
-technical controls or other samples without documented optic atrophy.
-
-**Important phenotype provenance:** These reference seeds are used as
-computational disease-profile assumptions; they are **not six confirmed
-clinical observations for every patient**. Keep only genuinely observed
-findings in the private TSV's `hpo_present` column and record examined,
-absent findings in `hpo_absent`. Do not copy the six defaults into every
-patient's clinical record. Additional neurological/syndromic findings
-remain patient-specific.
-
-This changes phenotype-based prioritization, and adding HPO terms does not
-guarantee more genes: the `priorityScoreFilter` may become more selective.
-Interpret output as an HON-seeded research ranking, not a diagnosis. Compare
-against a patient-only phenotype sensitivity run if necessary.
+For a separate, explicitly labeled **legacy HON-seeded sensitivity
+analysis**, set `hpo_include_shared_hon_seeds: true` in the workflow
+config. The importer then adds shared HON seeds only to patients
+with observed `HP:0000648` and excludes documented absences. This
+changes the phenotype input and should not be conflated with the
+patient-observed default in thesis comparisons.
 
 The importer generates:
 ```
