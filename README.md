@@ -1,8 +1,11 @@
 ## Required Genomiser whole-genome prioritization (LRS and SRS)
 
 For one patient at a time, combine existing genome-wide SNV/indel and SV VCFs
-with **documented positive HPO terms** for noncoding, regulatory and coding
-variant prioritization. Both workflows now require this stage in the default
+with **shared HON HPO reference seeds plus each patient's documented HPO
+observations** for noncoding, regulatory and coding variant prioritization.
+Shared seeds are applied only to patients with documented optic atrophy;
+explicitly absent terms are excluded, and provenance is retained in
+`clinical_context.json`. Both workflows now require this stage in the default
 analysis; missing ReMM resources or patient profiles cause an explicit failure.
 Original LRS and SRS calling results remain unchanged.
 
