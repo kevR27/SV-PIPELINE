@@ -1,7 +1,7 @@
 # Allele assessment: configuration, interpretation and migration
 
 For output-only studies and the distinction between gene ranking, AnnotSV CNV
-classification and the additional allele score, see [Score interpretation](SCORE_INTERPRETATION.md).
+classification and categorical allele assessment, see [Score interpretation](SCORE_INTERPRETATION.md).
 
 The original question, ONT/SRS comparison, genome-wide SV discovery, human-only
 phenotype evidence and optic-neuropathy panel remain intact. This addition
@@ -17,43 +17,43 @@ In `<output-root>/<sample>/gene_discovery/`:
 - `<sample>_integrated_SV_gene_analysis.tsv`: original integration, with corrected
   joins, source fields and structured caller/transcript evidence.
 - `<sample>_allele_assessment.tsv`: same row order/count plus the selected hypothesis,
-  six evidence domains, score, dense research rank, missing domains and review flags.
+  six categorical evidence domains, completeness, missing domains and review flags.
 - `<sample>_allele_disease_hypotheses.tsv`: one row per SV–gene–curated disease model,
-  ordered by score. No mixing of different diseases' inheritance/mechanism evidence.
-  Unknown-disease rows remain if no model exists. The highest-scoring hypothesis is
-  selected for the main table; ties use disease ID, MOI and mechanism deterministically.
+  ordered by categorical evidence. No mixing of disease hypotheses.
+  Unknown-disease rows remain if no model exists. The preferred hypothesis is selected
+  by conflict status, HON relevance, mechanism, validity, inheritance, phenotype and
+  stable disease identifiers. All alternatives remain available for review.
 - `<sample>_allele_assessment.manifest.json`: model version, thresholds, input paths
   and SHA256 hashes. Preserve with results and record the repository commit.
 
 LRS postprocessing and SRS complementary-evidence integration consume the new
 assessment. Existing gene-discovery scores remain separate. A plot of the old
-`ranked_candidates.tsv` is still a gene-ranking plot, not the new allele ranking.
+`ranked_candidates.tsv` is still a gene-ranking plot, not an allele ranking.
 SV–gene rows, disease-hypothesis rows, and paired BND records are not unique molecular
 event counts. Event-level adjudication/deduplication is still required for thesis totals.
 
-## Research score v1
+## Categorical allele assessment (v2)
 
-Each domain contributes 0–2 points; the sum has a fixed maximum of 12. It is not
-normalized by data availability. Unknown evidence contributes no points and is
-explicitly listed, rather than treated as negative or evidence of rarity. Evidence
-categories can be correlated: this is an uncalibrated review aid, not a probability,
-clinical classification, or automatic exclusion rule. Evaluate thresholds and ranking
-on known positives/held-out cases before relying on rank.
+The previous summed 0–12 allele score and per-domain points have been retired.
+This assessment retains independent statuses, details, review flags and all
+disease hypotheses. Evidence completeness reports the number of evaluated domains
+out of six, with unknown/provisional or unresolved ploidy domains counted as
+unavailable. Completeness is descriptive, not a ranking or pathogenicity metric.
+An evaluated incompatible or flagged result does not mean supportive evidence.
 
-The [separate joint clinical table](SCORE_INTERPRETATION.md#joint-clinical-candidate-review)
-reuses these source-backed statuses and details, not the 0–12 sum. It combines
-AnnotSV's reported CNV class with HON relevance and variant evidence without
-rescoring ACMG criteria or creating a diagnostic probability. Missing curated
-disease models remain explicit; gene-level associations do not replace them.
-
-| Domain | Assessment and limits |
+| Domain | Assessment |
 |---|---|
-| Population | An external source-backed exact/sequence-validated allele AF ≤ threshold gives 2; zero observed AF gives 1, with an explicit absence-not-pathogenicity label. AF above threshold gives 0 and a flag. needLR coordinate-only AF remains visible as provisional and gives 0 until allele identity is reviewed. Missing/unmatched/ambiguous is unknown. A benign database overlap AF is not transferred as the patient's exact allele AF. |
-| Technical | At least the configured maximum per-caller read support gives 1 for a single caller or 2 with ≥2 callers. Low support, ambiguity and QC flags receive 0 and a review status. Read counts across callers are not summed. Agreement on the same reads is not independent validation. These thresholds do not change caller/filter thresholds. |
-| Disruption | AnnotSV gene-specific transcript rows can identify CDS loss, transcript copy gain or possible exonic breakpoint disruption, giving 1 as predictions. A source-backed reviewed effect gives 1 if predicted or 2 if validated; no disruption gives 0. Gene overlap alone does not prove LOF. Partial duplications, inversions, insertions, regulatory effects and GOF/dominant-negative mechanisms often need manual molecular review. |
-| Inheritance | QC-passing exact caller-linked or externally supplied genotypes are evaluated against one curated disease MOI. AD genotype compatibility gives 1; callable reference parents produce a candidate de novo flag with 2, not confirmed de novo status. AR homozygous-alt compatibility gives 2; a single heterozygous variant requires another allele. Two distinct nonoverlapping same-gene SVs with compatible effects and opposite QC-passing parental transmissions are flagged as inferred trans candidates (1), not confirmed causality. |
-| Patient phenotype | Deduplicated patient positive HPO terms are compared with disease-specific HPO terms, otherwise human gene associations. ≥50% exact matching gives 2; any smaller positive match gives 1. A matching explicitly absent term gives a review flag and 0. No exact match is not proof of incompatibility. This v1 implementation is exact-term matching, not ontology-aware semantic similarity. Generic optic anchors are never substituted for patient phenotypes. |
-| Disease mechanism | Source-backed disease models with compatible effect and Moderate/Strong/Definitive validity give 2; Limited validity or a possible effect gives 1. Disputed/refuted associations or mechanism mismatch are flagged and give 0. ClinGen dosage evidence without a curated disease assignment can give 1, explicitly labeled gene-level only. |
+| Population | Source-backed exact AF, measured zero, provisional coordinate match or unknown. |
+| Technical | Per-caller read support and QC; caller concordance is not independent validation. |
+| Disruption | Predicted or validated molecular effect, or unresolved. |
+| Inheritance | QC-qualified genotype and curated disease-model compatibility; no fabricated reference parents. |
+| Patient phenotype | Exact documented HPO overlap or conflict, not imputed reference findings. |
+| Disease mechanism | Curated mechanism/validity, possible effect, gene-level dosage support, conflict or unknown. |
+
+The joint clinical table uses the statuses and AnnotSV classification, not an
+allele score. The patient profile supplies an observed-only context TSV when no
+explicit allele patient-context file is configured. Preserve the original integrated
+TSV to regenerate the new assessment from saved data without BAM.
 
 Genotype QC defaults: GQ ≥20, depth ≥5. Missing QC is unknown. Merged Jasmine/SURVIVOR
 genotypes are never used as a patient genotype. Coordinate-only caller links do not
@@ -86,7 +86,7 @@ allele_min_gq: 20
 allele_min_dp: 5
 ```
 
-All four input files are optional. `null` runs the assessment with explicit unknowns.
+All four input files are optional. For patient context, `null` uses the configured private patient profile when available; other absent evidence remains unknown.
 An optional path can instead be a sample-ID mapping, allowing files to be supplied
 only for selected samples. Samples not in that mapping have that evidence unavailable.
 A configured patient-context file must contain the requested sample. Missing configured
@@ -118,7 +118,7 @@ Two optional columns in this existing template support the clinical review:
 disease-specific evidence that connects, or distinguishes, the condition from
 HON. This is a reviewed assertion, not an automatic result of a gene-HPO match.
 Existing seven-column disease-model files still work; their HON link stays
-unknown. These columns do not change the 0–12 research formula.
+unknown. These columns guide categorical disease-hypothesis selection.
 
 HPO terms are optional. A missing disease model is not a negative gene–disease result.
 AnnotSV's aggregate GenCC/OMIM strings are retained for review but are not automatically
