@@ -13,7 +13,17 @@ mitochondrial ranking, cohort recurrence, clinical candidate TSVs, downstream
 filtering and selected R/summary plots. It therefore needs more of the
 previous run's BAM-derived TSV/VCF/BED output files.
 
-## Automatic sample discovery
+## Selected patients (current study)
+
+The current `config.yaml` explicitly selects `13048`, `19545`,
+`11446` and `14996` in this order. The original LRS technical
+controls `21930` and `25428` are excluded from reanalysis.
+The private patient table may contain other patients; phenotype lookup
+uses only the matching sample ID. If the requested sample is actually
+`194545`, confirm the ID before changing the mapping, as the clinical
+table currently contains `19545`.
+
+## Automatic sample discovery (optional)
 
 Set the common root only once:
 
@@ -22,8 +32,9 @@ input_root: "/DATA/casadei7/nanopore/WGS/RESULTS"
 sample_ids: auto
 ```
 
-Numeric subfolders such as `11446/`, `21930/`, `25428/` are detected
-automatically. Original filenames are derived from the sample directory
+If `sample_ids: auto` is set explicitly, numeric subfolders (including
+control folders such as `21930/` and `25428/`) would be detected automatically.
+Do not use auto for the patient-only comparison without excluding controls. Original filenames are derived from the sample directory
 name; no BAM paths or individual per-patient VCF paths are needed.
 
 To analyze just one saved patient, change to:
