@@ -7,8 +7,8 @@ possibly divergent copy of the scoring algorithms. It **does not rerun**
 basecalling, Clair3, SV callers, Jasmine, LongPhase, mosdepth, modkit or
 Samplot. Genomiser is included and mandatory.
 
-**Different from `../genomiser_vcf_only/`:** this workflow also rebuilds
-the full saved-data SV gene/event prioritization, multimodal integration,
+**Different from `../genomiser_vcf_only/`:** this workflow rebuilds with retained BAM-derived evidence
+ the full saved-data SV gene/event prioritization, multimodal integration,
 mitochondrial ranking, cohort recurrence, clinical candidate TSVs, downstream
 filtering and selected R/summary plots. It therefore needs more of the
 previous run's BAM-derived TSV/VCF/BED output files.
@@ -51,7 +51,7 @@ actual output files (folders alone are insufficient):
     straglr/
       11446_straglr.annotated.tsv
   gene_discovery/
-    11446_allele_assessment.tsv
+    11446_integrated_SV_gene_analysis.tsv
     11446_ranked_candidates.tsv
     11446_human_gene_phenotypes.tsv
   mei/
@@ -70,9 +70,9 @@ indexes (`.tbi` or `.csi`) if available. Additional existing files can
 be retained for better multimodal interpretation:
 `phasing/<sample>.phased.vcf.gz`,
 `methylation/<sample>.cpg.bedmethyl.gz`, caller support summaries,
-and any previous QC / saved plots. The workflow *can recompute* some
-intermediate interpretation reports but **cannot reconstruct**
-`allele_assessment.tsv`, the original `ranked_candidates.tsv`,
+and any previous QC / saved plots. The workflow regenerates `allele_assessment.tsv` from the saved original
+integrated TSV and patient profile. It cannot reconstruct the original integrated
+TSV, `ranked_candidates.tsv`,
 gene-phenotype tables, or genuine 10 kb read-depth bins from just a
 merged SV VCF. Those source files have to be restored from the previous run.
 
