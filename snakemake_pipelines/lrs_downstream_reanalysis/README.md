@@ -100,9 +100,12 @@ contains sensitive path information.
 You still need the secure
 `/DATA/casadei7/private_clinical/patient_profiles.tsv` with an entry for
 each sample ID, containing only clinically observed `hpo_present` terms.
-The six shared HON HPO terms are added for computational scoring when
-clinically documented optic atrophy `HP:0000648` is present. Reference
-terms do not become claimed patient-observed symptoms.
+The independent custom HON ranking retains its core ocular reference
+terms. For the primary Genomiser Phenopacket, this wrapper currently sets
+`hpo_include_shared_hon_seeds: false`, so Genomiser uses only each patient's
+documented HPO findings. Setting it to `true` adds the six core HON reference
+terms as computational scoring assumptions; they must not be described as
+observed symptoms. A blank clinical field is unknown, not a negative finding.
 
 The installed Exomiser 15.1.0 / 2512 data directories, ReMM v0.4
 GRCh38 and tabix index, `config/genomiser/genome_analysis.yml`, HPO
@@ -148,3 +151,90 @@ existing derived outputs wherever possible; it excludes those read-level
 operations. Complete `final_thesis_analysis` / `all_thesis_plots`
 targets in the original LRS workflow may still require BAMs and must
 not be used in the BAM-free mode.
+
+## Optional CADD sensitivity run and unified clinical table
+
+The original Genomiser `config/genomiser/genome_analysis.yml` and the original
+clinical ranked TSV are **unchanged**. A second analysis YAML,
+`config/genomiser/genome_analysis_cadd.yml`, differs only by adding
+`CADD` to `pathogenicitySources`. The optional rule
+`genomiser_genome_cadd` executes it on exactly the same VCFs and phenotype
+packet as the baseline, but writes to `<sample>/genomiser_cadd/` instead of
+`<sample>/genomiser/`. The merger checks sample ID, input paths,
+Phenopacket checksum, and different YAML hashes before comparing results.
+
+**Check actual score resources before enabling.** A line such as
+`cadd.version=1.7` and **commented-out**
+`#exomiser.hg38.cadd-snv-path` /
+`#exomiser.hg38.cadd-in-del-path` in the installed
+`application.properties` **does not show that either data file is installed**.
+CADD requires a GRCh38 SNV file, a compatible GRCh38 indel file and their
+matching `.tbi` indexes; indel filenames vary by release.
+
+To locate files on the server, start with:
+
+```bash
+BASE=/DATA/casadei7/tools/SV-PIPELINE-main_v3
+CLI="$BASE/reference/AnnotSV_annotations/jar/exomiser-cli-15.1.0"
+find "$CLI/data" /DATA/Reference -type f \
+  \( -name 'whole_genome_SNVs.tsv.gz' -o -name 'InDels.tsv.gz' \
+     -o -name '*indel*.tsv.gz' \) 2>/dev/null | head -40
+```
+
+Then set **only this wrapper's** `config.yaml` to:
+
+```yaml
+genomiser_cadd_enabled: true
+genomiser_cadd_analysis_yaml: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/config/genomiser/genome_analysis_cadd.yml"
+genomiser_cadd_snv_hg38: "/actual/path/to/GRCh38/whole_genome_SNVs.tsv.gz"
+genomiser_cadd_indel_hg38: "/actual/path/to/GRCh38/indel-scores.tsv.gz"
+```
+
+Replace the **example** score paths with the verified existing absolute
+paths; do not type them literally. No changes to the Exomiser
+`application.properties` file are required because the CADD
+comparison runner supplies those paths through Java system properties.
+The baseline Genomiser run is unaffected.
+
+Use the established Snakemake command format from this directory:
+
+```bash
+snakemake -s Snakefile --configfile config.yaml --use-conda \
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --dry-run -p cadd_comparison_all
+
+snakemake -s Snakefile --configfile config.yaml --use-conda \
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \
+  --cores 32 --resources mem_mb=45000 --rerun-incomplete -p cadd_comparison_all
+```
+
+When `genomiser_cadd_enabled: false`, the original default `all` target
+still runs normally. Enable CADD **only after** verifying resources;
+`cadd_comparison_all` is registered when CADD is enabled.
+
+The optional comparison writes one per-patient table, preserving all
+original clinical columns and adding `GENOMISER_CADD_*` columns:
+
+```text
+RESULTS/<sample>/gene_discovery/final/
+  <sample>_clinical_candidates.ranked.tsv
+  <sample>_clinical_candidates.genomiser_cadd_comparison.tsv
+
+RESULTS/cohort_analysis/
+  clinical_baseline_vs_cadd.tsv
+```
+
+The **cohort TSV** is the single combined table across the selected
+patients, with `SAMPLE_ID` identifying each row. The comparison has
+`GENOMISER_GENE_RANK`, `GENOMISER_CADD_GENE_RANK` and
+`GENOMISER_CADD_RANK_IMPROVEMENT` (positive = improved rank with CADD);
+also model and SV matching fields for each version. The new CADD columns
+are scores/ranks from **Genomiser with CADD included**, not direct CADD
+PHRED scores. Do not report them as raw CADD predictions or validated
+pathogenicity. Cases absent from a Genomiser run have missing ranks.
+
+The comparison target depends on the original clinical output and can
+recompute missing downstream dependencies. Inspect the dry-run carefully,
+check the archived-input audit, and preserve a backup of original downstream
+results before running. No BAM-based callers or new coverage/Samplot jobs are
+included in the archived downstream mode.
