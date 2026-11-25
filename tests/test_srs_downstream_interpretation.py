@@ -31,6 +31,7 @@ class SrsDownstreamInterpretationTests(unittest.TestCase):
         snake = (SRS / "Snakefile_SRS_WGS").read_text()
 
         self.assertEqual(config["survivor_min_support"], 1)
+        self.assertEqual(config["survivor_caller_order"], "Manta,Delly")
         self.assertEqual(config["multi_caller_min_support"], 2)
         self.assertIn("SURVIVOR merge {output.list_file:q}", snake)
         self.assertIn("{SURVIVOR_MIN_SUPPORT}", snake)
