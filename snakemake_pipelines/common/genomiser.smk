@@ -10,7 +10,8 @@ rule genomiser_genome:
         jar=config["genomiser_cli_jar"],
         remm=config["genomiser_remm_hg38"],
         remm_index=config["genomiser_remm_hg38"] + ".tbi",
-        runner=SCRIPTS + "/run_genomiser.py"
+        runner=SCRIPTS + "/run_genomiser.py",
+        sv_normalizer=SCRIPTS + "/prepare_genomiser_sv_vcf.py"
     output:
         genes=PATH + "{sample}/genomiser/{sample}.genomiser.genes.tsv",
         variants=PATH + "{sample}/genomiser/{sample}.genomiser.variants.tsv",
