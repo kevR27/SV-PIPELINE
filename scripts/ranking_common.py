@@ -652,7 +652,7 @@ def load_hpo_background(edges_path: str):
     return parents, all_gene_terms
 
 
-def load_hpo_seed_terms(path: str) -> set[str]:
+def load_hpo_seed_terms(path: str, allow_empty: bool = False) -> set[str]:
     """Load the shared ocular HON query; ignore retired context rows."""
     terms = set()
     with open(path, encoding="utf-8") as handle:
@@ -661,7 +661,7 @@ def load_hpo_seed_terms(path: str) -> set[str]:
             role = str(row.get("hon_seed_role") or "").strip().upper()
             if value.startswith("HP:") and role in {"", "CORE_OCULAR_HON"}:
                 terms.add(value)
-    if not terms:
+    if not terms and not allow_empty:
         raise ValueError(f"No core HON HPO terms in {path}")
     return terms
 
