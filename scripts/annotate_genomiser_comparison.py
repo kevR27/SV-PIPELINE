@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Independent Genomiser gene/model and exact-coordinate symbolic SV comparison."""
 from collections import defaultdict
-import pandas as pd
 from benchmark_genomiser import read_tsv, get, gene, chromosome, rank_number, variant_type, genomiser_global_gene_ranks
 
 def annotate_genomiser(table, genes_path, variants_path):
@@ -38,13 +37,15 @@ def annotate_genomiser(table, genes_path, variants_path):
         annotations.append({
             "GENOMISER_GENE_RANK": ranks.get(symbol, "."),
             "GENOMISER_MODEL_RANK": get(model, "#RANK") or ".",
+            "GENOMISER_MODEL_MOI": get(model, "MOI", "MODE_OF_INHERITANCE") or ".",
             "GENOMISER_GENE_SCORE": get(model, "EXOMISER_GENE_COMBINED_SCORE", "GENE_SCORE", "EXOMISER_GENE_SCORE") or ".",
             "GENOMISER_GENE_PHENOTYPE_SCORE": get(model, "EXOMISER_GENE_PHENO_SCORE", "PHENOTYPE_SCORE") or ".",
+            "GENOMISER_GENE_VARIANT_SCORE": get(model, "EXOMISER_GENE_VARIANT_SCORE", "GENE_VARIANT_SCORE") or ".",
             "GENOMISER_SV_MATCH_STATUS": status,
             "GENOMISER_SV_VARIANT_SCORE": (get(matches[0], "VARIANT_SCORE", "EXOMISER_VARIANT_SCORE") or ".") if len(matches) == 1 else ".",
         })
-    columns = ["GENOMISER_GENE_RANK", "GENOMISER_MODEL_RANK", "GENOMISER_GENE_SCORE",
-               "GENOMISER_GENE_PHENOTYPE_SCORE", "GENOMISER_SV_MATCH_STATUS", "GENOMISER_SV_VARIANT_SCORE"]
+    columns = ["GENOMISER_GENE_RANK", "GENOMISER_MODEL_RANK", "GENOMISER_MODEL_MOI", "GENOMISER_GENE_SCORE",
+               "GENOMISER_GENE_PHENOTYPE_SCORE", "GENOMISER_GENE_VARIANT_SCORE", "GENOMISER_SV_MATCH_STATUS", "GENOMISER_SV_VARIANT_SCORE"]
     for col in columns:
         out[col] = [row[col] for row in annotations]
     return out
