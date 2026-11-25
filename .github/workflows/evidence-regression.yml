@@ -53,7 +53,7 @@ jobs:
           grep -qx 'genomiser_genome' /tmp/saved_lrs_rules.txt
           grep -qx 'saved_evidence_plots' /tmp/saved_lrs_rules.txt
           grep -qx 'assess_sv_alleles' /tmp/saved_lrs_rules.txt
-          if grep -Eq '^(binned_read_depth|samplot_candidate_breakpoints) /tmp/saved_lrs_rules.txt; then
+          if grep -Eq '^(binned_read_depth|samplot_candidate_breakpoints)
             echo "Unexpected BAM-dependent rule registered"
             exit 1
           fi
@@ -70,7 +70,7 @@ jobs:
         run: |
           snakemake -s Snakefile_SRS_WGS --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz
  /tmp/saved_lrs_rules.txt; then
-            echo "Unexpected BAM-dependent or upstream assessment rule registered"
+            echo "Unexpected BAM-dependent rule registered"
             exit 1
           fi
 
