@@ -38,8 +38,8 @@ def annotate_genomiser(table, genes_path, variants_path):
         annotations.append({
             "GENOMISER_GENE_RANK": ranks.get(symbol, "."),
             "GENOMISER_MODEL_RANK": get(model, "#RANK") or ".",
-            "GENOMISER_GENE_SCORE": get(model, "GENE_SCORE", "EXOMISER_GENE_SCORE") or ".",
-            "GENOMISER_GENE_PHENOTYPE_SCORE": get(model, "PHENOTYPE_SCORE", "EXOMISER_GENE_PHENO_SCORE") or ".",
+            "GENOMISER_GENE_SCORE": get(model, "EXOMISER_GENE_COMBINED_SCORE", "GENE_SCORE", "EXOMISER_GENE_SCORE") or ".",
+            "GENOMISER_GENE_PHENOTYPE_SCORE": get(model, "EXOMISER_GENE_PHENO_SCORE", "PHENOTYPE_SCORE") or ".",
             "GENOMISER_SV_MATCH_STATUS": status,
             "GENOMISER_SV_VARIANT_SCORE": (get(matches[0], "VARIANT_SCORE", "EXOMISER_VARIANT_SCORE") or ".") if len(matches) == 1 else ".",
         })
