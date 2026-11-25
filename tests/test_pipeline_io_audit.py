@@ -131,7 +131,7 @@ class PipelineIOAuditTests(unittest.TestCase):
         self.assertNotIn("Bootstrap existing pre-checksum", lrs)
         srs = (ROOT / "snakemake_pipelines/srs_wgs_pipeline/Snakefile_SRS_WGS").read_text()
         self.assertIn("/opt/deepvariant/bin/run_deepvariant", srs)
-        self.assertIn("apptainer exec --bind", srs)
+        self.assertIn("apptainer exec {params.gpu_flag} --bind", srs)
         self.assertIn("--cache_version {VEP_CACHE_VERSION}", srs)
 
 

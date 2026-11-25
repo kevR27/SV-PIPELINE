@@ -19,10 +19,9 @@ path: "/DATA/casadei7/nanopore/WGS/GENOMISER_VCF_ONLY_RESULTS"
 
 # Clinical data stay PRIVATE on the server: one row per patient.
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
-# Requested HON computational profile: confirmed patient HPO findings PLUS
-# shared HON reference terms; these are NOT additional confirmed clinical findings.
-# Blank patient findings remain unknown, never presumed absent.
-hpo_include_shared_hon_seeds: true
+# Same patient-observed query as standard workflows for a fair comparison.
+# Set true in every compared workflow only for a separately labelled core-HON sensitivity analysis.
+hpo_include_shared_hon_seeds: false
 hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
 
 # Required Genomiser analysis and resources.
@@ -36,3 +35,27 @@ genomiser_phenotype_data_version: "2512"
 genomiser_java: "java"
 genomiser_memory_gb: 32
 genomiser_benchmark_truth_tsv: null
+
+# Shared annotation and ranking resources (same as the standard LRS workflow).
+candidate_genes_list: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/PANEL_OA/optic_neuropathy_genes.txt"
+vep_cache_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/vep"
+vep_assembly: "GRCh38"
+gnomad_sv_vcf: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/gnomad/gnomad.v4.1.sv.sites.vcf.gz"
+ranking_rare_af: 0.001
+ranking_max_af: 0.01
+mitocarta_file: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/mitocarta/Human.MitoCarta3.0.xls"
+mitocarta_pathways_file: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/mitocarta/Human.MitoPathways3.0.gmx"
+monarch_nodes: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/monarch/monarch-kg_nodes.tsv"
+monarch_edges: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/monarch/monarch-kg_edges.tsv"
+annotsv_benign_af: 0.01
+annotsv_annotations_dir: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/AnnotSV_annotations"
+allele_patient_context: null
+allele_disease_models: null
+allele_evidence: null
+allele_family_genotypes: null
+allele_rare_af: 0.01
+allele_min_support: 5
+allele_min_gq: 20
+allele_min_dp: 5
+allele_compact_output: true
+vep_cache_version: 116

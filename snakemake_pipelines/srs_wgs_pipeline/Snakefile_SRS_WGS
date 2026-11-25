@@ -261,6 +261,7 @@ GENOMISER_BENCHMARK_TARGETS = expand(
     PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json",
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
+GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=SAMPLES)
 GENOMISER_TARGETS = expand(
     PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json",
     sample=SAMPLES,
@@ -328,6 +329,7 @@ rule all:
             SAMPLOT_TARGETS,
             GENOMISER_TARGETS,
             GENOMISER_BENCHMARK_TARGETS,
+            GENOMISER_COMPARISON_TARGETS,
             CANDIDATE_BENCHMARK_TARGETS,
             SV_BENCHMARK_TARGETS,
         ],
@@ -1607,3 +1609,5 @@ include: "srs_interpretation.smk"
 GENOMISER_CUSTOM_GENE = PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv"
 GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
 include: "../common/benchmark_genomiser.smk"
+
+include: "../common/compare_genomiser_rankings.smk"

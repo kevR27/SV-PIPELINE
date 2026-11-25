@@ -106,7 +106,7 @@ PLOT_CONTEXT_ARGS += " --random-draws " + str(int(config.get("genome_plot_random
 def postprocess_required_files(sample):
     """Upstream files required by the active downstream interpretation DAG."""
     return [
-        PATH + f"{sample}/gene_discovery/{sample}_allele_assessment.tsv",
+        PATH + f"{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
         PATH + f"{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         PATH + f"{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         PATH + f"{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
@@ -234,6 +234,7 @@ GENOMISER_BENCHMARK_TARGETS = expand(
     PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json",
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
+GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=POSTPROCESS_SAMPLES)
 
 # Default post-processing target:
 # retain one compressed, authoritative SV-gene table per completed sample.
@@ -243,6 +244,7 @@ rule all:
     input:
         GENOMISER_TARGETS,
         GENOMISER_BENCHMARK_TARGETS,
+        GENOMISER_COMPARISON_TARGETS,
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
             sample=POSTPROCESS_SAMPLES,
@@ -809,11 +811,9 @@ rule all_thesis_plots:
         atlas=lambda wc: ATLAS_OVERVIEW_TARGETS + ATLAS_NATIVE_TARGETS
 
 
-# A BAM-free run consumes previously saved allele-assessment TSVs as
-# external inputs. Do not register the upstream assessment rule, whose
-# dependencies would otherwise pull read/caller-stage outputs into the DAG.
-if not BAM_FREE_DOWNSTREAM:
-    include: "../common/allele_assessment.smk"
+# Reassess from saved integrated and phenotype TSVs, including in BAM-free mode.
+# No BAM caller producer is registered in this postprocess DAG.
+include: "../common/allele_assessment.smk"
 
 
 # Optional additive thesis-analysis layer. Existing rules/outputs are preserved.
@@ -833,3 +833,5 @@ include: "../common/alphagenome_atlas.smk"
 GENOMISER_CUSTOM_GENE = PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv"
 GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
 include: "../common/benchmark_genomiser.smk"
+
+include: "../common/compare_genomiser_rankings.smk"

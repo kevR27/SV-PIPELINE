@@ -9,6 +9,8 @@ def allele_input_path(key, sample):
     value = config.get("allele_evidence" if key == "allele_evidence" else "allele_" + key)
     if isinstance(value, dict):
         value = value.get(str(sample))
+    if not value and key == "patient_context" and config.get("patient_profiles_tsv"):
+        return [PATH + f"{sample}/clinical/{sample}.allele_patient_context.tsv"]
     return [str(value)] if value else []
 
 

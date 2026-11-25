@@ -20,7 +20,7 @@ from sv_evidence_common import MISSING, number
 # INFO/read-name and transcript JSON fields can exceed the csv default of 128 KiB.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
-VERSION = "sv-allele-evidence-v1.4"
+VERSION = "sv-allele-evidence-v2-status-only"
 DOMAINS = ("POPULATION", "TECHNICAL", "DISRUPTION", "INHERITANCE", "PHENOTYPE", "DISEASE_MECHANISM")
 EFFECTS = {"LOF", "COPY_GAIN", "GOF", "DOMINANT_NEGATIVE", "NO_DISRUPTION", "OTHER", "UNKNOWN"}
 MOIS = {"AD", "AR", "XLD", "XLR", "MT", "UNKNOWN"}
@@ -74,8 +74,8 @@ def genotype(value):
     return "HOM_ALT" if all(x == "1" for x in parts) else "HET"
 
 
-def domain(status, points=0, detail="."):
-    return status, points, detail
+def domain(status, detail="."):
+    return status, detail
 
 
 def population(row, evidence, rare_af):
@@ -90,14 +90,14 @@ def population(row, evidence, rare_af):
         if match not in {"EXACT_ALLELE", "SEQUENCE_VALIDATED"} or not known(source):
             return domain("UNKNOWN_UNVERIFIED_EXTERNAL_AF", detail="AF requires allele match and population source")
         if af == 0:
-            return domain("NOT_OBSERVED_IN_REPORTED_POPULATION", 1, f"AF=0;source={source};absence is not pathogenicity")
+            return domain("NOT_OBSERVED_IN_REPORTED_POPULATION", f"AF=0;source={source};absence is not pathogenicity")
         if af <= rare_af:
-            return domain("LOW_FREQUENCY_ALLELE_MATCH", 2, f"AF={af};source={source}")
-        return domain("ABOVE_RESEARCH_AF_THRESHOLD", 0, f"AF={af};source={source};threshold={rare_af}")
+            return domain("LOW_FREQUENCY_ALLELE_MATCH", f"AF={af};source={source}")
+        return domain("ABOVE_RESEARCH_AF_THRESHOLD", f"AF={af};source={source};threshold={rare_af}")
     af = number(row.get("NEEDLR_AF"))
     if row.get("NEEDLR_STATUS") == "MATCHED" and af is not None and 0 <= af <= 1:
         status = "PROVISIONAL_LOW_FREQUENCY_MATCH" if af <= rare_af else "PROVISIONAL_HIGH_FREQUENCY_MATCH"
-        return domain(status, 0, f"AF={af};field={row.get('NEEDLR_AF_SOURCE_FIELD', '.')};coordinate-only match;requires allele review")
+        return domain(status, f"AF={af};field={row.get('NEEDLR_AF_SOURCE_FIELD', '.')};coordinate-only match;requires allele review")
     return domain("UNKNOWN", detail=f"needLR={row.get('NEEDLR_STATUS', 'NOT_SUPPLIED')}")
 
 
@@ -128,14 +128,14 @@ def technical(row, min_support):
     failures = sorted({r.get("EVIDENCE_FAIL_REASONS", "UNSPECIFIED") for r in data if r.get("EVIDENCE_STATUS") == "FAIL"})
     detail = f"callers={count};max_support={max(support) if support else '.'};match={method};flags={';'.join(sorted(all_flags)) or '.'};FILTER={filt};current_filter_failures={';'.join(failures) or '.'}"
     if "AMBIGUOUS" in method or flagged or filt not in {"PASS", ".", ""}:
-        return domain("REVIEW_REQUIRED", 0, detail)
+        return domain("REVIEW_REQUIRED", detail)
     if not support:
-        return domain("UNKNOWN_READ_SUPPORT", 0, detail)
+        return domain("UNKNOWN_READ_SUPPORT", detail)
     if max(support) < min_support:
-        return domain("LOW_READ_SUPPORT", 0, detail)
+        return domain("LOW_READ_SUPPORT", detail)
     if count is not None and count >= 2:
-        return domain("MULTICALLER_READ_SUPPORTED", 2, detail + ";shared reads are not independent validation")
-    return domain("SINGLE_CALLER_READ_SUPPORTED", 1, detail)
+        return domain("MULTICALLER_READ_SUPPORTED", detail + ";shared reads are not independent validation")
+    return domain("SINGLE_CALLER_READ_SUPPORTED", detail)
 
 
 def transcript_breakpoints(row, ann):
@@ -258,7 +258,7 @@ def disruption(row, evidence):
         level = evidence.get("effect_status", ".")
         if level not in {"PREDICTED", "VALIDATED"}:
             raise ValueError("Non-unknown effect requires PREDICTED/VALIDATED effect_status")
-        return domain(f"{level}_{effect}", 0 if effect == "NO_DISRUPTION" else (2 if level == "VALIDATED" else 1),
+        return domain(f"{level}_{effect}",
                       evidence["source"]), effect
     annotations = json.loads(row.get("ANNOTSV_GENE_ROWS_JSON", "[]"))
     svtype = row.get("SVTYPE")
@@ -276,15 +276,14 @@ def disruption(row, evidence):
                 candidates.add("TRANSCRIPT_BREAKPOINT_POSSIBLE")
     detail = ";".join(sorted(candidates)) or functional_context(row)
     if "CDS_LOSS_PREDICTED" in candidates:
-        return domain("CDS_LOSS_PREDICTED", 1, detail + ";LOF not established"), "POSSIBLE_LOF"
+        return domain("CDS_LOSS_PREDICTED", detail + ";LOF not established"), "POSSIBLE_LOF"
     if "TRANSCRIPT_COPY_GAIN_PREDICTED" in candidates:
         return domain(
             "TRANSCRIPT_COPY_GAIN_PREDICTED",
-            1,
             detail + ";duplication structure/orientation and functional dosage consequence unresolved",
         ), "POSSIBLE_COPY_GAIN"
     if candidates:
-        return domain("BREAKPOINT_DISRUPTION_POSSIBLE", 1, detail), "UNKNOWN"
+        return domain("BREAKPOINT_DISRUPTION_POSSIBLE", detail), "UNKNOWN"
     return domain("UNKNOWN", detail=detail), "UNKNOWN"
 
 
@@ -341,8 +340,8 @@ def inheritance(row, model, patient, gt, family, min_gq, min_dp):
         return domain("PLOIDY_REVIEW_REQUIRED", detail=detail)
     if moi == "AR":
         if gt == "HOM_ALT":
-            return domain("BIALLELIC_GENOTYPE_COMPATIBLE", 2, detail + ";segregation not established")
-        return domain("SECOND_ALLELE_OR_TRANS_PHASE_REQUIRED", 0, detail)
+            return domain("BIALLELIC_GENOTYPE_COMPATIBLE", detail + ";segregation not established")
+        return domain("SECOND_ALLELE_OR_TRANS_PHASE_REQUIRED", detail)
     parents = []
     for relation in ("mother_id", "father_id"):
         parent = family.get((patient.get(relation, "."), row["SV_ID"]), {})
@@ -350,8 +349,8 @@ def inheritance(row, model, patient, gt, family, min_gq, min_dp):
         valid = known(parent.get("source")) and gq is not None and dp is not None and gq >= min_gq and dp >= min_dp
         parents.append(genotype(parent.get("gt")) if valid else "UNKNOWN")
     if gt == "HET" and parents == ["HOM_REF", "HOM_REF"]:
-        return domain("CANDIDATE_DE_NOVO", 2, detail + ";parentage/mosaicism/validation require review")
-    return domain("DOMINANT_GENOTYPE_COMPATIBLE", 1, detail + ";segregation not established")
+        return domain("CANDIDATE_DE_NOVO", detail + ";parentage/mosaicism/validation require review")
+    return domain("DOMINANT_GENOTYPE_COMPATIBLE", detail + ";segregation not established")
 
 
 def transmitted_parent(row, patient, family, min_gq, min_dp):
@@ -411,11 +410,9 @@ def phenotype(gene, model, patient, gene_hpo):
     if not reference:
         return domain("UNKNOWN_REFERENCE_PHENOTYPES")
     matched, negative = present & reference, absent & reference
-    fraction = len(matched) / len(present)
-    points = 2 if fraction >= 0.5 else (1 if matched else 0)
     status = "PATIENT_TERM_CONFLICT_REVIEW" if negative else ("EXACT_TERM_MATCH" if matched else "NO_EXACT_TERM_MATCH")
     detail = f"scope={scope};matched={';'.join(sorted(matched)) or '.'};present_count={len(present)};negative_matches={';'.join(sorted(negative)) or '.'};exact matching only, not semantic similarity"
-    return domain(status, 0 if negative else points, detail)
+    return domain(status, detail)
 
 
 def disease_mechanism(row, model, effect):
@@ -427,15 +424,15 @@ def disease_mechanism(row, model, effect):
     compatible = {"LOF": {"LOF", "HAPLOINSUFFICIENCY"}, "COPY_GAIN": {"TRIPLOSENSITIVITY"},
                   "GOF": {"GOF"}, "DOMINANT_NEGATIVE": {"DOMINANT_NEGATIVE"}}
     if effect in compatible and mechanism in compatible[effect] and validity in {"DEFINITIVE", "STRONG", "MODERATE", "LIMITED"}:
-        return domain("DISEASE_MECHANISM_COMPATIBLE", 1 if validity == "LIMITED" else 2, detail)
+        return domain("DISEASE_MECHANISM_COMPATIBLE", detail)
     if effect in {"POSSIBLE_LOF", "POSSIBLE_COPY_GAIN"} and mechanism in compatible.get(effect.removeprefix("POSSIBLE_"), set()) and validity in {"DEFINITIVE", "STRONG", "MODERATE", "LIMITED"}:
-        return domain("DISEASE_MECHANISM_POSSIBLE", 1, detail)
+        return domain("DISEASE_MECHANISM_POSSIBLE", detail)
     if effect in compatible and mechanism not in {"UNKNOWN", "OTHER"} and mechanism not in compatible[effect]:
         return domain("MECHANISM_MISMATCH_REVIEW", detail=detail)
     if model.get("disease_id", ".") == ".":
         dosage = row.get("DOSAGE_RELEVANCE", "")
         if (effect in {"LOF", "POSSIBLE_LOF"} and dosage == "HI_SUFFICIENT_EVIDENCE") or (effect in {"COPY_GAIN", "POSSIBLE_COPY_GAIN"} and dosage == "TS_SUFFICIENT_EVIDENCE"):
-            return domain("GENE_DOSAGE_SUPPORT_ONLY", 1, "ClinGen HI/TS;not a disease-specific mechanism assignment")
+            return domain("GENE_DOSAGE_SUPPORT_ONLY", "ClinGen HI/TS;not a disease-specific mechanism assignment")
     return domain("UNKNOWN", detail=detail)
 
 
@@ -445,6 +442,7 @@ def assess(row, model, patient, evidence, family, gene_hpo, args):
     disruption_result, effect = disruption(row, evidence)
     vep_status, vep_detail = vep_transcript_context(row)
     result = {"ALLELE_ASSESSMENT_VERSION": VERSION, "ALLELE_DISEASE_ID": model.get("disease_id", "."),
+              "ALLELE_DISEASE_VALIDITY": model.get("validity", "UNKNOWN"),
               "ALLELE_DISEASE_SOURCE": model.get("source", "."), "ALLELE_GENOTYPE": gt,
               "ALLELE_DISEASE_HON_RELEVANCE": model.get("hon_relevance", "UNKNOWN"),
               "ALLELE_DISEASE_HON_SOURCE": model.get("hon_relevance_source", "."),
@@ -467,24 +465,51 @@ def assess(row, model, patient, evidence, family, gene_hpo, args):
     if gt == "HET" and components[5][0] in {"DISEASE_MECHANISM_COMPATIBLE", "DISEASE_MECHANISM_POSSIBLE"}:
         partners = trans_candidates(row, model, patient, family, args)
         if partners:
-            components[3] = domain("INFERRED_TRANS_CANDIDATE_REVIEW", 1,
+            components[3] = domain("INFERRED_TRANS_CANDIDATE_REVIEW",
                 "Opposite parental transmission;partners=" + ";".join(partners) + ";parentage, allele identity and validation require review")
     result["ALLELE_TRANS_PARTNER_IDS"] = ";".join(partners) or "."
     flags, unknown = [], []
-    for name, (status, points, detail) in zip(DOMAINS, components):
+    for name, (status, detail) in zip(DOMAINS, components):
         result[f"ALLELE_{name}_STATUS"] = status
-        result[f"ALLELE_{name}_POINTS"] = points
         result[f"ALLELE_{name}_DETAIL"] = detail
-        if status.startswith("UNKNOWN"):
+        if status.startswith(("UNKNOWN", "PROVISIONAL")) or status in {"PLOIDY_OR_CHROMOSOME_REVIEW", "PLOIDY_REVIEW_REQUIRED", "SEX_LINKED_REVIEW_REQUIRED"}:
             unknown.append(name)
         if any(token in status for token in ("CONFLICT", "REVIEW", "REQUIRED", "PROVISIONAL", "ABOVE_", "LOW_READ")):
             flags.append(f"{name}:{status}")
-    result["ALLELE_RESEARCH_SCORE"] = sum(x[1] for x in components)
-    result["ALLELE_SCORE_MAXIMUM"] = 12
+    result["ALLELE_DOMAINS_UNKNOWN"] = len(unknown)
+    result["ALLELE_DOMAINS_EVALUATED"] = len(DOMAINS) - len(unknown)
+    result["ALLELE_EVIDENCE_COMPLETENESS"] = round(100 * (len(DOMAINS) - len(unknown)) / len(DOMAINS), 2)
     result["ALLELE_UNKNOWN_DOMAINS"] = ";".join(unknown) or "."
     result["ALLELE_REVIEW_FLAGS"] = ";".join(flags) or "."
-    result["ALLELE_INTERPRETATION"] = "RESEARCH_PRIORITIZATION_ONLY_NOT_ACMG"
+    result["ALLELE_INTERPRETATION"] = "EVIDENCE_STATUS_ONLY_NOT_ACMG"
     return result
+
+
+def hypothesis_key(row):
+    """Categorical priority, never a summed score. Conflicts precede no promotion."""
+    hon = row.get("ALLELE_DISEASE_HON_RELEVANCE", "UNKNOWN")
+    mechanism = row.get("ALLELE_DISEASE_MECHANISM_STATUS", "UNKNOWN")
+    inheritance = row.get("ALLELE_INHERITANCE_STATUS", "UNKNOWN")
+    phenotype = row.get("ALLELE_PHENOTYPE_STATUS", "UNKNOWN")
+    conflict = any("CONFLICT" in status or "MISMATCH" in status
+                   for status in (mechanism, inheritance, phenotype))
+    return (
+        conflict,
+        {"SUPPORTS_HON": 0, "UNKNOWN": 1, "OTHER_DISEASE": 2}.get(hon, 1),
+        {"DISEASE_MECHANISM_COMPATIBLE": 0, "DISEASE_MECHANISM_POSSIBLE": 1,
+         "GENE_DOSAGE_SUPPORT_ONLY": 2}.get(mechanism, 3),
+        {"DEFINITIVE": 0, "STRONG": 1, "MODERATE": 2, "LIMITED": 3}.get(row.get("ALLELE_DISEASE_VALIDITY"), 4),
+        {"BIALLELIC_GENOTYPE_COMPATIBLE": 0, "DOMINANT_GENOTYPE_COMPATIBLE": 0,
+         "CANDIDATE_DE_NOVO": 0, "INFERRED_TRANS_CANDIDATE_REVIEW": 1}.get(inheritance, 2),
+        {"EXACT_TERM_MATCH": 0, "NO_EXACT_TERM_MATCH": 2}.get(phenotype, 1),
+        row.get("ALLELE_DISEASE_ID", "."), row.get("ALLELE_DISEASE_MOI", "."),
+        row.get("ALLELE_DISEASE_MECHANISM", "."),
+    )
+
+
+def obsolete_allele_column(column):
+    return column in {"ALLELE_RESEARCH_SCORE", "ALLELE_RESEARCH_RANK", "ALLELE_SCORE_MAXIMUM"} or (
+        column.startswith("ALLELE_") and column.endswith("_POINTS"))
 
 
 def write_table(path, data, columns):
@@ -598,6 +623,7 @@ def main():
         if data
         else list(csv.DictReader(open(args.integrated), delimiter="\t").fieldnames or [])
     )
+    input_columns = [column for column in input_columns if not obsolete_allele_column(column)]
     output_base_columns = (
         compact_output_columns(input_columns)
         if args.compact_output
@@ -616,7 +642,7 @@ def main():
         base_row = (
             compact_output_row(row, output_base_columns)
             if args.compact_output
-            else row
+            else {column: row.get(column, ".") for column in output_base_columns}
         )
         assessments = []
         for model in by_gene.get(gene, [{}]):
@@ -628,20 +654,16 @@ def main():
             assessments.append(assessment)
             all_hypotheses.append({**base_row, **assessment})
         # No evidence is combined across different diseases. Ties are deterministic.
-        best = sorted(assessments, key=lambda r: (-r["ALLELE_RESEARCH_SCORE"], r["ALLELE_DISEASE_ID"], r["ALLELE_DISEASE_MOI"], r["ALLELE_DISEASE_MECHANISM"]))[0]
+        best = min(assessments, key=hypothesis_key)
         enriched.append({**base_row, **best, "ALLELE_DISEASE_HYPOTHESIS_COUNT": len(assessments)})
-    scores = sorted({r["ALLELE_RESEARCH_SCORE"] for r in enriched}, reverse=True)
-    ranks = {score: i + 1 for i, score in enumerate(scores)}
-    for r in enriched:
-        r["ALLELE_RESEARCH_RANK"] = ranks[r["ALLELE_RESEARCH_SCORE"]]
-    all_hypotheses.sort(key=lambda r: (-r["ALLELE_RESEARCH_SCORE"], r["SV_ID"], r["GENES"], r["ALLELE_DISEASE_ID"]))
+    all_hypotheses.sort(key=lambda r: (r["SV_ID"], r["GENES"], hypothesis_key(r)))
     original_columns = output_base_columns
     # Stable schema also for an empty master callset.
     empty = assess({"SV_ID": ".", "GENES": "."}, {}, {}, {}, {}, {}, args)
     extra = list(empty) + ["ALLELE_DISEASE_MOI", "ALLELE_DISEASE_MECHANISM"]
     if set(original_columns) & set(extra):
         raise ValueError("Input already has allele assessment columns; use the original integrated table")
-    write_table(args.output, enriched, original_columns + extra + ["ALLELE_DISEASE_HYPOTHESIS_COUNT", "ALLELE_RESEARCH_RANK"])
+    write_table(args.output, enriched, original_columns + extra + ["ALLELE_DISEASE_HYPOTHESIS_COUNT"])
     write_table(args.hypotheses_output, all_hypotheses, original_columns + extra)
     manifest = {"model": VERSION, "parameters": parameters, "input_sha256": {}}
     for key in ("integrated", "phenotypes", "patient_context", "disease_models", "allele_evidence", "family_genotypes"):
@@ -654,7 +676,7 @@ def main():
             manifest["input_sha256"][key] = digest.hexdigest()
     Path(args.manifest).parent.mkdir(parents=True, exist_ok=True)
     Path(args.manifest).write_text(json.dumps(manifest, indent=2) + "\n")
-    print(f"[OK] preserved_rows={len(enriched)} disease_hypotheses={len(all_hypotheses)}; research-only score")
+    print(f"[OK] preserved_rows={len(enriched)} disease_hypotheses={len(all_hypotheses)}; categorical evidence only")
 
 
 if __name__ == "__main__":

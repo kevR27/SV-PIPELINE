@@ -229,6 +229,10 @@ rule srs_snv_sv_candidates:
 rule srs_finalize_candidate_ranking:
     input:
         genomiser=rules.genomiser_genome.output.manifest,
+        genomiser_genes=rules.genomiser_genome.output.genes,
+        genomiser_variants=rules.genomiser_genome.output.variants,
+        genomiser_comparison=SCRIPTS + "/annotate_genomiser_comparison.py",
+        benchmark_helper=SCRIPTS + "/benchmark_genomiser.py",
         genes=rules.srs_integrate_large_sv_depth.output.genes,
         sv=rules.srs_integrate_large_sv_depth.output.sv,
         pairs=rules.srs_snv_sv_candidates.output.tsv,
@@ -259,7 +263,7 @@ rule srs_finalize_candidate_ranking:
         python {input.script:q} --genes {input.genes:q} --sv {input.sv:q} \
             --snv-sv {input.pairs:q} --sample {wildcards.sample:q} \
             {params.mito_flag} --clinical-evidence {input.evidence:q} \
-            --clinical-output {output.clinical:q} \
+            --genomiser-genes {input.genomiser_genes:q} --genomiser-variants {input.genomiser_variants:q} --clinical-output {output.clinical:q} \
             --gene-output {output.genes:q} --sv-output {output.sv:q} \
             --mito-output {output.mito:q}
         test -s {output.genes:q}

@@ -218,8 +218,6 @@ def main():
         for source in ["STRAGLR_MATCH", "TLDR_MATCH", "LONGPHASE_MATCH", "LONGPHASE_PHASED"]:
             status = unique[source].fillna("NOT_AVAILABLE").astype(str).str.upper() if source in unique else pd.Series("NOT_AVAILABLE", index=unique.index)
             rows[-1][f"{source.lower()}_unavailable_SV_count"] = int(status.isin(["NOT_AVAILABLE", "UNKNOWN", ".", ""]).sum())
-        if "ALLELE_RESEARCH_SCORE" in unique:
-            rows[-1]["max_allele_research_score"] = pd.to_numeric(unique["ALLELE_RESEARCH_SCORE"], errors="coerce").max()
             rows[-1]["alleles_with_review_flags"] = int(unique["ALLELE_REVIEW_FLAGS"].fillna(".").ne(".").sum())
 
     # Retain join keys for a valid empty/all-intergenic callset.

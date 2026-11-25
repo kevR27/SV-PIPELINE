@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from build_diagnostic_candidates import build_clinical_table
+from annotate_genomiser_comparison import annotate_genomiser
 
 from ranking_common import (
     GENE_TIER_PRIORITY,
@@ -87,7 +88,11 @@ def main():
     p.add_argument("--mito-output", default=None)
     p.add_argument("--clinical-evidence", help="Complete integrated evidence, including unannotated SVs")
     p.add_argument("--clinical-output", help="Separate joint AnnotSV/HON clinical review ranking")
+    p.add_argument("--genomiser-genes")
+    p.add_argument("--genomiser-variants")
     args = p.parse_args()
+    if bool(args.genomiser_genes) != bool(args.genomiser_variants):
+        p.error("Both Genomiser TSVs must be supplied together")
     if bool(args.clinical_evidence) != bool(args.clinical_output):
         p.error("clinical-evidence and clinical-output must be supplied together")
 
@@ -100,6 +105,8 @@ def main():
     def write_clinical(context):
         if clinical_evidence is not None:
             result = build_clinical_table(clinical_evidence, context)
+            if args.genomiser_genes:
+                result = annotate_genomiser(result, args.genomiser_genes, args.genomiser_variants)
             path = Path(args.clinical_output)
             path.parent.mkdir(parents=True, exist_ok=True)
             result.to_csv(path, sep="\t", index=False)

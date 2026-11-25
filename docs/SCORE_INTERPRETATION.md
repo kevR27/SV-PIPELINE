@@ -529,8 +529,9 @@ including heteroplasmy, which is outside a generic nuclear SV rank.
 ## 11. Old fields retained for compatibility
 
 Some older fields such as `PHENOTYPE_SCORE`,
-`INTEGRATED_DISCOVERY_SCORE` and `ALLELE_RESEARCH_SCORE` remain in the
-tables for provenance/backward compatibility.
+`INTEGRATED_DISCOVERY_SCORE` remain in the tables for provenance/backward
+compatibility. The old 0–12 allele score, per-domain points and allele-score
+rank are retired. Categorical hypothesis selection and completeness are used instead.
 
 They are **not** the primary final ordering model.
 

@@ -466,6 +466,7 @@ def main():
                 continue
             df[column] = delta[column].values
 
+    df = df.drop(columns=[c for c in df if c in {"ALLELE_RESEARCH_SCORE", "ALLELE_RESEARCH_RANK", "ALLELE_SCORE_MAXIMUM"} or (c.startswith("ALLELE_") and c.endswith("_POINTS"))])
     hon_semantic_by_gene = {}
     if args.phenotypes and args.hpo_seeds and args.edges:
         hon_semantic_by_gene = generic_hon_semantic_map(

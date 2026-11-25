@@ -119,7 +119,7 @@ class SavedOutputTests(unittest.TestCase):
     def test_contained_inversion_gene_has_no_disruption_points(self):
         row={"SVTYPE":"INV","START":"100","END":"1000", "ANNOTSV_GENE_ROWS_JSON":json.dumps([
              {"Tx_start":"200","Tx_end":"800","Overlapped_CDS_percent":"100","Location":"txStart-txEnd"}])}
-        self.assertEqual(allele.disruption(row,{})[0][1],0)
+        self.assertEqual(allele.disruption(row,{})[0][0],"UNKNOWN")
         self.assertIn("NO_INTRAGENIC_BREAKPOINT",allele.functional_context(row))
 
     def test_current_filter_failure_is_visible_in_technical_assessment(self):
@@ -127,7 +127,7 @@ class SavedOutputTests(unittest.TestCase):
              "CALLER_EVIDENCE_JSON":json.dumps([{"CALLER_SUPPORT":"9","EVIDENCE_STATUS":"FAIL","EVIDENCE_FAIL_REASONS":"SIZE_BELOW_MIN"}])}
         result=allele.technical(row,5)
         self.assertEqual(result[0],"REVIEW_REQUIRED")
-        self.assertIn("SIZE_BELOW_MIN", result[2])
+        self.assertIn("SIZE_BELOW_MIN", result[1])
 
     def test_rebuild_saved_outputs_preserves_sv_and_quarantines_bad_gene(self):
         with tempfile.TemporaryDirectory() as tmp:

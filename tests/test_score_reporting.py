@@ -131,11 +131,11 @@ class ScoreReportingTests(unittest.TestCase):
     def test_bnd_missing_length_is_informational(self):
         row={'SVTYPE':'BND','CALLER_COUNT':'2','FILTER':'PASS','CALLER_EVIDENCE_MATCH':'IDLIST',
              'CALLER_EVIDENCE_JSON':json.dumps([{'CALLER_SUPPORT':'20','EVIDENCE_FLAGS':'NO_SVLEN'}])}
-        self.assertEqual(allele.technical(row,5)[1],2)
-        self.assertIn('NO_SVLEN',allele.technical(row,5)[2])
-        self.assertEqual(allele.technical({**row,'SVTYPE':'DEL'},5)[1],0)
+        self.assertEqual(allele.technical(row,5)[0],'MULTICALLER_READ_SUPPORTED')
+        self.assertIn('NO_SVLEN',allele.technical(row,5)[1])
+        self.assertEqual(allele.technical({**row,'SVTYPE':'DEL'},5)[0],'REVIEW_REQUIRED')
         row['CALLER_EVIDENCE_JSON']=json.dumps([{'CALLER_SUPPORT':'20','EVIDENCE_FLAGS':'NO_SVLEN;LOW_GQ'}])
-        self.assertEqual(allele.technical(row,5)[1],0)
+        self.assertEqual(allele.technical(row,5)[0],'REVIEW_REQUIRED')
 
     def test_absent_complementary_sources_are_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:

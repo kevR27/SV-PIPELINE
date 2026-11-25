@@ -195,11 +195,18 @@ class PatientProfileTests(unittest.TestCase):
 
 
 class VcfOnlyWorkflowTests(unittest.TestCase):
-    def test_bam_free_entrypoint_contains_only_genomiser_rules(self):
+    def test_bam_free_entrypoint_contains_both_ranking_branches(self):
         snakefile = (ROOT / "snakemake_pipelines" / "genomiser_vcf_only" /
                      "Snakefile").read_text(encoding="utf-8")
         self.assertIn('include: "../common/patient_profiles.smk"', snakefile)
         self.assertIn('include: "../common/genomiser.smk"', snakefile)
+        self.assertIn('include: "custom_ranking.smk"', snakefile)
+        custom = (ROOT / "snakemake_pipelines/genomiser_vcf_only/custom_ranking.smk").read_text()
+        self.assertIn("rule vcf_only_final_ranking:", custom)
+        self.assertIn("rank_sv_gene_events.py", custom)
+        self.assertIn("finalize_candidate_ranking.py", custom)
+        self.assertNotIn("rule jasmine_merge:", custom)
+        self.assertNotIn("rule binned_read_depth:", custom)
         self.assertNotIn("bam=lambda", snakefile)
         self.assertNotIn("bai=lambda", snakefile)
         self.assertNotIn("rule clair3_snp_calling:", snakefile)

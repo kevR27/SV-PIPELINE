@@ -25,7 +25,7 @@ def required_sources(sample):
     return {
         "small_variants": prefix + f"snp_clair3/{sample}.vcf.gz",
         "merged_structural_variants": prefix + f"sv/merged/{sample}_merged_SV.vcf.gz",
-        "allele_assessment": prefix + f"gene_discovery/{sample}_allele_assessment.tsv",
+        "integrated_evidence": prefix + f"gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
         "initial_gene_ranking": prefix + f"gene_discovery/{sample}_ranked_candidates.tsv",
         "gene_phenotype_evidence": prefix + f"gene_discovery/{sample}_human_gene_phenotypes.tsv",
         "straglr_annotation": prefix + f"sv/straglr/{sample}_straglr.annotated.tsv",

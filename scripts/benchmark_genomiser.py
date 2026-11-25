@@ -59,6 +59,8 @@ def sequential_gene_ranks(data, column):
 
 def custom_global_gene_ranks(data, fields):
     """Reconstruct the final tier/event-based order without panel grouping."""
+    if not data:
+        return {}
     required = {"GENE", "FINAL_GENE_RELEVANCE_TIER",
                 "BEST_EVENT_FINAL_RANK_GLOBAL", "FINAL_GENE_RELEVANCE_DISPLAY_SCORE"}
     missing = required - fields
