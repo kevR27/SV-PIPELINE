@@ -105,6 +105,17 @@ def build_java_command(args, combined, options_file):
     java_command = [args.java, f"-Xmx{args.memory_gb}g"]
     if install_properties.is_file():
         java_command.append(f"-Dspring.config.location={install_properties}")
+    # Only the optional CADD comparison supplies these absolute GRCh38 paths.
+    # Command-line system properties override commented application.properties
+    # examples without editing the laboratory's baseline installation.
+    if getattr(args, "cadd_snv", None):
+        java_command.append(
+            f"-Dexomiser.hg38.cadd-snv-path={Path(args.cadd_snv).resolve()}"
+        )
+    if getattr(args, "cadd_indel", None):
+        java_command.append(
+            f"-Dexomiser.hg38.cadd-in-del-path={Path(args.cadd_indel).resolve()}"
+        )
     java_command += [
         f"-Dexomiser.data-directory={Path(args.data_dir).resolve()}",
         f"-Dexomiser.hg38.data-version={args.genome_version}",
@@ -129,6 +140,8 @@ def main():
     parser.add_argument("--jar", required=True)
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--remm", required=True, help="ReMM hg38 BGZF file, with .tbi index")
+    parser.add_argument("--cadd-snv", help="Optional GRCh38 CADD SNV scores .tsv.gz")
+    parser.add_argument("--cadd-indel", help="Optional GRCh38 CADD indel scores .tsv.gz")
     parser.add_argument("--genome-version", default="2512")
     parser.add_argument("--phenotype-version", default="2512")
     parser.add_argument("--java", default="java")
@@ -138,8 +151,20 @@ def main():
 
     if args.memory_gb < 8:
         raise ValueError("A genome-wide run needs sufficient memory (at least 8 GB configured)")
+    analysis = validate_analysis(args.analysis)
+    uses_cadd = "CADD" in analysis["pathogenicitySources"]
+    if uses_cadd and (not args.cadd_snv or not args.cadd_indel):
+        raise ValueError(
+            "CADD is enabled in the analysis YAML: provide both --cadd-snv "
+            "and --cadd-indel GRCh38 paths, each with a .tbi index."
+        )
+    if not uses_cadd and (args.cadd_snv or args.cadd_indel):
+        raise ValueError("CADD score paths supplied but CADD is not in pathogenicitySources")
     inputs = [Path(args.small_vcf), Path(args.sv_vcf), Path(args.phenopacket),
               Path(args.analysis), Path(args.jar), Path(args.remm), Path(args.remm + ".tbi")]
+    if uses_cadd:
+        for value in (args.cadd_snv, args.cadd_indel):
+            inputs.extend([Path(value), Path(value + ".tbi")])
     genome = Path(args.data_dir) / f"{args.genome_version}_hg38"
     phenotype = Path(args.data_dir) / f"{args.phenotype_version}_phenotype"
     missing = [str(path) for path in inputs if not path.is_file() or path.stat().st_size == 0]
@@ -151,7 +176,6 @@ def main():
             missing.append(str(folder) + " (no H2 .mv.db data files)")
     if missing:
         raise FileNotFoundError("Genomiser resources are missing/empty:\n" + "\n".join(missing))
-    analysis = validate_analysis(args.analysis)
     packet = json.loads(Path(args.phenopacket).read_text(encoding="utf-8"))
     if packet.get("subject", {}).get("id") != args.sample:
         raise ValueError("Phenopacket subject must match the sample ID")
@@ -215,6 +239,8 @@ def main():
         "genome_data_version": args.genome_version,
         "phenotype_data_version": args.phenotype_version,
         "remm": str(Path(args.remm).resolve()),
+        "cadd_snv": str(Path(args.cadd_snv).resolve()) if uses_cadd else None,
+        "cadd_indel": str(Path(args.cadd_indel).resolve()) if uses_cadd else None,
         "genomiser_genes": str(genes.resolve()),
         "genomiser_variants": str(variants.resolve()),
         "notes": "SV interpretation is caller/representation-dependent; BND and complex SV require review."

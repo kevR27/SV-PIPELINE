@@ -79,6 +79,9 @@ print("[LRS archived downstream] BAM-independent reanalysis; new coverage, Sampl
 # remain explicit external prerequisites rather than silently re-called.
 include: "../lrs/Snakefile_LRS_postprocess"
 
+# Optional separate CADD-supported Genomiser comparison, never changes default all.
+include: "cadd_comparison.smk"
+
 
 # Optional plots that can be rebuilt from existing tabular files and
 # coverage bins. This target intentionally excludes Samplot, XCI and
