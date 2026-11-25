@@ -27,7 +27,8 @@ if config.get("genomiser_cadd_enabled", False):
             cadd_snv_index=CADD_SNV + ".tbi",
             cadd_indel=CADD_INDEL,
             cadd_indel_index=CADD_INDEL + ".tbi",
-            runner=SCRIPTS + "/run_genomiser.py"
+            runner=SCRIPTS + "/run_genomiser.py",
+        sv_normalizer=SCRIPTS + "/prepare_genomiser_sv_vcf.py"
         output:
             genes=PATH + "{sample}/genomiser_cadd/{sample}.genomiser.genes.tsv",
             variants=PATH + "{sample}/genomiser_cadd/{sample}.genomiser.variants.tsv",

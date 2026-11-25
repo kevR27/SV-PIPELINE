@@ -249,3 +249,35 @@ recompute missing downstream dependencies. Inspect the dry-run carefully,
 check the archived-input audit, and preserve a backup of original downstream
 results before running. No BAM-based callers or new coverage/Samplot jobs are
 included in the archived downstream mode.
+
+## Genomiser Java heap exhaustion from sequence-encoded giant deletions
+
+Exomiser/Jannovar may fail with `java.lang.OutOfMemoryError: Java heap
+space` in `NucleotideDeletion.toHGVSString` when caller SV VCF records
+encode multi-megabase deletions as full REF sequences (e.g. 48 Mb REF
+for a deletion). The Genomiser runner now uses
+`scripts/prepare_genomiser_sv_vcf.py` to make a **separate**
+`<sample>/genomiser/sv.genomiser.symbolic.vcf.gz` (with .tbi index).
+
+For unambiguous single-allele, left-anchored deletion records with
+`REF` of at least 1000 bases, it replaces the long REF by its anchor
+base and ALT by `<DEL>`, and derives `END` and negative `SVLEN`
+from the original REF length. It never modifies the original
+`sv/merged/<sample>_merged_SV.vcf.gz`, other SV types, or genotype calls.
+Changes are traceable in
+`<sample>/genomiser/sv.genomiser.symbolic_deletions.tsv`,
+including the original `END`, `SVLEN` and inconsistency flags.
+Review flagged discrepancies before any clinical interpretation.
+
+Unexpected unconvertible explicit alleles larger than 1 Mb stop the run
+with an actionable message rather than silently passing them to Jannovar.
+This does not remove variants or validate their biological plausibility.
+The separate custom AnnotSV/clinical SV evidence remains unchanged.
+Run `python -m unittest discover -s tests -p test_genomiser_symbolic_sv.py`
+from the repository root for the small synthetic regression tests.
+
+The separate unrelated breakend `INFO/END < POS` header/interval warning
+and conflicting `AF/GL/PL` header definitions are *not fixed* by this
+change. They require separate caller-VCF quality review. If a subsequent
+Genomiser run still exhausts memory, inspect the new Genomiser Java log;
+do not assume symbolic normalization guarantees success.

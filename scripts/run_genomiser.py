@@ -13,6 +13,8 @@ from pathlib import Path
 
 import yaml
 
+from prepare_genomiser_sv_vcf import prepare_sv_vcf
+
 
 def run(args, **kwargs):
     subprocess.run([str(item) for item in args], check=True, **kwargs)
@@ -202,6 +204,16 @@ def main():
                              out / "sv.sample_name.txt")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", args.sample):
         raise ValueError("Unsafe sample identifier")
+
+    # Only Genomiser's working copy is changed. Mega-base literal REF
+    # deletions exhaust Jannovar memory while constructing HGVS strings.
+    sv_normalization = prepare_sv_vcf(
+        sv,
+        out / "sv.genomiser.symbolic.vcf.gz",
+        out / "sv.genomiser.symbolic_deletions.tsv",
+    )
+    sv = str(out / "sv.genomiser.symbolic.vcf.gz")
+
     combined = out / f"{args.sample}.genomiser.input.vcf.gz"
     sort_tmp = out / ".sort_tmp"
     sort_tmp.mkdir(exist_ok=True)
@@ -243,6 +255,7 @@ def main():
         "original_small_vcf_sample": old_small,
         "original_sv_vcf_sample": old_sv,
         "combined_vcf": str(combined.resolve()),
+        "genomiser_only_sv_normalization": sv_normalization,
         "phenopacket_sha256": checksum(args.phenopacket),
         "analysis_yaml": str(Path(args.analysis).resolve()),
         "analysis_yaml_sha256": checksum(args.analysis),
