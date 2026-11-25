@@ -10,7 +10,8 @@ rule prepare_patient_profile:
     output:
         packet=PATIENT_PROFILE_DIR + "{sample}.phenopacket.json",
         hpo=PATIENT_PROFILE_DIR + "{sample}.patient_hpo.tsv",
-        context=PATIENT_PROFILE_DIR + "{sample}.clinical_context.json"
+        context=PATIENT_PROFILE_DIR + "{sample}.clinical_context.json",
+        allele_context=PATIENT_PROFILE_DIR + "{sample}.allele_patient_context.tsv"
     params:
         profiles=PATIENT_PROFILE_SOURCE,
         seed_flag="--include-shared-hon-seeds" if config.get("hpo_include_shared_hon_seeds", False) is True else ""
@@ -25,5 +26,5 @@ rule prepare_patient_profile:
             --hpo-seeds {input.hpo_seeds:q} \
             --phenopacket {output.packet:q} \
             --hpo-output {output.hpo:q} \
-            --clinical-output {output.context:q} {params.seed_flag}
+            --clinical-output {output.context:q} --allele-context-output {output.allele_context:q} {params.seed_flag}
         """
