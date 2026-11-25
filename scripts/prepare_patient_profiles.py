@@ -147,6 +147,7 @@ def main():
     parser.add_argument("--phenopacket", required=True)
     parser.add_argument("--hpo-output", required=True)
     parser.add_argument("--clinical-output", required=True)
+    parser.add_argument("--allele-context-output")
     args = parser.parse_args()
 
     labels = {}
@@ -160,7 +161,8 @@ def main():
             if not HPO_PATTERN.fullmatch(hpo_id):
                 raise ValueError(f"Invalid HON seed term: {hpo_id}")
             labels[hpo_id] = row.get("hpo_label", "")
-            shared_hon_terms.append(hpo_id)
+            if str(row.get("hon_seed_role") or "").strip().upper() in {"", "CORE_OCULAR_HON"}:
+                shared_hon_terms.append(hpo_id)
     if not shared_hon_terms:
         raise ValueError("HON seed table is empty")
     packet, context = make_profile(
@@ -176,6 +178,18 @@ def main():
         for identifier in context["hpo_scoring_terms"]:
             writer.writerow([identifier, labels.get(identifier, "")])
     Path(args.clinical_output).write_text(json.dumps(context, indent=2) + "\n", encoding="utf-8")
+    if args.allele_context_output:
+        row = load_profile(args.profiles, args.sample)
+        path = Path(args.allele_context_output)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            fields = ["sample_id", "hpo_present", "hpo_absent", "sex", "mother_id", "father_id", "source"]
+            writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
+            writer.writeheader()
+            writer.writerow({"sample_id": args.sample, "hpo_present": ";".join(context["hpo_present"]) or ".",
+                             "hpo_absent": ";".join(context["hpo_absent"]) or ".",
+                             "sex": row.get("sex") or ".", "mother_id": row.get("mother_id") or ".",
+                             "father_id": row.get("father_id") or ".", "source": "private_patient_profiles_observed"})
 
 
 if __name__ == "__main__":
