@@ -80,13 +80,14 @@ def main() -> int:
     parser.add_argument("--phenotypes", required=True)
     parser.add_argument("--panel", required=True)
     parser.add_argument("--hpo-seeds", required=True)
+    parser.add_argument("--allow-empty-hpo-seeds", action="store_true")
     parser.add_argument("--edges", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
     genes = read_list(args.genes) - INVALID_GENE_LABELS
     panel = read_list(args.panel)
-    hon_seed_terms = load_hpo_seed_terms(args.hpo_seeds)
+    hon_seed_terms = load_hpo_seed_terms(args.hpo_seeds, allow_empty=args.allow_empty_hpo_seeds)
     semantic = semantic_engine(args.edges)
 
     pheno = defaultdict(
