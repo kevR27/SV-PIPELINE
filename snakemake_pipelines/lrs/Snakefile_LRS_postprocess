@@ -106,7 +106,7 @@ PLOT_CONTEXT_ARGS += " --random-draws " + str(int(config.get("genome_plot_random
 def postprocess_required_files(sample):
     """Upstream files required by the active downstream interpretation DAG."""
     return [
-        PATH + f"{sample}/gene_discovery/{sample}_allele_assessment.tsv",
+        PATH + f"{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.tsv",
         PATH + f"{sample}/gene_discovery/{sample}_ranked_candidates.tsv",
         PATH + f"{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
         PATH + f"{sample}/sv/straglr/{sample}_straglr.annotated.tsv",
