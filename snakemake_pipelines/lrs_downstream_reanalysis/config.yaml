@@ -7,7 +7,8 @@
 #
 # Set a subset instead, if some folders are not ready:
 # sample_ids: ["11446", "21930"]
-sample_ids: auto
+# Selected clinical HON cases only (exclude 21930 and 25428 controls).
+sample_ids: ["13048", "19545", "11446", "14996"]
 
 # Parent folder containing <sample>/snp_clair3/, <sample>/sv/merged/,
 # <sample>/gene_discovery/, <sample>/coverage/binned/, and other saved results.
@@ -20,3 +21,17 @@ original_lrs_config: "../lrs/config_lrs.yaml"
 # Use the same Genomiser clinical table, HON reference HPO terms and
 # genome-wide analysis YAML as the main LRS configuration.
 # Their paths are inherited from original_lrs_config.
+
+# Primary Genomiser phenotype input: observed patient HPO terms only.
+# The six CORE_OCULAR_HON terms are retained by the independent custom ranking
+# through hon_hpo_seed_terms in the original LRS config.
+hpo_include_shared_hon_seeds: false
+
+# Optional side-by-side Genomiser sensitivity run with CADD.
+# First locate/verify both actual CADD v1.7 GRCh38 files AND their .tbi indexes.
+# Only then set enabled: true and provide their absolute paths.
+# The primary genome_analysis.yml and original ranked TSV remain unchanged.
+genomiser_cadd_enabled: false
+genomiser_cadd_analysis_yaml: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/config/genomiser/genome_analysis_cadd.yml"
+genomiser_cadd_snv_hg38: null
+genomiser_cadd_indel_hg38: null
