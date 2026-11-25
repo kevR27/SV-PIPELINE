@@ -102,7 +102,7 @@ def main():
         Path(monarch_edges).write_text("subject\tobject\tpredicate\tcategory\n")
     run("rank_sv_gene_candidates.py", "--annotsv", a.annotsv, "--genes", product("_sv_genes.txt"),
         "--phenotypes", phenotypes, "--panel", a.panel, "--hpo-seeds", hpo_seeds,
-        "--edges", monarch_edges, "--output", product("_ranked_candidates.tsv"))
+        "--edges", monarch_edges, *(["--allow-empty-hpo-seeds"] if not a.hpo_seeds else []), "--output", product("_ranked_candidates.tsv"))
     run("summarize_sv_caller_support.py", "--vcf", a.vcf, "--caller-order", a.caller_order,
         "--output", product("_caller_support_summary.tsv"))
     caller_args = []
@@ -140,7 +140,7 @@ def main():
                      "SV_PATHOGENIC_DB_SOURCE", "SV_PATHOGENIC_DB_STATUS", "SV_BENIGN_DB_SOURCE", "SV_BENIGN_DB_STATUS",
                      "ALLELE_FUNCTIONAL_CONTEXT", "ALLELE_GENOTYPE", "ALLELE_DISRUPTION_STATUS",
                      "ALLELE_TECHNICAL_STATUS", "ALLELE_POPULATION_STATUS", "ALLELE_PHENOTYPE_STATUS",
-                     "ALLELE_INHERITANCE_STATUS", "ALLELE_DISEASE_MECHANISM_STATUS", "ALLELE_RESEARCH_SCORE",
+                     "ALLELE_INHERITANCE_STATUS", "ALLELE_DISEASE_MECHANISM_STATUS", "ALLELE_DOMAINS_EVALUATED", "ALLELE_DOMAINS_UNKNOWN", "ALLELE_EVIDENCE_COMPLETENESS",
                      "ALLELE_UNKNOWN_DOMAINS", "ALLELE_REVIEW_FLAGS"]
     with open(product("_allele_assessment.tsv")) as src, gzip.open(product("_SV_gene_review.tsv.gz"), "wt", newline="") as dst:
         reader = csv.DictReader(src, delimiter="\t")
