@@ -57,8 +57,8 @@ def prepare_sv_vcf(source, output, audit, min_ref_length=1000, maximum_unsupport
         "END_LENGTH_DISAGREEMENT", "SVLEN_DISAGREEMENT",
     ]
     try:
-        with gzip.open(source, "rt", encoding="utf-8") as infile, \\
-             plain.open("w", encoding="utf-8") as outfile, \\
+        with gzip.open(source, "rt", encoding="utf-8") as infile, \
+             plain.open("w", encoding="utf-8") as outfile, \
              audit.open("w", encoding="utf-8", newline="") as log:
             writer = csv.DictWriter(log, fieldnames=fieldnames, delimiter="\t")
             writer.writeheader()
