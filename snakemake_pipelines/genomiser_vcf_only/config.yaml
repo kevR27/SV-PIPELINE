@@ -19,9 +19,12 @@ path: "/DATA/casadei7/nanopore/WGS/GENOMISER_VCF_ONLY_RESULTS"
 
 # Clinical data stay PRIVATE on the server: one row per patient.
 patient_profiles_tsv: "/DATA/casadei7/private_clinical/patient_profiles.tsv"
-# Same patient-observed query as standard workflows for a fair comparison.
-# Set true in every compared workflow only for a separately labelled core-HON sensitivity analysis.
-hpo_include_shared_hon_seeds: false
+# Clinical HON query requested for this separate workflow: documented
+# patient-observed HPO terms PLUS core HON reference terms for scoring.
+# The reference terms are assumptions, not confirmed patient observations.
+# A comparison against standard LRS/SRS (currently false) must be labelled
+# as using different HPO inputs unless they are harmonised for that run.
+hpo_include_shared_hon_seeds: true
 hon_hpo_seed_terms: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/hon_hpo_seed_terms.tsv"
 
 # Required Genomiser analysis and resources.
