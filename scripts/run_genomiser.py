@@ -85,15 +85,29 @@ def validate_analysis(path):
 
 
 def prepare_vcf(vcf, sample, target, namefile):
+    """Prepare an indexed, single-sample VCF without altering original variant calls."""
     observed = samples(vcf)
     if len(observed) != 1:
         raise ValueError(f"{vcf} must have exactly one genotype sample, found: {observed}")
+
+    target = Path(target)
     if observed[0] == sample:
-        return str(vcf), observed[0]
-    Path(namefile).write_text(sample + "\n", encoding="utf-8")
-    run(["bcftools", "reheader", "-s", namefile, "-o", target, vcf])
+        # bcftools concat needs an index even if no sample rename is required.
+        # Create a local indexed symlink rather than writing into caller outputs.
+        if Path(str(vcf) + ".tbi").is_file() or Path(str(vcf) + ".csi").is_file():
+            return str(vcf), observed[0]
+        if target.exists() or target.is_symlink():
+            target.unlink()
+        target.symlink_to(Path(vcf).resolve())
+    else:
+        Path(namefile).write_text(sample + "\n", encoding="utf-8")
+        run(["bcftools", "reheader", "-s", namefile, "-o", target, vcf])
+
+    # reheader does not create a .tbi index. The index must match the *new*
+    # renamed VCF, not the original caller VCF.
+    run(["bcftools", "index", "-f", "-t", str(target)])
     if samples(target) != [sample]:
-        raise ValueError(f"Could not rename VCF sample for {vcf}")
+        raise ValueError(f"Prepared VCF does not contain sample {sample}: {target}")
     return str(target), observed[0]
 
 
