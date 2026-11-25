@@ -12,14 +12,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from prepare_genomiser_sv_vcf import prepare_sv_vcf
 
 
-class SymbolicDeletionTests(unittest.TestCase):
+class LargeDeletionPreparationTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.source = self.root / "original.sv.vcf.gz"
         self.output = self.root / "genomiser.sv.vcf.gz"
-        self.audit = self.root / "symbolic_deletions.tsv"
+        self.audit = self.root / "large_deletion_changes.tsv"
 
     def write_source(self, records):
         with gzip.open(self.source, "wt") as fh:
@@ -62,7 +62,7 @@ class SymbolicDeletionTests(unittest.TestCase):
         self.assertEqual(first[9], "0/1:60")
         self.assertEqual(records[1].split("\t")[7], "SVTYPE=BND;END=25")
         self.assertEqual(records[2].split("\t")[3:5], ["AC", "A"])
-        self.assertEqual(summary["symbolic_deletions"], 1)
+        self.assertEqual(summary["large_deletions_prepared"], 1)
         with self.audit.open(newline="") as handle:
             audit = list(csv.DictReader(handle, delimiter="\t"))
         self.assertEqual(len(audit), 1)
