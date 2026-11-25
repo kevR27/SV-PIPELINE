@@ -234,6 +234,7 @@ GENOMISER_BENCHMARK_TARGETS = expand(
     PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json",
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
+GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=POSTPROCESS_SAMPLES)
 
 # Default post-processing target:
 # retain one compressed, authoritative SV-gene table per completed sample.
@@ -243,6 +244,7 @@ rule all:
     input:
         GENOMISER_TARGETS,
         GENOMISER_BENCHMARK_TARGETS,
+        GENOMISER_COMPARISON_TARGETS,
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
             sample=POSTPROCESS_SAMPLES,
@@ -831,3 +833,5 @@ include: "../common/alphagenome_atlas.smk"
 GENOMISER_CUSTOM_GENE = PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv"
 GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
 include: "../common/benchmark_genomiser.smk"
+
+include: "../common/compare_genomiser_rankings.smk"
