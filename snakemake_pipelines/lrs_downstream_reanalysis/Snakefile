@@ -74,7 +74,7 @@ print("[LRS archived downstream] selected sample IDs:", ", ".join(selected))
 print("[LRS archived downstream] BAM-independent reanalysis; new coverage, Samplot and XCI are not run")
 
 # Includes the original phenotype ranking, annotation integration,
-# allele-event prioritization, cohort recurrence, final candidate ranking,
+# score-free allele-event prioritization, cohort recurrence, final candidate ranking,
 # Genomiser and further filtering. Missing BAM-derived upstream TSVs/bins
 # remain explicit external prerequisites rather than silently re-called.
 include: "../lrs/Snakefile_LRS_postprocess"
