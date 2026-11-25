@@ -311,6 +311,10 @@ rule build_snv_sv_candidates:
 rule finalize_candidate_ranking:
     input:
         genomiser=rules.genomiser_genome.output.manifest,
+        genomiser_genes=rules.genomiser_genome.output.genes,
+        genomiser_variants=rules.genomiser_genome.output.variants,
+        genomiser_comparison=SCRIPTS + "/annotate_genomiser_comparison.py",
+        benchmark_helper=SCRIPTS + "/benchmark_genomiser.py",
         genes=rules.integrate_depth_into_final_candidates.output.genes,
         sv=rules.integrate_depth_into_final_candidates.output.sv,
         snv_sv=rules.build_snv_sv_candidates.output.tsv,
@@ -340,7 +344,7 @@ rule finalize_candidate_ranking:
             --recurrence-members {input.recurrence_members:q} \
             --mitochondrial-ranking {input.mitochondrial:q} \
             --clinical-evidence {input.clinical_evidence:q} \
-            --clinical-output {output.clinical:q} \
+            --genomiser-genes {input.genomiser_genes:q} --genomiser-variants {input.genomiser_variants:q} --clinical-output {output.clinical:q} \
             --gene-output {output.genes:q} \
             --sv-output {output.sv:q} \
             --mito-output {output.mitochondrial:q}
