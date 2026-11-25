@@ -416,7 +416,7 @@ def build_clinical_table(evidence: pd.DataFrame, context: pd.DataFrame | None = 
     """Keep every evidence row; add final LRS phase/HPO/depth context if present."""
     # Large transcript/caller audit payloads stay in the original evidence file.
     # They are not used here; drop them before making per-row dictionaries.
-    result = evidence.drop(columns=[c for c in evidence if c.endswith("_JSON")]).copy()
+    result = evidence.drop(columns=[c for c in evidence if c.endswith("_JSON") or c in {"ALLELE_RESEARCH_SCORE", "ALLELE_RESEARCH_RANK", "ALLELE_SCORE_MAXIMUM"} or (c.startswith("ALLELE_") and c.endswith("_POINTS"))]).copy()
     gene_column = find_column(result, ["GENE", "GENES", "ANNotsv_Gene"])
     if gene_column is None or "SV_ID" not in result:
         raise ValueError("Clinical evidence requires SV_ID and a gene column")
@@ -530,6 +530,7 @@ def main() -> int:
     if gene_column is None:
         raise ValueError("Candidate input has no recognized gene column.")
 
+    candidates = candidates.drop(columns=[c for c in candidates if c in {"ALLELE_RESEARCH_SCORE", "ALLELE_RESEARCH_RANK", "ALLELE_SCORE_MAXIMUM"} or (c.startswith("ALLELE_") and c.endswith("_POINTS"))])
     candidates = add_biological_focus(candidates)
     if args.clinical_output:
         clinical = build_clinical_table(candidates)
@@ -543,7 +544,6 @@ def main() -> int:
     score_column = find_column(
         candidates,
         [
-            "ALLELE_RESEARCH_SCORE",
             "EVENT_GENE_RELEVANCE_SCORE",
             "INTEGRATED_DISCOVERY_SCORE",
             "PHENOTYPE_SCORE",
