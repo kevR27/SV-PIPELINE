@@ -1,4 +1,4 @@
-"""Run mandatory Genomiser from existing SNV/indel and merged SV VCFs only.
+"""Run Genomiser and shared custom SV ranking from existing VCFs.
 
 This is a separate, BAM-free entry point. It intentionally does not include
 the LRS or SRS variant-calling, depth, methylation, phasing or plot rules.
@@ -17,6 +17,7 @@ sys.path.insert(0, SCRIPTS)
 
 from sv_evidence_common import hon_hpo_seed_path
 from genomiser_requirements import require_genomiser
+from benchmark_sample_selection import confirmed_benchmark_samples
 
 PATH = os.path.abspath(os.path.expanduser(config["path"])).rstrip("/") + "/"
 VCF_INPUTS = {
@@ -50,9 +51,24 @@ GENOMISER_TARGETS = expand(
     sample=SAMPLES
 )
 
+GENOMISER_CUSTOM_GENE = PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv"
+GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
+GENOMISER_BENCHMARK_SAMPLES = confirmed_benchmark_samples(config.get("genomiser_benchmark_truth_tsv"), SAMPLES)
+GENOMISER_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json", sample=GENOMISER_BENCHMARK_SAMPLES)
+GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=SAMPLES)
+
 rule all:
     input:
-        GENOMISER_TARGETS
+        GENOMISER_TARGETS,
+        GENOMISER_BENCHMARK_TARGETS,
+        GENOMISER_COMPARISON_TARGETS,
+        expand(GENOMISER_CUSTOM_GENE, sample=SAMPLES),
+        expand(GENOMISER_CUSTOM_SV, sample=SAMPLES),
+        expand(PATH + "{sample}/gene_discovery/final/{sample}_clinical_candidates.ranked.tsv", sample=SAMPLES)
 
 include: "../common/patient_profiles.smk"
 include: "../common/genomiser.smk"
+
+include: "custom_ranking.smk"
+include: "../common/benchmark_genomiser.smk"
+include: "../common/compare_genomiser_rankings.smk"
