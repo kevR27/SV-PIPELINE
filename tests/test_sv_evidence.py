@@ -106,7 +106,9 @@ class AssessmentTests(unittest.TestCase):
 
     def test_unknown_never_gets_absence_bonus(self):
         r=allele.assess({'SV_ID':'v','GENES':'A'}, {},{}, {},{}, {},self.args)
-        self.assertEqual(r['ALLELE_RESEARCH_SCORE'],0)
+        self.assertNotIn('ALLELE_RESEARCH_SCORE', r)
+        self.assertEqual(r['ALLELE_DOMAINS_EVALUATED'], 0)
+        self.assertEqual(r['ALLELE_EVIDENCE_COMPLETENESS'], 0.0)
         self.assertEqual(len(r['ALLELE_UNKNOWN_DOMAINS'].split(';')),6)
 
     def test_patient_phenotype_not_generic_anchor_score(self):
@@ -114,19 +116,19 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(r['ALLELE_PHENOTYPE_STATUS'],'UNKNOWN_PATIENT_PHENOTYPES')
 
     def test_positive_and_negative_phenotypes(self):
-        self.assertEqual(allele.phenotype('A',self.model,{'hpo_present':'HP:0000648'}, {})[1],2)
+        self.assertEqual(allele.phenotype('A',self.model,{'hpo_present':'HP:0000648'}, {})[0],'EXACT_TERM_MATCH')
         self.assertEqual(allele.phenotype('A',self.model,{'hpo_present':'HP:0000001','hpo_absent':'HP:0000648'}, {})[0],'PATIENT_TERM_CONFLICT_REVIEW')
 
     def test_needlr_only_is_provisional(self):
         r=allele.population({'NEEDLR_STATUS':'MATCHED','NEEDLR_AF':'0'}, {},.01)
         self.assertEqual(r[0],'PROVISIONAL_LOW_FREQUENCY_MATCH')
-        self.assertEqual(r[1],0)
+        self.assertIsInstance(r[1], str)
 
     def test_exact_population_and_high_af(self):
         ev={'population_af':'.001','population_match':'EXACT_ALLELE','population_source':'resource'}
-        self.assertEqual(allele.population({},ev,.01)[1],2)
+        self.assertEqual(allele.population({},ev,.01)[0],'LOW_FREQUENCY_ALLELE_MATCH')
         self.assertEqual(allele.population({},{**ev,'population_af':'.2'},.01)[0],'ABOVE_RESEARCH_AF_THRESHOLD')
-        self.assertEqual(allele.population({},{**ev,'population_af':'0'},.01)[1],1)
+        self.assertEqual(allele.population({},{**ev,'population_af':'0'},.01)[0],'NOT_OBSERVED_IN_REPORTED_POPULATION')
 
     def test_gene_overlap_does_not_establish_lof(self):
         self.assertEqual(allele.disruption(self.row,{})[1],'UNKNOWN')
@@ -135,7 +137,7 @@ class AssessmentTests(unittest.TestCase):
 
     def test_disease_mismatch_and_refutation(self):
         self.assertEqual(allele.disease_mechanism(self.row,{**self.model,'mechanism':'GOF'},'LOF')[0],'MECHANISM_MISMATCH_REVIEW')
-        self.assertEqual(allele.disease_mechanism(self.row,{**self.model,'validity':'REFUTED'},'LOF')[1],0)
+        self.assertEqual(allele.disease_mechanism(self.row,{**self.model,'validity':'REFUTED'},'LOF')[0],'DISEASE_ASSOCIATION_CONFLICT')
 
     def test_coordinate_link_cannot_transfer_genotype(self):
         gt,_=allele.patient_genotype({**self.row,'CALLER_EVIDENCE_MATCH':'COORDINATE_FALLBACK'}, {},{},'P',20,5)
@@ -168,8 +170,8 @@ class AssessmentTests(unittest.TestCase):
     def test_ar_requires_second_allele(self):
         r=allele.inheritance(self.row,{**self.model,'moi':'AR'}, {},'HET',{},20,5)
         self.assertEqual(r[0],'SECOND_ALLELE_OR_TRANS_PHASE_REQUIRED')
-        self.assertEqual(r[1],0)
-        self.assertEqual(allele.inheritance(self.row,{**self.model,'moi':'AR'}, {},'HOM_ALT',{},20,5)[1],2)
+        self.assertIsInstance(r[1], str)
+        self.assertEqual(allele.inheritance(self.row,{**self.model,'moi':'AR'}, {},'HOM_ALT',{},20,5)[0],'BIALLELIC_GENOTYPE_COMPATIBLE')
 
     def test_no_de_novo_from_missing_parent_calls(self):
         patient={'mother_id':'M','father_id':'F'}
@@ -180,8 +182,9 @@ class AssessmentTests(unittest.TestCase):
     def test_six_domains_no_clinical_label(self):
         evidence={'effect':'LOF','effect_status':'VALIDATED','source':'assay','population_af':'.001','population_match':'EXACT_ALLELE','population_source':'resource'}
         r=allele.assess(self.row,self.model,{'hpo_present':'HP:0000648'},evidence,{}, {},self.args)
-        self.assertEqual(r['ALLELE_RESEARCH_SCORE'],11)
-        self.assertEqual(r['ALLELE_INTERPRETATION'],'RESEARCH_PRIORITIZATION_ONLY_NOT_ACMG')
+        self.assertNotIn('ALLELE_RESEARCH_SCORE', r)
+        self.assertEqual(r['ALLELE_EVIDENCE_COMPLETENESS'], 100.0)
+        self.assertEqual(r['ALLELE_INTERPRETATION'],'EVIDENCE_STATUS_ONLY_NOT_ACMG')
 
     def test_family_trans_candidate_requires_distinct_compatible_allele(self):
         model={**self.model,'moi':'AR'}
@@ -235,7 +238,8 @@ class CommandTests(unittest.TestCase):
             table(d/'input.tsv',[],['SV_ID','GENES'])
             subprocess.run(cmd,check=True,capture_output=True,text=True)
             self.assertEqual(allele.rows(d/'out.tsv'),[])
-            self.assertIn('ALLELE_RESEARCH_SCORE',(d/'out.tsv').read_text())
+            self.assertNotIn('ALLELE_RESEARCH_SCORE',(d/'out.tsv').read_text())
+            self.assertIn('ALLELE_EVIDENCE_COMPLETENESS',(d/'out.tsv').read_text())
 
     def test_hpo_duplicates_do_not_inflate_ranking(self):
         with tempfile.TemporaryDirectory() as tmp:
