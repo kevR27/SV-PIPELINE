@@ -151,8 +151,13 @@ class AtlasTests(unittest.TestCase):
                     atlas.selected_allele(records[0], 1, selection, fasta, 16384, 1000)
 
     def test_overview_and_native_sdk_plots_use_cached_source_tracks(self):
-        from alphagenome.data import genome, track_data
-        from alphagenome.models import dna_client
+        try:
+            from alphagenome.data import genome, track_data
+            from alphagenome.models import dna_client
+        except ModuleNotFoundError as exc:
+            if exc.name == "alphagenome":
+                self.skipTest("optional AlphaGenome SDK not installed")
+            raise
         with tempfile.TemporaryDirectory() as directory:
             path = self.fixture(directory)
             atlas.annotate(self.arguments(path))
