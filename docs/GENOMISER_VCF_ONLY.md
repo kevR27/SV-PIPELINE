@@ -14,12 +14,13 @@ MEI/STR and recurrence are unavailable in a strict two-VCF run. This is not
 numerically equivalent to a full BAM-supported analysis.
 
 Configure the same annotation resources, Genomiser YAML, ReMM, private patient
-profile TSV and HPO query mode as the standard workflows. The default
-`hpo_include_shared_hon_seeds: false` uses documented observations; the six
-core ocular reference terms remain the generic HON research query. Setting
-the flag true enables a separate sensitivity analysis using shared ocular
-seeds plus observed HPOs. Do not interpret reference terms as observed findings.
-Set the same flag in the workflows being compared.
+profile TSV and HPO query mode as the standard workflows. This standalone VCF-only workflow is configured with
+`hpo_include_shared_hon_seeds: true`, retaining six shared core HON reference
+terms **alongside** documented patient HPO findings for computational scoring.
+The shared references are not additional observed patient findings; blanks
+remain unknown, not absent. The normal LRS/SRS configs currently use `false`.
+Do not interpret cross-workflow ranking differences as algorithmic differences
+without harmonising these HPO inputs for a matched comparison.
 
 The explicit VCF map can contain LRS or SRS sample paths and a per-sample
 `sequencing_type: LRS` or `SRS` (default LRS). Keep the output path distinct
