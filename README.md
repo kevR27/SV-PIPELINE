@@ -1,8 +1,7 @@
 ## Required Genomiser whole-genome prioritization (LRS and SRS)
 
 For one patient at a time, combine existing genome-wide SNV/indel and SV VCFs
-with **shared HON HPO reference seeds plus each patient's documented HPO
-observations** for noncoding, regulatory and coding variant prioritization.
+with **each patient's documented HPO observations** for noncoding, regulatory and coding variant prioritization.
 By default the phenotype query contains **only documented patient HPO findings**; blanks are unknown, not negative observations. An explicit `hpo_include_shared_hon_seeds: true` option permits a separately labeled legacy HON-seeded sensitivity analysis. Both workflows now require this stage in the default
 analysis; missing ReMM resources or patient profiles cause an explicit failure.
 Original LRS and SRS calling results remain unchanged.
@@ -17,21 +16,21 @@ If you have retained the genome-wide SNV/indel VCF and merged SV VCF but **no BA
 use [dedicated VCF-only Snakefile](snakemake_pipelines/genomiser_vcf_only/Snakefile)
 with its separate [VCF-only configuration](snakemake_pipelines/genomiser_vcf_only/config.yaml).
 See the [BAM-free guide](docs/GENOMISER_VCF_ONLY.md): no variant calling,
-read-depth, or phasing jobs can be scheduled in this workflow.
+read-depth, or phasing jobs can be scheduled in this workflow. It also rebuilds the custom SV ranking using the same annotation and interpretation scripts, with missing read-level evidence explicitly unavailable.
 
 If you want to **recompute the LRS downstream clinical ranking and filtering**
 without the original BAM, use
 [the archived LRS downstream reanalysis workflow](snakemake_pipelines/lrs_downstream_reanalysis/README.md).
 It recognizes patient folders automatically (e.g. `11446/`), using saved
-Clair3/Jasmine VCFs, allele assessment, prior phenotype/gene tables,
+Clair3/Jasmine VCFs, original integrated SV evidence, prior phenotype/gene tables,
 LongPhase, STR/MEI and mosdepth-bin outputs. The [inventory script](scripts/audit_saved_lrs_outputs.py)
 reports missing upstream files before reanalysis. This is different from
-the two-VCF-only Genomiser workflow above.
+the two-VCF-only workflow above, which cannot reproduce unavailable read-level evidence.
 
 Start with [the dedicated installation and downstream-only execution
 guide](docs/GENOMISER_PATIENT_WORKFLOW.md). Patient files must be stored on
 the secured server, never committed to this repository. The separate
-benchmark uses only independently confirmed diagnoses when available.
+truth benchmark uses only independently confirmed diagnoses when available. Descriptive rank overlap runs for every sample; Genomiser comparison columns are appended to the clinical candidate table without changing its rank. The allele numerical score has been retired.
 
 # SV-PIPELINE: Whole-genome variant analysis
 
