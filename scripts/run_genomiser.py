@@ -209,10 +209,10 @@ def main():
     # deletions exhaust Jannovar memory while constructing HGVS strings.
     sv_normalization = prepare_sv_vcf(
         sv,
-        out / "sv.genomiser.symbolic.vcf.gz",
-        out / "sv.genomiser.symbolic_deletions.tsv",
+        out / "sv.genomiser.prepared.vcf.gz",
+        out / "sv.genomiser.large_deletion_changes.tsv",
     )
-    sv = str(out / "sv.genomiser.symbolic.vcf.gz")
+    sv = str(out / "sv.genomiser.prepared.vcf.gz")
 
     combined = out / f"{args.sample}.genomiser.input.vcf.gz"
     sort_tmp = out / ".sort_tmp"
