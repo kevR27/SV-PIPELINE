@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a Genomiser-only indexed SV VCF with symbolic large deletions.
+"""Prepare a Genomiser-only indexed SV VCF with large deletions in compact form.
 
 Exomiser/Jannovar can exhaust Java heap while constructing an HGVS string for
 a multi-megabase sequence-encoded REF deletion. Convert only unambiguous
@@ -134,9 +134,9 @@ def prepare_sv_vcf(source, output, audit, min_ref_length=1000, maximum_unsupport
 
         _run(["bcftools", "view", "-Oz", "-o", output, plain])
         _run(["bcftools", "index", "-f", "-t", output])
-        print(f"[Genomiser SV normalization] scanned={inspected} symbolic_deletions={converted} "
+        print(f"[Genomiser SV preparation] scanned={inspected} large_deletions_prepared={converted} "
               f"audit={audit} output={output}", flush=True)
-        return {"scanned": inspected, "symbolic_deletions": converted, "audit": str(audit)}
+        return {"scanned": inspected, "large_deletions_prepared": converted, "audit": str(audit)}
     finally:
         plain.unlink(missing_ok=True)
 
