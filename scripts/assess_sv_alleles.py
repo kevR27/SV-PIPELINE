@@ -623,6 +623,7 @@ def main():
         if data
         else list(csv.DictReader(open(args.integrated), delimiter="\t").fieldnames or [])
     )
+    input_columns = [column for column in input_columns if not obsolete_allele_column(column)]
     output_base_columns = (
         compact_output_columns(input_columns)
         if args.compact_output
@@ -641,7 +642,7 @@ def main():
         base_row = (
             compact_output_row(row, output_base_columns)
             if args.compact_output
-            else row
+            else {column: row.get(column, ".") for column in output_base_columns}
         )
         assessments = []
         for model in by_gene.get(gene, [{}]):
