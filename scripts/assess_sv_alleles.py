@@ -20,7 +20,7 @@ from sv_evidence_common import MISSING, number
 # INFO/read-name and transcript JSON fields can exceed the csv default of 128 KiB.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
-VERSION = "sv-allele-evidence-v1.4"
+VERSION = "sv-allele-evidence-v2-status-only"
 DOMAINS = ("POPULATION", "TECHNICAL", "DISRUPTION", "INHERITANCE", "PHENOTYPE", "DISEASE_MECHANISM")
 EFFECTS = {"LOF", "COPY_GAIN", "GOF", "DOMINANT_NEGATIVE", "NO_DISRUPTION", "OTHER", "UNKNOWN"}
 MOIS = {"AD", "AR", "XLD", "XLR", "MT", "UNKNOWN"}
@@ -473,18 +473,44 @@ def assess(row, model, patient, evidence, family, gene_hpo, args):
     flags, unknown = [], []
     for name, (status, points, detail) in zip(DOMAINS, components):
         result[f"ALLELE_{name}_STATUS"] = status
-        result[f"ALLELE_{name}_POINTS"] = points
         result[f"ALLELE_{name}_DETAIL"] = detail
-        if status.startswith("UNKNOWN"):
+        if status.startswith(("UNKNOWN", "PROVISIONAL")) or status in {"PLOIDY_OR_CHROMOSOME_REVIEW", "PLOIDY_REVIEW_REQUIRED", "SEX_LINKED_REVIEW_REQUIRED"}:
             unknown.append(name)
         if any(token in status for token in ("CONFLICT", "REVIEW", "REQUIRED", "PROVISIONAL", "ABOVE_", "LOW_READ")):
             flags.append(f"{name}:{status}")
-    result["ALLELE_RESEARCH_SCORE"] = sum(x[1] for x in components)
-    result["ALLELE_SCORE_MAXIMUM"] = 12
+    result["ALLELE_DOMAINS_UNKNOWN"] = len(unknown)
+    result["ALLELE_DOMAINS_EVALUATED"] = len(DOMAINS) - len(unknown)
+    result["ALLELE_EVIDENCE_COMPLETENESS"] = round(100 * (len(DOMAINS) - len(unknown)) / len(DOMAINS), 2)
     result["ALLELE_UNKNOWN_DOMAINS"] = ";".join(unknown) or "."
     result["ALLELE_REVIEW_FLAGS"] = ";".join(flags) or "."
-    result["ALLELE_INTERPRETATION"] = "RESEARCH_PRIORITIZATION_ONLY_NOT_ACMG"
+    result["ALLELE_INTERPRETATION"] = "EVIDENCE_STATUS_ONLY_NOT_ACMG"
     return result
+
+
+def hypothesis_key(row):
+    """Categorical priority, never a summed score. Conflicts precede no promotion."""
+    hon = row.get("ALLELE_DISEASE_HON_RELEVANCE", "UNKNOWN")
+    mechanism = row.get("ALLELE_DISEASE_MECHANISM_STATUS", "UNKNOWN")
+    inheritance = row.get("ALLELE_INHERITANCE_STATUS", "UNKNOWN")
+    phenotype = row.get("ALLELE_PHENOTYPE_STATUS", "UNKNOWN")
+    conflict = any("CONFLICT" in status or "MISMATCH" in status
+                   for status in (mechanism, inheritance, phenotype))
+    return (
+        conflict,
+        {"SUPPORTS_HON": 0, "UNKNOWN": 1, "OTHER_DISEASE": 2}.get(hon, 1),
+        {"DISEASE_MECHANISM_COMPATIBLE": 0, "DISEASE_MECHANISM_POSSIBLE": 1,
+         "GENE_DOSAGE_SUPPORT_ONLY": 2}.get(mechanism, 3),
+        {"BIALLELIC_GENOTYPE_COMPATIBLE": 0, "DOMINANT_GENOTYPE_COMPATIBLE": 0,
+         "CANDIDATE_DE_NOVO": 0, "INFERRED_TRANS_CANDIDATE_REVIEW": 1}.get(inheritance, 2),
+        {"EXACT_TERM_MATCH": 0, "NO_EXACT_TERM_MATCH": 2}.get(phenotype, 1),
+        row.get("ALLELE_DISEASE_ID", "."), row.get("ALLELE_DISEASE_MOI", "."),
+        row.get("ALLELE_DISEASE_MECHANISM", "."),
+    )
+
+
+def obsolete_allele_column(column):
+    return column in {"ALLELE_RESEARCH_SCORE", "ALLELE_RESEARCH_RANK", "ALLELE_SCORE_MAXIMUM"} or (
+        column.startswith("ALLELE_") and column.endswith("_POINTS"))
 
 
 def write_table(path, data, columns):
@@ -628,20 +654,16 @@ def main():
             assessments.append(assessment)
             all_hypotheses.append({**base_row, **assessment})
         # No evidence is combined across different diseases. Ties are deterministic.
-        best = sorted(assessments, key=lambda r: (-r["ALLELE_RESEARCH_SCORE"], r["ALLELE_DISEASE_ID"], r["ALLELE_DISEASE_MOI"], r["ALLELE_DISEASE_MECHANISM"]))[0]
+        best = min(assessments, key=hypothesis_key)
         enriched.append({**base_row, **best, "ALLELE_DISEASE_HYPOTHESIS_COUNT": len(assessments)})
-    scores = sorted({r["ALLELE_RESEARCH_SCORE"] for r in enriched}, reverse=True)
-    ranks = {score: i + 1 for i, score in enumerate(scores)}
-    for r in enriched:
-        r["ALLELE_RESEARCH_RANK"] = ranks[r["ALLELE_RESEARCH_SCORE"]]
-    all_hypotheses.sort(key=lambda r: (-r["ALLELE_RESEARCH_SCORE"], r["SV_ID"], r["GENES"], r["ALLELE_DISEASE_ID"]))
+    all_hypotheses.sort(key=lambda r: (r["SV_ID"], r["GENES"], hypothesis_key(r)))
     original_columns = output_base_columns
     # Stable schema also for an empty master callset.
     empty = assess({"SV_ID": ".", "GENES": "."}, {}, {}, {}, {}, {}, args)
     extra = list(empty) + ["ALLELE_DISEASE_MOI", "ALLELE_DISEASE_MECHANISM"]
     if set(original_columns) & set(extra):
         raise ValueError("Input already has allele assessment columns; use the original integrated table")
-    write_table(args.output, enriched, original_columns + extra + ["ALLELE_DISEASE_HYPOTHESIS_COUNT", "ALLELE_RESEARCH_RANK"])
+    write_table(args.output, enriched, original_columns + extra + ["ALLELE_DISEASE_HYPOTHESIS_COUNT"])
     write_table(args.hypotheses_output, all_hypotheses, original_columns + extra)
     manifest = {"model": VERSION, "parameters": parameters, "input_sha256": {}}
     for key in ("integrated", "phenotypes", "patient_context", "disease_models", "allele_evidence", "family_genotypes"):
@@ -654,7 +676,7 @@ def main():
             manifest["input_sha256"][key] = digest.hexdigest()
     Path(args.manifest).parent.mkdir(parents=True, exist_ok=True)
     Path(args.manifest).write_text(json.dumps(manifest, indent=2) + "\n")
-    print(f"[OK] preserved_rows={len(enriched)} disease_hypotheses={len(all_hypotheses)}; research-only score")
+    print(f"[OK] preserved_rows={len(enriched)} disease_hypotheses={len(all_hypotheses)}; categorical evidence only")
 
 
 if __name__ == "__main__":
