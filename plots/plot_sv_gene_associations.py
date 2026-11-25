@@ -56,7 +56,7 @@ def main():
     caller_col = first_existing(df, ["CALLER_COUNT", "SUPP"])
     score_col = first_existing(
         df,
-        ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE", "ALLELE_RESEARCH_SCORE"],
+        ["EVENT_GENE_RELEVANCE_SCORE", "INTEGRATED_DISCOVERY_SCORE", "integrated_discovery_score", "PHENOTYPE_SCORE"],
     )
     pheno_col = first_existing(df, ["PHENOTYPE_SCORE", "phenotype_score"])
     disease_col = first_existing(df, ["GENE_DISEASE_EVIDENCE_SCORE", "gene_disease_evidence_score"])
