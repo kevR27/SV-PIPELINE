@@ -158,16 +158,6 @@ mitocarta_file: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/mitocarta/Hu
 mitocarta_pathways_file: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/reference/mitocarta/Human.MitoPathways3.0.gmx"
 
 # ============================================================
-# SAMPLOT READ-LEVEL BREAKPOINT EVIDENCE
-# ============================================================
-
-samplot_top_n: 50
-samplot_min_mapq: 20
-samplot_long_read_min_length: 1000
-samplot_zoom_bp: 20000
-samplot_window_bp: 5000
-samplot_large_sv_threshold: 1000000
-
 # Distance used by the mechanism-aware SV-gene event ranking to distinguish
 # a breakpoint-proximal gene from a gene that is only inside a large
 # inversion/BND interval.
