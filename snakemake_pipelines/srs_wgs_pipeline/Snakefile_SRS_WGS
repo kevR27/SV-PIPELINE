@@ -1468,7 +1468,7 @@ rule all_thesis_plots:
 rule thesis_plots_sample:
     input:
         final_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
-        genomiser_comparison=rules.compare_genomiser_rankings.output.summary,
+        genomiser_comparison=PATH + "{sample}/benchmark/{sample}.ranking_comparison.json",
         depth_summary=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth.tsv",
         depth_bins_final=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth_bins.tsv",
         candidates=rules.srs_finalize_candidate_ranking.output.sv,
