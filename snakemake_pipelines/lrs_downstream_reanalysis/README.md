@@ -4,8 +4,8 @@ This directory runs the **existing LRS downstream interpretation** from
 previously generated files. It reuses the rules in
 `../lrs/Snakefile_LRS_postprocess`, instead of maintaining a separate,
 possibly divergent copy of the scoring algorithms. It **does not rerun**
-basecalling, Clair3, SV callers, Jasmine, LongPhase, mosdepth, modkit or
-Samplot. Genomiser is included and mandatory.
+basecalling, Clair3, SV callers, Jasmine, LongPhase, mosdepth or modkit.
+Genomiser is included and mandatory.
 
 **Different from `../genomiser_vcf_only/`:** this workflow rebuilds with retained BAM-derived evidence
  the full saved-data SV gene/event prioritization, multimodal integration,
@@ -156,7 +156,7 @@ representation must be checked in the first real sample.
 ## Cannot be rerun without reads
 
 Fresh 10 kb mosdepth, modkit methylation calling, read-haplotype XCI,
-read-based SV support plots (Samplot), fresh SV callers, and read-level
+read-based breakpoint figures, fresh SV callers, and read-level
 phasing require BAMs or other original read data. This workflow reuses
 existing derived outputs wherever possible; it excludes those read-level
 operations. Complete `final_thesis_analysis` / `all_thesis_plots`
@@ -247,8 +247,7 @@ pathogenicity. Cases absent from a Genomiser run have missing ranks.
 The comparison target depends on the original clinical output and can
 recompute missing downstream dependencies. Inspect the dry-run carefully,
 check the archived-input audit, and preserve a backup of original downstream
-results before running. No BAM-based callers or new coverage/Samplot jobs are
-included in the archived downstream mode.
+results before running. No BAM-based callers or new coverage jobs are included in the archived downstream mode.
 
 ## Genomiser Java heap exhaustion from sequence-encoded giant deletions
 
@@ -282,14 +281,14 @@ change. They require separate caller-VCF quality review. If a subsequent
 Genomiser run still exhausts memory, inspect the new Genomiser Java log;
 do not assume SV preparation guarantees success.
 
-## Regenerate all available thesis plots from saved evidence (no Samplot)
+## Regenerate focused thesis plots from saved evidence
 
 The existing `saved_evidence_plots` target produces the standard R plots,
 filtering plots, and cohort comparison. The separate
 `all_saved_thesis_plots` target now also runs the existing Python thesis
 figure collection **for all selected patients**, using the current
 `*_integrated_SV_gene_analysis.final.tsv.gz` and final ranked SV-gene
-table. This target does not request BAMs, Samplot, read-level XCI or fresh
+table. This target does not request BAMs, read-level XCI or fresh
 mosdepth data.
 
 ```bash
@@ -308,10 +307,7 @@ snakemake -s Snakefile --configfile config.yaml --use-conda \\
 
 Python output figures appear in
 `<sample>/plots_reanalysis/` rather than mixing with older
-`plots/` results. The automatic launcher is called with
-`--no-samplot`; when archived Samplot images exist they are not
-searched or embedded, and candidate review cards omit the Samplot
-panel. The historical Exomiser-comparison plot is not produced.
+`plots/` results. The figure launcher is independent of removed legacy read-alignment figures. The historical Exomiser-comparison plot is not produced.
 Instead `10_integrated_evidence/<sample>_genomiser_rank_comparison.*`
 shows descriptive top-N agreement from the **current Genomiser**
 comparison tables.
@@ -357,7 +353,7 @@ R HPO/evidence/population figures and instead generates:
 
 The new compact locus figures and source manifests appear at
 `<sample>/plots_reanalysis/12_breakpoint_tracks/`. This panel is
-**not** Samplot: it uses the archived 10-kb mosdepth windows and existing
+based on archived evidence: it uses the archived 10-kb mosdepth windows and existing
 caller VCF interval coordinates. Small events below the depth-bin size
 may be unresolved. A dashed marker for a caller appears only if an actual
 same-type, same-chromosome record matches both breakpoints; missing
@@ -377,12 +373,4 @@ does not rerun or rescore the ranking. Unknown population AF is explicitly
 retained for review, not treated as AF zero. Configure
 `ranking_stability_enabled: false` to skip this optional sensitivity check.
 
-For cleanup on an **independently mounted results disk** (or the active
-server RESULTS location), `scripts/cleanup_old_thesis_outputs.py` has a
-safe preview by default. It deletes only named, regenerable targets
-after the explicit `--delete --confirm DELETE_OBSOLETE_OUTPUTS` arguments.
-Use `--scope plots` to remove old images/plots from a copy destination
-**before copying the new ones**; do not delete upstream BAM/VCF/coverage
-or the old experimental evidence. `--scope generated` and `--scope all`
-remove additional derived outputs and should only be used before a
-fresh full downstream run and after a verified backup.
+Storage cleanup is performed separately and is never part of any Snakemake target. Preserve source evidence for reproducible replotting.
