@@ -74,13 +74,6 @@ def gnomad_sv_arg(wc):
         else ""
     )
 
-SAMPLOT_TOP_N = config.get("samplot_top_n", 20)
-SAMPLOT_RUN_NAME = f"top_{SAMPLOT_TOP_N}"
-SAMPLOT_MIN_MAPQ = config.get("samplot_min_mapq", 20)
-SAMPLOT_LONG_READ_MIN = config.get("samplot_long_read_min_length", 1000)
-SAMPLOT_ZOOM_BP = config.get("samplot_zoom_bp", 20000)
-SAMPLOT_WINDOW_BP = config.get("samplot_window_bp", 5000)
-SAMPLOT_LARGE_SV_THRESHOLD = config.get("samplot_large_sv_threshold", 1000000)
 SV_GENE_BREAKPOINT_TOLERANCE = config.get("sv_gene_breakpoint_tolerance", 10000)
 THESIS_TOP_GENES = config.get("thesis_top_genes", 25)
 REVIEW_TOP_N = config.get("candidate_review_top_n", 5)
@@ -235,6 +228,7 @@ GENOMISER_BENCHMARK_TARGETS = expand(
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
 GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=POSTPROCESS_SAMPLES)
+BENCHMARK_REVIEW_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.benchmark_review.tsv", sample=POSTPROCESS_SAMPLES)
 STABILITY_TARGETS = (
     expand(PATH + "{sample}/ranking_stability/stability_manifest.json", sample=POSTPROCESS_SAMPLES)
     if config.get("ranking_stability_enabled", True) else []
@@ -250,6 +244,7 @@ rule all:
         GENOMISER_BENCHMARK_TARGETS,
         GENOMISER_COMPARISON_TARGETS,
         STABILITY_TARGETS,
+        BENCHMARK_REVIEW_TARGETS,
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
             sample=POSTPROCESS_SAMPLES,
@@ -639,7 +634,7 @@ rule thesis_plots_sample:
         python {PLOTS:q}/run_thesis_plots.py \
             --root {PATH} \
             --sample {wildcards.sample} \
-            --platform lrs --focused --no-samplot \
+            --platform lrs --focused \
             --candidate-table {input.candidate_events:q} \
             --top-genes {params.top_genes} \
             --review-top-n {params.review_top_n} \
@@ -655,76 +650,6 @@ rule thesis_plots_sample:
         """
 
 
-
-
-rule prepare_samplot_gene_annotation:
-    input:
-        bed=GENE_BED
-    output:
-        bed=PATH + "reference_checks/samplot_genes.bed.gz",
-        index=PATH + "reference_checks/samplot_genes.bed.gz.tbi"
-    conda:
-        CONDAENV + "samplot.yaml"
-    shell:
-        """
-        set -euo pipefail
-        mkdir -p "$(dirname {output.bed:q})"
-        awk 'BEGIN{{OFS="\t"}} NF >= 4 && $1 ~ /^chr([1-9]|1[0-9]|2[0-2]|X|Y|M)$/ {{print}}' {input.bed:q} \
-            | sort -k1,1V -k2,2n \
-            | bgzip -c > {output.bed:q}
-        tabix -f -p bed {output.bed:q}
-        test -s {output.bed:q}
-        test -s {output.index:q}
-        """
-
-
-# Samplot requires read alignments. Never define this rule in BAM-free mode.
-if not BAM_FREE_DOWNSTREAM:
-    rule samplot_candidate_breakpoints:
-        input:
-            # Use the mechanism-aware event ranking so read-level review includes
-            # small, large and breakpoint-defined candidates rather than only the
-            # highest generic gene scores.
-            integrated=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
-            bam=lambda wc: BAMS[wc.sample],
-            genes=rules.prepare_samplot_gene_annotation.output.bed,
-            gene_index=rules.prepare_samplot_gene_annotation.output.index,
-            script=PLOTS + "/run_samplot_candidates.py"
-        output:
-            manifest=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/samplot_manifest.tsv",
-            marker=touch(PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done")
-        params:
-            outdir=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME,
-            top_n=SAMPLOT_TOP_N,
-            min_mapq=SAMPLOT_MIN_MAPQ,
-            long_read_min=SAMPLOT_LONG_READ_MIN,
-            zoom=SAMPLOT_ZOOM_BP,
-            window=SAMPLOT_WINDOW_BP,
-            large_threshold=SAMPLOT_LARGE_SV_THRESHOLD
-        conda:
-            CONDAENV + "samplot.yaml"
-        shell:
-            """
-            set -euo pipefail
-            mkdir -p {params.outdir:q}
-
-            python {input.script:q} \
-                --input {input.integrated:q} \
-                --bam {input.bam:q} \
-                --reference {REF:q} \
-                --sample {wildcards.sample} \
-                --out-dir {params.outdir:q} \
-                --top-n {params.top_n} \
-                --min-mapq {params.min_mapq} \
-                --long-read-min {params.long_read_min} \
-                --zoom {params.zoom} \
-                --window {params.window} \
-                --large-sv-threshold {params.large_threshold} \
-                --gene-annotation {input.genes:q}
-
-            test -s {output.manifest:q}
-            touch {output.marker:q}
-            """
 
 
 def cohort_sample_args():
@@ -797,6 +722,7 @@ rule all_thesis_plots:
     input:
         GENOMISER_TARGETS,
         STABILITY_TARGETS,
+        BENCHMARK_REVIEW_TARGETS,
         expand(
             PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
             sample=POSTPROCESS_SAMPLES,
@@ -838,3 +764,5 @@ include: "../common/benchmark_genomiser.smk"
 include: "../common/compare_genomiser_rankings.smk"
 RANKING_STABILITY_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
 include: "../common/ranking_stability.smk"
+BENCHMARK_REVIEW_SAMPLES = POSTPROCESS_SAMPLES
+include: "../common/benchmark_review.smk"

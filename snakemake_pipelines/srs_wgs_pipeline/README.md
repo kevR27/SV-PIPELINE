@@ -92,7 +92,7 @@ your server copy automatically.
 | --- | --- |
 | `all` | Main analysis, annotation, candidate rankings and downstream interpretation; does not request the additional review filtering |
 | `further_filtering` | Additional filtering tables only |
-| `all_thesis_plots` | Overview figures, additional filtering tables and their figures, Samplot and optional Atlas figures when enabled |
+| `all_thesis_plots` | Focused breakpoint/gene/depth figures, filtering views and optional Atlas figures when enabled |
 | `all all_thesis_plots` | Complete analysis plus the filtering and figures above |
 
 **You do not need a separate `further_filtering` command after requesting
@@ -276,23 +276,19 @@ Every sample gets its own directory inside the **path** configured in the YAML f
 | **diagnostic_review/SAMPLE_ID.clinical_candidates.tsv** | Separate clinical candidate review order. |
 | **gene_discovery/final/** | Later SV–gene events, large-SV depth, SNV–SV comparisons and final rankings. |
 | **str/expansionhunter/**, **mei/melt/**, **mtDNA/** | Separate repeat, mobile-element and mitochondrial analysis results, when enabled. |
-| **diagnostic_review/samplot/** | Read-alignment images for selected candidates. |
 | **downstream_filtering/** and **plots/** | Additional review views and generated figures. |
 
 You can request **all_thesis_plots** to make figures after the analysis. The plotting launcher is **../../plots/run_thesis_plots.py**, with individual plotting scripts described in the [main README](../../README.md#7-plotting-scripts) and [plotting guide](../../plots/README.md). SRS review/filter plots use **../../plots/plot_downstream_sv_filtering.py** and **../../scripts/filter_sv_candidates_for_review.py**.
 
 ## 7. Interpreting the findings
 
-Begin with the QC summary and the integrated SV VCF, then inspect the SV–gene table, variant effect, caller support, read depth, population evidence and phenotype associations. For high-priority events, inspect the alignment with Samplot or a BAM viewer, especially when a deletion/duplication may represent a complex rearrangement.
+Begin with the QC summary and the integrated SV VCF, then inspect the SV–gene table, variant effect, caller support, read depth, population evidence and phenotype associations. For high-priority events, inspect the caller breakpoint/depth tracks, and use a separate BAM viewer if read-level alignment review is needed.
 
 The review outputs distinguish **research ranking**, **reported AnnotSV classification** and **clinical review order**. They are not equivalent. A variant may overlap a relevant gene while still requiring breakpoint confirmation, segregation analysis, transcript studies or other experimental follow-up. The workflow does not infer inheritance, variant phase or pathogenicity from missing evidence.
 
 ## Focused thesis figures and ranking sensitivity (new)
 
-`samplot_enabled: false` is the default for this routine workflow;
-`all` no longer requires generating Samplot images. The original
-read-based Samplot rule remains available if explicitly re-enabled
-for orthogonal candidate review with BAM data.
+The workflow no longer registers any read-alignment plotting rule. Caller/depth tracks do not replace read-level confirmation.
 
 Run `all_thesis_plots` to generate a selected figure set, including
 measured mosdepth coverage + SV interval/caller breakpoint annotations
@@ -306,6 +302,13 @@ output to `ranking_stability/`. This records how the final SV-associated
 gene shortlist is retained under reasonable AF/caller-support eligibility
 alternatives, without changing your clinical ranking, Genomiser, or any
 truth-based benchmarking. It is descriptive, not diagnostic accuracy.
+
+\nThe default `all` target also produces `benchmark/<sample>.benchmark_review.tsv`
+with separate sections for Genomiser rank agreement, rank stability,
+and optional independently confirmed-truth benchmarking. Do not interpret
+agreement or eligibility-filter retention as sensitivity/specificity.
+The standalone `benchmarking_review_all` target refreshes the review from
+existing analyses. No storage cleanup is invoked by the pipeline.
 
 The shared HON HPO reference has moved to
 `reference_checks/hon_hpo_reference.tsv` rather than the

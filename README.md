@@ -187,7 +187,7 @@ analysis and additional filtering. See [the SRS run guide](snakemake_pipelines/s
 | **modkit** | Modified-base ONT BAM | Summarizes CpG methylation. |
 | **XCI analysis** | Chromosome-X phasing and methylation | Investigates X-inactivation skew where the required data and configuration exist. |
 | **MitoCarta, gnomAD-SV and gene-depth scripts** | Annotated candidate tables | Add mitochondrial gene context, population comparison and local depth evidence. |
-| **Samplot and plotting scripts** | BAM plus selected SVs and evidence tables | Visualize alignments, breakpoints, candidate loci and whole-genome summaries. |
+| **Breakpoint and thesis plotting scripts** | Candidate VCFs, depth bins and gene annotations | Show caller breakpoint positions, locus context and whole-genome summaries; not read-level validation. |
 | **Optional AlphaGenome module** | Small-variant VCF and configured AVI resource | Adds research-oriented predictions without changing variant calling or clinical classification. |
 
 **Main distinction:** a call supported by several callers is not automatically pathogenic. Frequencies that are absent or cannot be matched remain unknown; they must not be interpreted as zero. Repeat, mobile-element, depth, methylation and phase results add context but are not independent experimental confirmation.
@@ -292,7 +292,6 @@ The Snakefiles call most of these scripts automatically. Their names are listed 
 | **scripts/integrate_depth_into_candidates.py** | Adds depth observations to SV–gene candidate tables.. |
 | **scripts/build_cohort_sv_recurrence.py** | Finds conservatively similar SVs across study samples.. |
 | **scripts/filter_sv_candidates_for_review.py** | Creates separate size, frequency and supporting-evidence review views.. |
-| **scripts/run_samplot_candidates.py** | Makes SRS read-alignment plots for selected SV candidates.. |
 | **scripts/annotate_alphagenome_atlas.py** | Optional AlphaGenome offline variant-impact lookup and selected research plots.. |
 
 ### X-chromosome inactivation
@@ -357,7 +356,6 @@ The **plots/run_thesis_plots.py** launcher uses the existing pipeline results to
 | **plots/plot_sv_gene_network.py** | SV-to-gene networks. |
 | **plots/plot_sv_landscape.py** | SV distributions by class, size and location. |
 | **plots/plot_utils.py** | Shared plotting helpers. |
-| **plots/run_samplot_candidates.py** | ONT candidate read-alignment plots. |
 | **plots/run_thesis_plots.py** | Launcher for the per-sample figure collection. |
 
 The **r_plots/** folder contains complementary R figures:
@@ -372,9 +370,24 @@ The **r_plots/** folder contains complementary R figures:
 | **r_plots/plot_xci.R** | XCI methylation and skew figures. |
 | **r_plots/theme_thesis.R** | Shared figure styling. |
 
+## Benchmark review and ranking stability
+
+LRS, SRS and VCF-only analysis create a per-sample `benchmark/<sample>.benchmark_review.tsv`
+and JSON provenance file. These index **three distinct evaluations**:
+(1) descriptive custom-versus-Genomiser rank agreement, (2) fixed-rank
+AF/caller eligibility sensitivity in `ranking_stability/`, and
+(3) a confirmed-truth benchmark only if independently curated truth records
+were supplied. Missing truth is marked `NOT_CONFIGURED`; it is not a
+negative diagnostic result. Ranking stability does not recompute clinical
+scores and is not itself diagnostic accuracy.
+
+Transcript-specific SV consequences rely on VEP/AnnotSV and a matching GRCh38
+transcript reference; expression disruption is not claimed without RNA data.
+The plotting/benchmarking workflows do not perform storage cleanup.
+
 ## 8. How to read the results
 
-Start with the master merged VCF and its caller-support summary, then check the integrated SV–gene table, gene/transcript effects, population evidence, HPO relevance, and the final candidate tables. Inspect the BAM or Samplot image for important breakpoints. The complete discovery variants are preserved even when an optional annotation is unavailable.
+Start with the master merged VCF and its caller-support summary, then check the integrated SV–gene table, gene/transcript effects, population evidence, HPO relevance, and the final candidate tables. Review the caller/depth/gene breakpoint figures; use a separate BAM viewer if direct read-level inspection is required. The complete discovery variants are preserved even when an optional annotation is unavailable.
 
 The gene-panel label and mitochondrial context help prioritize which findings to investigate; neither is evidence that an SV is disease-causing. An SV–gene overlap predicts a possible mechanism but does not demonstrate an effect on RNA or protein. Use the final TSV files to select variants for further analysis and experimental confirmation.
 

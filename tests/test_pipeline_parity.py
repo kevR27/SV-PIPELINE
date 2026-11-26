@@ -46,7 +46,6 @@ class PipelineParityTests(unittest.TestCase):
             "build_qc_summary.py",
             "combine_sv_cnv_evidence.py",
             "preflight_srs_wgs.py",
-            "run_samplot_candidates.py",
             "summarize_mtdna_variants.py",
             "summarize_vep_transcripts.py",
         ]
@@ -56,7 +55,6 @@ class PipelineParityTests(unittest.TestCase):
             "gridss.yaml",
             "mutserve.yaml",
             "qc.yaml",
-            "srs_samplot.yaml",
             "srs_vep.yaml",
         ]
         for filename in srs_helpers:
@@ -66,7 +64,6 @@ class PipelineParityTests(unittest.TestCase):
 
         self.assertIn('../../envs/', (SRS / "config_srs_wgs.yaml").read_text())
         self.assertIn('ENV_DIR + "/srs_vep.yaml"', self.srs)
-        self.assertIn('ENV_DIR + "/srs_samplot.yaml"', self.srs)
 
     def test_shared_assessment_and_audit_layers_are_included(self):
         for include in ["allele_assessment.smk", "annotsv_evidence_audit.smk"]:

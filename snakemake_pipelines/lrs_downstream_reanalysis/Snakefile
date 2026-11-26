@@ -2,7 +2,7 @@
 
 Sample IDs are discovered from the directories below input_root, or selected
 by their folder names. The original LRS downstream rules are reused, without
-defining any BAM-based coverage/caller/Samplot rule.
+defining any BAM-based coverage/caller/read-alignment plot rule.
 """
 
 import os
@@ -71,7 +71,7 @@ config["alphagenome_native_plots_enabled"] = False
 
 print("[LRS archived downstream] input_root:", result_root)
 print("[LRS archived downstream] selected sample IDs:", ", ".join(selected))
-print("[LRS archived downstream] BAM-independent reanalysis; new coverage, Samplot and XCI are not run")
+print("[LRS archived downstream] BAM-independent reanalysis; new coverage, read-alignment plots and XCI are not run")
 
 # Includes the original phenotype ranking, annotation integration,
 # score-free allele-event prioritization, cohort recurrence, final candidate ranking,
@@ -84,7 +84,7 @@ include: "cadd_comparison.smk"
 
 
 # Optional plots that can be rebuilt from existing tabular files and
-# coverage bins. This target intentionally excludes Samplot, XCI and
+# coverage bins. This target intentionally excludes read-alignment figures, XCI and
 # sequencing QC plots that need BAMs or archived QC outputs.
 rule saved_evidence_plots:
     input:
@@ -112,7 +112,7 @@ rule saved_evidence_plots:
 
 
 # Full exploratory plot regeneration from saved LRS data.
-# Do not call the legacy all_thesis_plots target: it requires Samplot/BAMs.
+# Do not call the legacy all_thesis_plots target: it can require BAM-dependent outputs.
 # Outputs are isolated in plots_reanalysis/ to avoid selecting old images.
 ARCHIVED_PLOT_CONTEXT = {
     key: str(value) for key, value in PLOT_CONTEXT.items()
@@ -186,7 +186,6 @@ rule archived_thesis_plots_sample:
             --candidate-table {input.events:q} \\
             --evidence-table {input.integrated:q} \\
             --out-dir {params.outdir:q} \\
-            --no-samplot \\
             --top-genes {params.top_genes} \\
             --review-top-n {params.review_top_n} \\
             --locus-top-n {params.locus_top_n} \\

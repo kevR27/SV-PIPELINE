@@ -42,8 +42,6 @@ def parse_args():
     p.add_argument("--repeat-bed", action="append", default=[], metavar="CLASS=PATH")
     p.add_argument("--random-draws", type=int, default=200)
     p.add_argument("--assembly-manifest", help="Optional SV_ID/PAF_PATH table for existing candidate assemblies")
-    p.add_argument("--samplot-manifest", action="append", default=[], help="Explicit current read-evidence manifest; overrides discovery")
-    p.add_argument("--no-samplot", action="store_true", help="Do not read or embed any saved Samplot images")
     p.add_argument("--focused", action="store_true", help="Generate the core thesis figures only; skip redundant exploratory plots")
     p.add_argument("--review-top-n", type=int, default=5, help="Initial review associations per panel group")
     p.add_argument("--locus-top-n", type=int, default=10, help="Maximum detailed locus figures from the review shortlist")
@@ -259,25 +257,6 @@ def _main():
     caller_order = "Manta,Delly" if args.platform == "srs" else "Sniffles2,cuteSV,Delly"
     shortlist = folders["review"] / f"{s}_candidate_shortlist.tsv"
     phase_pairs = sample_root / "gene_discovery" / "final" / f"{s}_snv_sv_candidates.tsv"
-    if args.no_samplot:
-        if args.samplot_manifest:
-            raise ValueError("--no-samplot cannot be combined with --samplot-manifest")
-        samplot_manifests = []
-    else:
-        samplot_manifests = (
-            [sample_root / "diagnostic_review" / f"{s}.samplot_manifest.tsv"]
-            if args.platform == "srs" else
-            sorted(
-                (out / "13_breakpoint_evidence").glob("*/samplot_manifest.tsv"),
-                key=lambda path: path.stat().st_mtime,
-                reverse=True
-            )[:1]
-        )
-        if args.samplot_manifest:
-            samplot_manifests = [Path(path).expanduser().resolve() for path in args.samplot_manifest]
-            for path in samplot_manifests:
-                if not path.exists():
-                    raise FileNotFoundError(path)
     depth_bed = Path(args.depth_bed) if args.depth_bed else first_existing_path([
         sample_root / "coverage" / "binned" / f"{s}.10kb.regions.bed.gz",
         sample_root / "coverage" / f"{s}.regions.bed.gz"])
@@ -344,9 +323,6 @@ def _main():
             locus_cmd += ["--depth-bed",str(depth_bed)]
         if args.platform == "lrs" and methylation:
             locus_cmd += ["--methylation-bed", str(methylation), "--methylation-units", args.methylation_units]
-        for manifest in samplot_manifests:
-            if manifest.exists():
-                locus_cmd += ["--samplot-manifest",str(manifest)]
         if args.platform == "lrs" and phase_pairs.exists():
             locus_cmd += ["--phase-pairs",str(phase_pairs)]
         if args.assembly_manifest:

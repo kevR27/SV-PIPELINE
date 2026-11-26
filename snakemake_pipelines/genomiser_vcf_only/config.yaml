@@ -38,6 +38,8 @@ genomiser_phenotype_data_version: "2512"
 genomiser_java: "java"
 genomiser_memory_gb: 32
 genomiser_benchmark_truth_tsv: null
+ranking_stability_enabled: true
+ranking_stability_top_n: 20
 
 # Shared annotation and ranking resources (same as the standard LRS workflow).
 candidate_genes_list: "/DATA/casadei7/tools/SV-PIPELINE-main_v3/PANEL_OA/optic_neuropathy_genes.txt"

@@ -58,8 +58,9 @@ def render_matrix(work, prefix, title, rare_af=0.01, platform="lrs"):
     domains = domains_for(platform)
     observations = [event_evidence(row, rare_af, platform) for _, row in work.iterrows()]
     matrix = np.array([[states.index(obs[d][0]) for d in domains] for obs in observations])
-    height = max(3.3, len(work) * 0.67 + 2.25)
-    fig, ax = plt.subplots(figsize=(17 if platform == "srs" else 19, height))
+    height = max(4.4, len(work) * 0.88 + 2.7)
+    width = max(20, len(domains) * 2.15 + 5.5)
+    fig, ax = plt.subplots(figsize=(width, height))
     ax.imshow(matrix, aspect="auto", interpolation="nearest", cmap=ListedColormap(list(STATE_COLORS.values())), vmin=-0.5, vmax=len(states)-0.5)
     for i, obs in enumerate(observations):
         for j, domain in enumerate(domains):
@@ -82,7 +83,10 @@ def render_matrix(work, prefix, title, rare_af=0.01, platform="lrs"):
     ax.legend(handles=[Patch(facecolor=STATE_COLORS[s], edgecolor="#FFFFFF", label=STATE_LABELS[s]) for s in states], loc="lower left", bbox_to_anchor=(0, 1.01), ncol=4, frameon=False, fontsize=9)
     context_note = "Repeat-locus overlap is context, not proof of an expansion." if platform == "srs" else "Gene relevance and methylation are context."
     fig.text(0.5, 0.015, f"Colours describe evidence states, not pathogenicity. {context_note} Depth and caller agreement use the same sequencing data.\nPopulation cells show the largest explicit event AF across available sources. Full observations and identifiers are in the accompanying TSV.", ha="center", fontsize=9)
-    fig.subplots_adjust(left=0.26, right=0.985, bottom=0.8/height, top=1-1.45/height)
+    # Space is proportional to the number of rows/columns, not a fixed page size.
+    # Reserve room for multi-line cell text, candidate IDs, legend and notes.
+    fig.subplots_adjust(left=5.1/width, right=0.985,
+                        bottom=0.85/height, top=1-1.5/height)
     result = save_figure(fig, prefix, dpi=300)
     plt.close(fig)
     return result

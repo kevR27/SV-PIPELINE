@@ -16,7 +16,7 @@ import plot_event_review_summary as counts
 from candidate_review import event_frequency_table
 from plot_utils import abs_svlen
 from build_snv_sv_candidates import pair_phase_relation, read_phase
-from plot_candidate_locus import load_samplot_images, plot_assembly_alignment
+from plot_candidate_locus import plot_assembly_alignment
 import run_thesis_plots as launcher
 
 
@@ -156,14 +156,6 @@ class GenomeContextTests(unittest.TestCase):
             vcf.write_text("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSYNTHETIC\nchr1\t100\t.\tA\tC,G\t.\tPASS\t.\tGT:PS\t0|1:100\n")
             phase,_ = read_phase(str(vcf))
             self.assertEqual(phase[("1",100,"G")][2],"NO")
-
-    def test_failed_samplot_is_not_reused_from_a_stale_image(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            image = Path(tmp)/"stale.png"
-            image.write_bytes(b"unused")
-            manifest = Path(tmp)/"manifest.tsv"
-            pd.DataFrame([{"SV_ID":"del1","STATUS":"FAILED","IMAGE":str(image)}]).to_csv(manifest,sep="\t",index=False)
-            self.assertEqual(load_samplot_images([manifest]),{})
 
     def test_assembly_alignment_source_preserves_reverse_strand(self):
         with tempfile.TemporaryDirectory() as tmp, patch("plot_candidate_locus.save_figure"):

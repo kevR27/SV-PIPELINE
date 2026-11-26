@@ -91,7 +91,10 @@ rownames(mat) <- wide$gene_symbol
 
 term_names <- selected_terms$hpo_label
 names(term_names) <- selected_terms$hpo_id
-colnames(mat) <- paste0(colnames(mat), "\n", term_names[colnames(mat)])
+wrapped_terms <- vapply(term_names[colnames(mat)], function(label) {
+  paste(strwrap(as.character(label), width = 20), collapse = "\n")
+}, character(1))
+colnames(mat) <- paste0(colnames(mat), "\n", wrapped_terms)
 
 gene_info <- genes[match(rownames(mat), GENE)]
 panel_split <- factor(
@@ -118,7 +121,8 @@ ht <- Heatmap(
   show_column_dend = FALSE,
   row_names_gp = gpar(fontsize = 9),
   column_names_gp = gpar(fontsize = 7.5),
-  column_names_rot = 45,
+  column_names_rot = 90,
+  column_names_max_height = unit(72, "mm"),
   rect_gp = gpar(col = "white", lwd = 0.8),
   left_annotation = row_ha,
   column_title = "Human HPO annotation context of prioritized genes",
@@ -127,7 +131,8 @@ ht <- Heatmap(
   heatmap_legend_param = list(at = c(0, 1), labels = c("No annotation", "Annotated"))
 )
 
-height <- max(7, 0.32 * nrow(mat) + 2.8)
+height <- max(8.5, 0.43 * nrow(mat) + 3.4)
+width <- max(14, 0.95 * ncol(mat) + 6.5)
 draw_with_scope <- function() {
   draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
   grid.text(
@@ -138,12 +143,12 @@ draw_with_scope <- function() {
   )
 }
 
-pdf(pdf_file, width = 14, height = height, useDingbats = FALSE)
+pdf(pdf_file, width = width, height = height, useDingbats = FALSE)
 draw_with_scope()
 dev.off()
-png(png_file, width = 14, height = height, units = "in", res = 400)
+png(png_file, width = width, height = height, units = "in", res = 400)
 draw_with_scope()
 dev.off()
-svglite(svg_file, width = 14, height = height)
+svglite(svg_file, width = width, height = height)
 draw_with_scope()
 dev.off()

@@ -135,9 +135,6 @@ MITOCARTA_PATHWAYS = config.get("mitocarta_pathways_gmx")
 
 SUPPORTING_BP_TOLERANCE = int(config.get("supporting_evidence_breakpoint_tolerance", 500))
 DIAGNOSTIC_TOP_N = int(config.get("diagnostic_candidate_top_n", 0))
-SAMPLOT_ENABLED = config.get("samplot_enabled", True)
-SAMPLOT_TOP_N = int(config.get("samplot_top_n", 20))
-SAMPLOT_MIN_MAPQ = int(config.get("samplot_min_mapq", 20))
 # Optional control results and population frequency (sections 3 and 10)
 CANDIDATE_TRUTH = config.get("candidate_truth_tsv")
 SV_TRUTH_VCFS = config.get("sv_truth_vcfs", {})
@@ -233,7 +230,6 @@ if MITOCARTA_ENABLED:
         + expand(PATH + "{sample}/gene_discovery/{sample}_mitocarta_summary.tsv", sample=SAMPLES)
     )
 
-SAMPLOT_TARGETS = expand(PATH + "{sample}/diagnostic_review/{sample}.samplot_manifest.tsv", sample=SAMPLES) if SAMPLOT_ENABLED else []
 CANDIDATE_BENCHMARK_TARGETS = []
 if CANDIDATE_TRUTH:
     CANDIDATE_BENCHMARK_TARGETS = (
@@ -262,6 +258,7 @@ GENOMISER_BENCHMARK_TARGETS = expand(
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
 GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=SAMPLES)
+BENCHMARK_REVIEW_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.benchmark_review.tsv", sample=SAMPLES)
 STABILITY_TARGETS = (
     expand(PATH + "{sample}/ranking_stability/stability_manifest.json", sample=SAMPLES)
     if config.get("ranking_stability_enabled", True) else []
@@ -330,11 +327,11 @@ rule all:
             expand(PATH + "{sample}/diagnostic_review/{sample}.diagnostic_candidates.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/diagnostic_review/{sample}.clinical_candidates.tsv", sample=SAMPLES),
             expand(PATH + "{sample}/diagnostic_review/{sample}.mitochondrial_gene_ranking.tsv", sample=SAMPLES),
-            SAMPLOT_TARGETS,
             GENOMISER_TARGETS,
             GENOMISER_BENCHMARK_TARGETS,
             GENOMISER_COMPARISON_TARGETS,
             STABILITY_TARGETS,
+            BENCHMARK_REVIEW_TARGETS,
             CANDIDATE_BENCHMARK_TARGETS,
             SV_BENCHMARK_TARGETS,
         ],
@@ -1377,7 +1374,7 @@ rule mitocarta_context_srs:
 
 # ============================================================
 # 7C. ORDER CANDIDATES FOR BIOLOGICAL REVIEW
-# Keep all rows by default. Samplot alone limits the number of read-evidence images.
+# Keep all candidate rows by default. Figure selection is independent of ranking.
 # ============================================================
 
 rule build_diagnostic_candidates:
@@ -1418,27 +1415,6 @@ rule rank_mitochondrial_genes_srs:
         """
 
 
-rule samplot_diagnostic_candidates:
-    input:
-        candidates=rules.build_diagnostic_candidates.output.tsv,
-        bam=lambda wc: BAMS[wc.sample],
-        bai=lambda wc: bam_index_for(wc.sample),
-        ref=REF,
-        script=SCRIPTS + "/run_samplot_candidates.py"
-    output:
-        manifest=PATH + "{sample}/diagnostic_review/{sample}.samplot_manifest.tsv"
-    params:
-        outdir=PATH + "{sample}/diagnostic_review/samplot"
-    conda:
-        ENV_DIR + "/srs_samplot.yaml"
-    shell:
-        """
-        python {input.script:q} --input {input.candidates:q} --bam {input.bam:q} --reference {input.ref:q} \
-          --sample {wildcards.sample:q} --out-dir {params.outdir:q} --top-n {SAMPLOT_TOP_N} \
-          --min-mapq {SAMPLOT_MIN_MAPQ} --manifest {output.manifest:q}
-        """
-
-
 # ============================================================
 # 8. FIGURES AND SEPARATE DOWNSTREAM FILTERING VIEWS
 # Run all_thesis_plots to create these figures, as in the LRS workflow.
@@ -1460,7 +1436,6 @@ rule all_thesis_plots:
         GENOMISER_TARGETS,
         expand(PATH + "{sample}/plots/.thesis_plots.done", sample=SAMPLES),
         expand(PATH + "{sample}/downstream_filtering/plots/.filter_plots.done", sample=SAMPLES),
-        SAMPLOT_TARGETS,
         atlas=lambda wc: ATLAS_OVERVIEW_TARGETS + ATLAS_NATIVE_TARGETS
 
 
@@ -1485,7 +1460,6 @@ rule thesis_plots_sample:
         mito_ranking=lambda wc: [PATH + f"{wc.sample}/diagnostic_review/{wc.sample}.mitochondrial_gene_ranking.tsv"] if MITOCARTA_ENABLED else [],
         gtf=lambda wc: [PLOT_GENE_GTF] if PLOT_GENE_GTF else [],
         genome_context=PLOT_CONTEXT_INPUTS,
-        samplot=lambda wc: [PATH + f"{wc.sample}/diagnostic_review/{wc.sample}.samplot_manifest.tsv"] if SAMPLOT_ENABLED else [],
         scripts=sorted(str(p) for p in Path(PLOTS).glob("*.py"))
     output:
         marker=touch(PATH + "{sample}/plots/.thesis_plots.done"),
@@ -1495,7 +1469,6 @@ rule thesis_plots_sample:
     params:
         gene_gtf_arg=("--gene-gtf " + shlex.quote(str(PLOT_GENE_GTF))) if PLOT_GENE_GTF else "",
         genome_context_args=PLOT_CONTEXT_ARGS,
-        samplot_arg=lambda wc: "--samplot-manifest " + shlex.quote(PATH + f"{wc.sample}/diagnostic_review/{wc.sample}.samplot_manifest.tsv") if SAMPLOT_ENABLED else "",
         top_genes=PLOT_TOP_GENES,
         review_top_n=REVIEW_TOP_N,
         locus_top_n=LOCUS_TOP_N
@@ -1505,7 +1478,7 @@ rule thesis_plots_sample:
         """
         mkdir -p "$(dirname {log:q})"
         python {PLOTS:q}/run_thesis_plots.py --root {PATH:q} --sample {wildcards.sample:q} \
-            --platform srs --focused --no-samplot --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
+            --platform srs --focused --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
             --top-genes {params.top_genes} --review-top-n {params.review_top_n} --locus-top-n {params.locus_top_n} \
             {params.genome_context_args} \
             {params.gene_gtf_arg} > {log:q} 2>&1
@@ -1618,3 +1591,5 @@ include: "../common/benchmark_genomiser.smk"
 include: "../common/compare_genomiser_rankings.smk"
 RANKING_STABILITY_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
 include: "../common/ranking_stability.smk"
+BENCHMARK_REVIEW_SAMPLES = SAMPLES
+include: "../common/benchmark_review.smk"

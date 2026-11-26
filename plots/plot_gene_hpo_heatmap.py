@@ -91,15 +91,16 @@ def make_exomiser_comparison(table, out_prefix, top_genes=25):
 
 def make_heatmap(matrix, xlabels, anchor_hpos, out_prefix, title, hpos):
     cmap = ListedColormap(["#F3F4F4", "#0B6E69"])
-    fig_w = max(12.0, 0.72 * len(hpos) + 4.5)
-    fig_h = max(6.5, 0.38 * len(matrix.index) + 2.8)
+    # Avoid colliding multiline HPO labels and closely packed gene rows.
+    fig_w = max(12.0, 1.06 * len(hpos) + 4.5)
+    fig_h = max(7.0, 0.46 * len(matrix.index) + 4.0)
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.imshow(matrix.values, aspect="auto", interpolation="nearest", cmap=cmap, vmin=0, vmax=1)
 
     ax.set_yticks(np.arange(len(matrix.index)))
     ax.set_yticklabels(matrix.index, fontsize=10)
     ax.set_xticks(np.arange(len(hpos)))
-    ax.set_xticklabels(xlabels, rotation=55, ha="right", fontsize=8.5)
+    ax.set_xticklabels(xlabels, rotation=90, ha="center", va="top", fontsize=9)
     ax.set_xlabel("Human Phenotype Ontology term")
     ax.set_ylabel("SV-overlapping gene")
     ax.set_title(title, fontweight="bold", fontsize=14)
@@ -120,7 +121,8 @@ def make_heatmap(matrix, xlabels, anchor_hpos, out_prefix, title, hpos):
         ha="center",
         fontsize=9,
     )
-    fig.tight_layout(rect=[0, 0.03, 1, 1])
+    fig.subplots_adjust(left=0.14, right=0.985, top=0.91,
+                        bottom=min(0.42, max(0.16, 2.7 / fig_h)))
     outputs = save_figure(fig, out_prefix)
     plt.close(fig)
     return outputs
