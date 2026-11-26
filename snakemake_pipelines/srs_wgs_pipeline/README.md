@@ -303,6 +303,13 @@ gene shortlist is retained under reasonable AF/caller-support eligibility
 alternatives, without changing your clinical ranking, Genomiser, or any
 truth-based benchmarking. It is descriptive, not diagnostic accuracy.
 
+\nThe default `all` target also produces `benchmark/<sample>.benchmark_review.tsv`
+with separate sections for Genomiser rank agreement, rank stability,
+and optional independently confirmed-truth benchmarking. Do not interpret
+agreement or eligibility-filter retention as sensitivity/specificity.
+The standalone `benchmarking_review_all` target refreshes the review from
+existing analyses. No storage cleanup is invoked by the pipeline.
+
 The shared HON HPO reference has moved to
 `reference_checks/hon_hpo_reference.tsv` rather than the
 `cohort_analysis/` directory. No cross-patient SV recurrence analysis
