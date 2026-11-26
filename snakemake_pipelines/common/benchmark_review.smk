@@ -29,10 +29,7 @@ rule benchmark_review:
     shell:
         """
         set -euo pipefail
-        python {input.script:q} --sample {wildcards.sample:q} \\
-            --comparison {input.comparison:q} \\
-            {params.stability_arg} {params.truth_arg} \\
-            --output {output.table:q} --manifest {output.manifest:q}
+        python {input.script:q} --sample {wildcards.sample:q} --comparison {input.comparison:q} {params.stability_arg} {params.truth_arg} --output {output.table:q} --manifest {output.manifest:q}
         test -s {output.table:q}
         test -s {output.manifest:q}
         """
