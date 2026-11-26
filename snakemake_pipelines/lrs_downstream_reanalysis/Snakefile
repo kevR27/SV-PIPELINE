@@ -186,7 +186,6 @@ rule archived_thesis_plots_sample:
             --candidate-table {input.events:q} \\
             --evidence-table {input.integrated:q} \\
             --out-dir {params.outdir:q} \\
-            --no-samplot \\
             --top-genes {params.top_genes} \\
             --review-top-n {params.review_top_n} \\
             --locus-top-n {params.locus_top_n} \\
