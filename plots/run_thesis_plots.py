@@ -226,6 +226,8 @@ def _main():
     # Historical Exomiser-only comparison plots are not part of the current
     # Genomiser analysis. Rank agreement is reported under benchmark/.
     gene_summary = sample_root / "gene_discovery" / f"{s}_gene_multimodal_evidence_summary.tsv"
+    comparison_details = sample_root / "benchmark" / f"{s}.ranking_comparison.tsv"
+    comparison_summary = sample_root / "benchmark" / f"{s}.ranking_comparison.json"
     straglr = sample_root / "sv" / "straglr" / f"{s}_straglr.annotated.tsv"
     tldr = sample_root / "mei" / "tldr" / f"{s}.tldr.table.txt"
 
@@ -462,6 +464,18 @@ def _main():
             ),
         ]
     )
+
+    # Current Genomiser comparison, distinct from the historical Exomiser plot.
+    jobs.append((
+        [
+            py, str(HERE / "plot_genomiser_rank_comparison.py"),
+            "--details", str(comparison_details),
+            "--summary", str(comparison_summary),
+            "--out-prefix", str(folders.get("integration", folders["candidates"]) / f"{s}_genomiser_rank_comparison"),
+            "--top-n", str(args.top_genes),
+        ],
+        [comparison_details, comparison_summary],
+    ))
 
     # The complete master universe is used for both the map and AF overlays.
     jobs.append(([py,str(HERE / "plot_needlr_population.py"),"--input",str(integrated),"--integrated",
