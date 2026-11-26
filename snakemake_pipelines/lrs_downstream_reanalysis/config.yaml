@@ -26,6 +26,9 @@ original_lrs_config: "../lrs/config_lrs.yaml"
 # The six CORE_OCULAR_HON terms are retained by the independent custom ranking
 # through hon_hpo_seed_terms in the original LRS config.
 hpo_include_shared_hon_seeds: false
+cohort_analysis_enabled: false
+ranking_stability_enabled: true
+ranking_stability_top_n: 20
 
 # Optional side-by-side Genomiser sensitivity run with CADD.
 # First locate/verify both actual CADD v1.7 GRCh38 files AND their .tbi indexes.

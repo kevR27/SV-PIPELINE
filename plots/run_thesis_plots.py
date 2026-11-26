@@ -44,6 +44,7 @@ def parse_args():
     p.add_argument("--assembly-manifest", help="Optional SV_ID/PAF_PATH table for existing candidate assemblies")
     p.add_argument("--samplot-manifest", action="append", default=[], help="Explicit current read-evidence manifest; overrides discovery")
     p.add_argument("--no-samplot", action="store_true", help="Do not read or embed any saved Samplot images")
+    p.add_argument("--focused", action="store_true", help="Generate the core thesis figures only; skip redundant exploratory plots")
     p.add_argument("--review-top-n", type=int, default=5, help="Initial review associations per panel group")
     p.add_argument("--locus-top-n", type=int, default=10, help="Maximum detailed locus figures from the review shortlist")
     p.add_argument("--review-only", action="store_true", help="Generate QC and essential review outputs from completed tables only")
@@ -477,6 +478,31 @@ def _main():
         [comparison_details, comparison_summary],
     ))
 
+    # Compact figure with the measured depth, annotated gene/exon tracks,
+    # master breakpoints and matched caller VCF intervals (if available).
+    breakpoint_source = sample_root / "gene_discovery" / "final" / f"{s}_sv_gene_candidates.ranked.tsv"
+    if not breakpoint_source.exists():
+        breakpoint_source = candidate_source
+    depth_bins_path = first_existing_path([
+        sample_root / "coverage" / "binned" / f"{s}.10kb.regions.bed.gz",
+        sample_root / "coverage" / f"{s}.regions.bed.gz",
+    ])
+    breakpoint_cmd = [
+        py, str(HERE / "plot_breakpoint_gene_tracks.py"),
+        "--sample-dir", str(sample_root),
+        "--candidates", str(breakpoint_source),
+        "--platform", args.platform,
+        "--out-dir", str(out / "12_breakpoint_tracks"),
+        "--top-n", str(min(args.locus_top_n, 8)),
+    ]
+    if depth_bins_path:
+        breakpoint_cmd += ["--depth", str(depth_bins_path)]
+    if args.gene_bed:
+        breakpoint_cmd += ["--gene-bed", str(args.gene_bed)]
+    if args.gene_gtf:
+        breakpoint_cmd += ["--gene-gtf", str(args.gene_gtf)]
+    jobs.append((breakpoint_cmd, [breakpoint_source]))
+
     # The complete master universe is used for both the map and AF overlays.
     jobs.append(([py,str(HERE / "plot_needlr_population.py"),"--input",str(integrated),"--integrated",
                   "--candidate-table",str(shortlist),"--out-prefix",str(folders["population"] / f"{s}_population_candidate_overlay")],[integrated]))
@@ -588,6 +614,22 @@ def _main():
             "plot_sv_gene_network.py",
         }
         jobs = [(command, required) for command, required in jobs if Path(command[1]).name not in lrs_event_plots]
+
+    if args.focused:
+        # Keep one representative overview, phenotype, evidence and locus figure
+        # rather than exporting every intermediate/exploratory panel by default.
+        focused_scripts = {
+            "build_candidate_review.py",
+            "plot_event_review_summary.py",
+            "plot_candidate_evidence_matrix.py",
+            "plot_breakpoint_gene_tracks.py",
+            "plot_sv_landscape.py",
+            "plot_large_complex_candidates.py",
+            "plot_gene_hpo_heatmap.py",
+            "plot_genomiser_rank_comparison.py",
+        }
+        jobs = [(command, required) for command, required in jobs
+                if Path(command[1]).name in focused_scripts]
 
     for command, required in jobs:
         run(command, required, args.dry_run)

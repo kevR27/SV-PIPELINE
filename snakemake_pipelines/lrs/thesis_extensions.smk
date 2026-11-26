@@ -10,6 +10,7 @@ DEPTH_MIN_MAPQ = config.get("depth_min_mapq", 20)
 LARGE_SV_DEPTH_MIN_SIZE = config.get("large_sv_depth_min_size", 100000)
 R_TOP_CANDIDATES = config.get("r_plot_top_candidates", 50)
 R_TOP_HPO = config.get("r_plot_top_hpo", 50)
+COHORT_ANALYSIS_ENABLED = bool(config.get("cohort_analysis_enabled", False))
 # HON_HPO_SEEDS is resolved by the parent workflow. Reuse that same file
 # rather than overriding it for the generated HPO reference.
 HON_PANEL_FILE = config["candidate_genes_list"]
@@ -45,7 +46,7 @@ rule build_hon_hpo_reference:
         pathways=MITOCARTA_PATHWAYS_FILE,
         script=SCRIPTS + "/build_hon_hpo_reference.py"
     output:
-        tsv=PATH + "cohort_analysis/reference/hon_hpo_reference.tsv"
+        tsv=PATH + "reference_checks/hon_hpo_reference.tsv"
     conda:
         CONDAENV + "monarch.yaml"
     shell:
@@ -318,13 +319,18 @@ rule finalize_candidate_ranking:
         genes=rules.integrate_depth_into_final_candidates.output.genes,
         sv=rules.integrate_depth_into_final_candidates.output.sv,
         snv_sv=rules.build_snv_sv_candidates.output.tsv,
-        recurrence=PATH + "cohort_analysis/sv_recurrence.tsv",
-        recurrence_members=PATH + "cohort_analysis/sv_recurrence_members.tsv",
+        recurrence=lambda wc: [PATH + "cohort_analysis/sv_recurrence.tsv"] if COHORT_ANALYSIS_ENABLED else [],
+        recurrence_members=lambda wc: [PATH + "cohort_analysis/sv_recurrence_members.tsv"] if COHORT_ANALYSIS_ENABLED else [],
         mitochondrial=rules.rank_mitochondrial_genes.output.tsv,
         clinical_evidence=rules.merge_integrated_annotations.output.tsv,
         script=SCRIPTS + "/finalize_candidate_ranking.py",
         clinical_script=SCRIPTS + "/build_diagnostic_candidates.py",
         ranking_common=SCRIPTS + "/ranking_common.py"
+    params:
+        recurrence_args=(
+            "--recurrence-summary " + shlex.quote(PATH + "cohort_analysis/sv_recurrence.tsv")
+            + " --recurrence-members " + shlex.quote(PATH + "cohort_analysis/sv_recurrence_members.tsv")
+        ) if COHORT_ANALYSIS_ENABLED else ""
     output:
         genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
         sv=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
@@ -340,8 +346,7 @@ rule finalize_candidate_ranking:
             --sv {input.sv:q} \
             --snv-sv {input.snv_sv:q} \
             --sample {wildcards.sample} \
-            --recurrence-summary {input.recurrence:q} \
-            --recurrence-members {input.recurrence_members:q} \
+            {params.recurrence_args} \
             --mitochondrial-ranking {input.mitochondrial:q} \
             --clinical-evidence {input.clinical_evidence:q} \
             --genomiser-genes {input.genomiser_genes:q} --genomiser-variants {input.genomiser_variants:q} --clinical-output {output.clinical:q} \
@@ -632,12 +637,10 @@ FINAL_THESIS_OUTPUTS = [
         PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
         sample=POSTPROCESS_SAMPLES,
     ),
-    *expand(
-        PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done",
-        sample=POSTPROCESS_SAMPLES,
-    ),
-    PATH + "cohort_analysis/sv_recurrence.tsv",
-    PATH + "cohort_analysis/sv_recurrence_members.tsv",
+    *((
+        [PATH + "cohort_analysis/sv_recurrence.tsv",
+         PATH + "cohort_analysis/sv_recurrence_members.tsv"]
+    ) if COHORT_ANALYSIS_ENABLED else []),
     *expand(
         PATH + "{sample}/qc/{sample}.dorado_qc.tsv",
         sample=POSTPROCESS_SAMPLES,

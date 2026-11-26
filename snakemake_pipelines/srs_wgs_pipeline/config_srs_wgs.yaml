@@ -193,12 +193,15 @@ melt_transposons:
 # 8. CANDIDATE REVIEW AND PLOTS — same plotting controls as LRS
 # ============================================================
 diagnostic_candidate_top_n: 0      # 0 = keep every ranked SV–gene row.
-samplot_enabled: true
+samplot_enabled: false
 samplot_top_n: 50                  # Maximum read-evidence images per sample.
 samplot_min_mapq: 20
 
 # Run the separate all_thesis_plots target after the analysis.
-plot_top_genes: 50
+plot_top_genes: 20
+ranking_stability_enabled: true
+ranking_stability_top_n: 20
+cohort_analysis_enabled: false
 candidate_review_top_n: 10          # Initial review rows per panel group.
 candidate_locus_top_n: 30          # Maximum diagrams of selected loci.
 candidate_plot_gene_gtf: null      # Matching GRCh38 GTF for real exon tracks.

@@ -235,6 +235,10 @@ GENOMISER_BENCHMARK_TARGETS = expand(
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
 GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=POSTPROCESS_SAMPLES)
+STABILITY_TARGETS = (
+    expand(PATH + "{sample}/ranking_stability/stability_manifest.json", sample=POSTPROCESS_SAMPLES)
+    if config.get("ranking_stability_enabled", True) else []
+)
 
 # Default post-processing target:
 # retain one compressed, authoritative SV-gene table per completed sample.
@@ -245,6 +249,7 @@ rule all:
         GENOMISER_TARGETS,
         GENOMISER_BENCHMARK_TARGETS,
         GENOMISER_COMPARISON_TARGETS,
+        STABILITY_TARGETS,
         expand(
             PATH + "{sample}/gene_discovery/{sample}_integrated_SV_gene_analysis.final.tsv.gz",
             sample=POSTPROCESS_SAMPLES,
@@ -564,11 +569,11 @@ rule thesis_plots_sample:
         candidate_events=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
         ranked_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
+        genomiser_comparison=rules.compare_genomiser_rankings.output.summary,
         mitochondrial_ranking=PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv",
         available=existing_plot_inputs,
         genome_context=PLOT_CONTEXT_INPUTS,
         depth_bins=PATH + "{sample}/coverage/binned/{sample}.10kb.regions.bed.gz",
-        samplot=PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/samplot_manifest.tsv",
         plot_scripts=[
             PLOTS + "/run_thesis_plots.py",
             PLOTS + "/plot_utils.py",
@@ -583,6 +588,8 @@ rule thesis_plots_sample:
             PLOTS + "/plot_large_complex_candidates.py",
             PLOTS + "/plot_needlr_population.py",
             PLOTS + "/plot_candidate_evidence_matrix.py",
+            PLOTS + "/plot_breakpoint_gene_tracks.py",
+            PLOTS + "/plot_genomiser_rank_comparison.py",
             PLOTS + "/plot_candidate_genes.py",
             PLOTS + "/plot_gene_sv_spectrum.py",
             PLOTS + "/plot_panel_nonpanel_discovery.py",
@@ -632,9 +639,8 @@ rule thesis_plots_sample:
         python {PLOTS:q}/run_thesis_plots.py \
             --root {PATH} \
             --sample {wildcards.sample} \
-            --platform lrs \
+            --platform lrs --focused --no-samplot \
             --candidate-table {input.candidate_events:q} \
-            --samplot-manifest {input.samplot:q} \
             --top-genes {params.top_genes} \
             --review-top-n {params.review_top_n} \
             --locus-top-n {params.locus_top_n} \
@@ -741,7 +747,7 @@ COHORT_PLOT_OUTPUTS = (
         PATH + "cohort_plots/lrs_sample_comparison_summary.tsv",
         PATH + "cohort_plots/lrs_sample_comparison_svtypes.tsv",
     ]
-    if len(POSTPROCESS_SAMPLES) >= 2
+    if config.get("cohort_analysis_enabled", False) and len(POSTPROCESS_SAMPLES) >= 2
     else []
 )
 
@@ -790,6 +796,7 @@ include: "xci_analysis.smk"
 rule all_thesis_plots:
     input:
         GENOMISER_TARGETS,
+        STABILITY_TARGETS,
         expand(
             PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
             sample=POSTPROCESS_SAMPLES,
@@ -799,17 +806,11 @@ rule all_thesis_plots:
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
-            PATH + "{sample}/plots/13_breakpoint_evidence/" + SAMPLOT_RUN_NAME + "/.samplot.done",
+            PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.pdf",
             sample=POSTPROCESS_SAMPLES,
         ),
         COHORT_PLOT_OUTPUTS,
-        XCI_PLOT_DONE,
-        expand(
-            PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
-            sample=POSTPROCESS_SAMPLES,
-        ),
         atlas=lambda wc: ATLAS_OVERVIEW_TARGETS + ATLAS_NATIVE_TARGETS
-
 
 # Reassess from saved integrated and phenotype TSVs, including in BAM-free mode.
 # No BAM caller producer is registered in this postprocess DAG.
@@ -835,3 +836,5 @@ GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_can
 include: "../common/benchmark_genomiser.smk"
 
 include: "../common/compare_genomiser_rankings.smk"
+RANKING_STABILITY_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
+include: "../common/ranking_stability.smk"

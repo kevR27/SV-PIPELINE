@@ -262,6 +262,10 @@ GENOMISER_BENCHMARK_TARGETS = expand(
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
 GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=SAMPLES)
+STABILITY_TARGETS = (
+    expand(PATH + "{sample}/ranking_stability/stability_manifest.json", sample=SAMPLES)
+    if config.get("ranking_stability_enabled", True) else []
+)
 GENOMISER_TARGETS = expand(
     PATH + "{sample}/genomiser/{sample}.genomiser.manifest.json",
     sample=SAMPLES,
@@ -330,6 +334,7 @@ rule all:
             GENOMISER_TARGETS,
             GENOMISER_BENCHMARK_TARGETS,
             GENOMISER_COMPARISON_TARGETS,
+            STABILITY_TARGETS,
             CANDIDATE_BENCHMARK_TARGETS,
             SV_BENCHMARK_TARGETS,
         ],
@@ -1463,9 +1468,10 @@ rule all_thesis_plots:
 rule thesis_plots_sample:
     input:
         final_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
+        genomiser_comparison=rules.compare_genomiser_rankings.output.summary,
         depth_summary=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth.tsv",
         depth_bins_final=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth_bins.tsv",
-        candidates=rules.build_diagnostic_candidates.output.tsv,
+        candidates=rules.srs_finalize_candidate_ranking.output.sv,
         evidence=diagnostic_source,
         coverage=rules.mosdepth_coverage.output.summary,
         coverage_dist=rules.mosdepth_coverage.output.global_dist,
@@ -1499,10 +1505,9 @@ rule thesis_plots_sample:
         """
         mkdir -p "$(dirname {log:q})"
         python {PLOTS:q}/run_thesis_plots.py --root {PATH:q} --sample {wildcards.sample:q} \
-            --platform srs --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
+            --platform srs --focused --no-samplot --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
             --top-genes {params.top_genes} --review-top-n {params.review_top_n} --locus-top-n {params.locus_top_n} \
             {params.genome_context_args} \
-            {params.samplot_arg} \
             {params.gene_gtf_arg} > {log:q} 2>&1
         touch {output.marker:q}
         """
@@ -1611,3 +1616,5 @@ GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_can
 include: "../common/benchmark_genomiser.smk"
 
 include: "../common/compare_genomiser_rankings.smk"
+RANKING_STABILITY_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
+include: "../common/ranking_stability.smk"

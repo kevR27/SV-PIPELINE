@@ -335,3 +335,54 @@ the supplement. Avoid calling multi-caller agreement or phasing
 independent experimental validation. Noncoding, regulatory and
 inversion-spanned gene context are hypotheses until independently
 supported.
+
+## Focused figures, no cohort recurrence, and sensitivity checks
+
+For incremental batches of unresolved patients, `cohort_analysis_enabled: false`
+is the default. No SV recurrence is calculated or used by the final ranking;
+its status is `NOT_EVALUATED`, **not** absence of recurrence. Shared HON HPO
+reference construction is not a cohort statistic and is now stored under
+`reference_checks/hon_hpo_reference.tsv`. When the full, comparable cohort
+is ready, deliberately switch `cohort_analysis_enabled: true`, confirm
+sample selection and rerun `all` using ordinary Snakemake provenance tracking.
+
+`all_saved_thesis_plots` is the focused target. It now avoids duplicate
+R HPO/evidence/population figures and instead generates:
+- Current SV landscape and candidate evidence matrix
+- Mechanism-aware large-event overview
+- Candidate phenotype heatmap and custom-versus-Genomiser rank comparison
+- A **measured coverage + gene/exon + matched caller breakpoint** panel for
+  up to eight prioritized DEL/DUP/INV/INS events per sample
+- Saved large-SV depth, QC (when available), and filtering plots
+
+The new compact locus figures and source manifests appear at
+`<sample>/plots_reanalysis/12_breakpoint_tracks/`. This panel is
+**not** Samplot: it uses the archived 10-kb mosdepth windows and existing
+caller VCF interval coordinates. Small events below the depth-bin size
+may be unresolved. A dashed marker for a caller appears only if an actual
+same-type, same-chromosome record matches both breakpoints; missing
+caller VCFs imply unknown support, not a negative result. Do not equate
+such a track with split-read/assembly or experimental validation.
+
+The original `gene_bed` contains whole-gene spans only. For actual exon
+rectangles set `candidate_plot_gene_gtf` in the inherited LRS
+`config_lrs.yaml` to an existing GRCh38 GENCODE GTF path. With
+`null`, the plot correctly shows gene spans but **does not invent exons**.
+
+The standard `all` target also writes the non-destructive
+`ranking_stability/` table and plot by comparing the unmodified final
+event ordering under alternative population-frequency and multi-caller
+eligibility filters. It is not a truth-based diagnostic benchmark and it
+does not rerun or rescore the ranking. Unknown population AF is explicitly
+retained for review, not treated as AF zero. Configure
+`ranking_stability_enabled: false` to skip this optional sensitivity check.
+
+For cleanup on an **independently mounted results disk** (or the active
+server RESULTS location), `scripts/cleanup_old_thesis_outputs.py` has a
+safe preview by default. It deletes only named, regenerable targets
+after the explicit `--delete --confirm DELETE_OBSOLETE_OUTPUTS` arguments.
+Use `--scope plots` to remove old images/plots from a copy destination
+**before copying the new ones**; do not delete upstream BAM/VCF/coverage
+or the old experimental evidence. `--scope generated` and `--scope all`
+remove additional derived outputs and should only be used before a
+fresh full downstream run and after a verified backup.

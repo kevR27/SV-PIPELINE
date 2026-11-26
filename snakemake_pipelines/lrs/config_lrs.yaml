@@ -387,7 +387,10 @@ large_sv_depth_min_size: 100000
 
 # Number of top genes/candidate gene-SV rows shown in the main thesis figures.
 # Change this single value to 20 or 30 if you want a shorter/longer display.
-thesis_top_genes: 50
+thesis_top_genes: 20
+ranking_stability_enabled: true
+ranking_stability_top_n: 20
+cohort_analysis_enabled: false
 # Initial interpretation workload only: these do not alter analysis or ranks.
 candidate_review_top_n: 50
 candidate_locus_top_n: 50

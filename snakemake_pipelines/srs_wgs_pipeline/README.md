@@ -286,3 +286,28 @@ You can request **all_thesis_plots** to make figures after the analysis. The plo
 Begin with the QC summary and the integrated SV VCF, then inspect the SV–gene table, variant effect, caller support, read depth, population evidence and phenotype associations. For high-priority events, inspect the alignment with Samplot or a BAM viewer, especially when a deletion/duplication may represent a complex rearrangement.
 
 The review outputs distinguish **research ranking**, **reported AnnotSV classification** and **clinical review order**. They are not equivalent. A variant may overlap a relevant gene while still requiring breakpoint confirmation, segregation analysis, transcript studies or other experimental follow-up. The workflow does not infer inheritance, variant phase or pathogenicity from missing evidence.
+
+## Focused thesis figures and ranking sensitivity (new)
+
+`samplot_enabled: false` is the default for this routine workflow;
+`all` no longer requires generating Samplot images. The original
+read-based Samplot rule remains available if explicitly re-enabled
+for orthogonal candidate review with BAM data.
+
+Run `all_thesis_plots` to generate a selected figure set, including
+measured mosdepth coverage + SV interval/caller breakpoint annotations
+and whole-gene spans. Set `candidate_plot_gene_gtf` to an existing
+matched GRCh38 GTF for **true exons**; BED-only gene spans must not be
+misidentified as exon structures. Caller trace matches are computational
+concordance, not independent validation.
+
+`ranking_stability_enabled: true` adds a per-patient sensitivity
+output to `ranking_stability/`. This records how the final SV-associated
+gene shortlist is retained under reasonable AF/caller-support eligibility
+alternatives, without changing your clinical ranking, Genomiser, or any
+truth-based benchmarking. It is descriptive, not diagnostic accuracy.
+
+The shared HON HPO reference has moved to
+`reference_checks/hon_hpo_reference.tsv` rather than the
+`cohort_analysis/` directory. No cross-patient SV recurrence analysis
+is requested in the SRS default workflow.

@@ -131,7 +131,7 @@ rule srs_build_hon_hpo_reference:
         pathways=[MITOCARTA_PATHWAYS] if MITOCARTA_PATHWAYS else [],
         script=SCRIPTS + "/build_hon_hpo_reference.py"
     output:
-        tsv=PATH + "cohort_analysis/reference/hon_hpo_reference.tsv"
+        tsv=PATH + "reference_checks/hon_hpo_reference.tsv"
     params:
         pathways=("--mitopathways-gmx " + shlex.quote(str(MITOCARTA_PATHWAYS))) if MITOCARTA_PATHWAYS else ""
     conda:
