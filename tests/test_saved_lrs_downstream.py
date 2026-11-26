@@ -54,7 +54,7 @@ class SavedLrsDownstreamTests(unittest.TestCase):
         snakefile = (ROOT / "snakemake_pipelines" /
                      "lrs_downstream_reanalysis" / "Snakefile").read_text(encoding="utf-8")
         self.assertIn("bam_free_downstream", snakefile)
-        self.assertIn("if not BAM_FREE_DOWNSTREAM:", original)
+        self.assertNotIn("samplot_candidate_breakpoints", original)
         self.assertIn("if not BAM_FREE_DOWNSTREAM:", extensions)
         self.assertIn('coverage=PATH + "{sample}/coverage/binned/', extensions)
         self.assertIn('include: "../lrs/Snakefile_LRS_postprocess"', snakefile)
