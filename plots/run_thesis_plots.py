@@ -43,6 +43,7 @@ def parse_args():
     p.add_argument("--random-draws", type=int, default=200)
     p.add_argument("--assembly-manifest", help="Optional SV_ID/PAF_PATH table for existing candidate assemblies")
     p.add_argument("--samplot-manifest", action="append", default=[], help="Explicit current read-evidence manifest; overrides discovery")
+    p.add_argument("--no-samplot", action="store_true", help="Do not read or embed any saved Samplot images")
     p.add_argument("--review-top-n", type=int, default=5, help="Initial review associations per panel group")
     p.add_argument("--locus-top-n", type=int, default=10, help="Maximum detailed locus figures from the review shortlist")
     p.add_argument("--review-only", action="store_true", help="Generate QC and essential review outputs from completed tables only")
@@ -222,7 +223,8 @@ def _main():
     if args.platform == "srs":
         mito_ranking = sample_root / "diagnostic_review" / f"{s}.mitochondrial_gene_ranking.tsv"
     phenotypes = sample_root / "gene_discovery" / f"{s}_human_gene_phenotypes.tsv"
-    exomiser_comparison = sample_root / "gene_discovery" / f"{s}_exomiser_comparison.tsv"
+    # Historical Exomiser-only comparison plots are not part of the current
+    # Genomiser analysis. Rank agreement is reported under benchmark/.
     gene_summary = sample_root / "gene_discovery" / f"{s}_gene_multimodal_evidence_summary.tsv"
     straglr = sample_root / "sv" / "straglr" / f"{s}_straglr.annotated.tsv"
     tldr = sample_root / "mei" / "tldr" / f"{s}.tldr.table.txt"
@@ -254,13 +256,25 @@ def _main():
     caller_order = "Manta,Delly" if args.platform == "srs" else "Sniffles2,cuteSV,Delly"
     shortlist = folders["review"] / f"{s}_candidate_shortlist.tsv"
     phase_pairs = sample_root / "gene_discovery" / "final" / f"{s}_snv_sv_candidates.tsv"
-    samplot_manifests = ([sample_root / "diagnostic_review" / f"{s}.samplot_manifest.tsv"] if args.platform == "srs" else
-                        sorted((out / "13_breakpoint_evidence").glob("*/samplot_manifest.tsv"),key=lambda path:path.stat().st_mtime,reverse=True)[:1])
-    if args.samplot_manifest:
-        samplot_manifests = [Path(path).expanduser().resolve() for path in args.samplot_manifest]
-        for path in samplot_manifests:
-            if not path.exists():
-                raise FileNotFoundError(path)
+    if args.no_samplot:
+        if args.samplot_manifest:
+            raise ValueError("--no-samplot cannot be combined with --samplot-manifest")
+        samplot_manifests = []
+    else:
+        samplot_manifests = (
+            [sample_root / "diagnostic_review" / f"{s}.samplot_manifest.tsv"]
+            if args.platform == "srs" else
+            sorted(
+                (out / "13_breakpoint_evidence").glob("*/samplot_manifest.tsv"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True
+            )[:1]
+        )
+        if args.samplot_manifest:
+            samplot_manifests = [Path(path).expanduser().resolve() for path in args.samplot_manifest]
+            for path in samplot_manifests:
+                if not path.exists():
+                    raise FileNotFoundError(path)
     depth_bed = Path(args.depth_bed) if args.depth_bed else first_existing_path([
         sample_root / "coverage" / "binned" / f"{s}.10kb.regions.bed.gz",
         sample_root / "coverage" / f"{s}.regions.bed.gz"])
@@ -435,15 +449,6 @@ def _main():
                     "--top-genes", str(args.top_genes),
                 ],
                 [phenotypes, ranked],
-            ),
-            (
-                [
-                    py, str(HERE / "plot_gene_hpo_heatmap.py"),
-                    "--comparison-only", "--exomiser-comparison", str(exomiser_comparison),
-                    "--out-prefix", str(folders["phenotype"] / f"{s}_exomiser_comparison"),
-                    "--top-genes", str(args.top_genes),
-                ],
-                [exomiser_comparison],
             ),
             (
                 [
