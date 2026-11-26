@@ -258,6 +258,7 @@ GENOMISER_BENCHMARK_TARGETS = expand(
     sample=GENOMISER_BENCHMARK_SAMPLES,
 )
 GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=SAMPLES)
+BENCHMARK_REVIEW_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.benchmark_review.tsv", sample=SAMPLES)
 STABILITY_TARGETS = (
     expand(PATH + "{sample}/ranking_stability/stability_manifest.json", sample=SAMPLES)
     if config.get("ranking_stability_enabled", True) else []
@@ -330,6 +331,7 @@ rule all:
             GENOMISER_BENCHMARK_TARGETS,
             GENOMISER_COMPARISON_TARGETS,
             STABILITY_TARGETS,
+            BENCHMARK_REVIEW_TARGETS,
             CANDIDATE_BENCHMARK_TARGETS,
             SV_BENCHMARK_TARGETS,
         ],
@@ -1589,3 +1591,5 @@ include: "../common/benchmark_genomiser.smk"
 include: "../common/compare_genomiser_rankings.smk"
 RANKING_STABILITY_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv"
 include: "../common/ranking_stability.smk"
+BENCHMARK_REVIEW_SAMPLES = SAMPLES
+include: "../common/benchmark_review.smk"
