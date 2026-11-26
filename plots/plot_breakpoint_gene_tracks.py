@@ -227,10 +227,14 @@ def draw(event, depth, genes, exons, callers, outprefix):
         cov.set_ylabel("Measured read depth")
         overlap = [v for a,b,v in depth if b > start and a < end]
         flanks = [v for a,b,v in depth if b <= start or a >= end]
-        if overlap and flanks:
+        # A single coarse 10-kb bin cannot resolve a small exon-scale SV.
+        if len(overlap) >= 2 and len(flanks) >= 2:
             ratio = np.median(overlap)/max(np.median(flanks),1e-10)
             cov.text(.01,.95, f"Inside/flank depth ratio: {ratio:.2f} (descriptive)",
                      transform=cov.transAxes, ha="left", va="top", fontsize=9)
+        elif overlap:
+            cov.text(.01,.95,"Coverage bin size limits CNV interpretation",
+                     transform=cov.transAxes,ha="left",va="top",fontsize=9)
     else:
         cov.text(.5,.5,"Measured binned depth unavailable",transform=cov.transAxes,
                  ha="center",va="center")
