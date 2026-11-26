@@ -23,7 +23,7 @@ class GenomiserIndexTests(unittest.TestCase):
         self.namefile = self.folder / "genomiser" / "sample_name.txt"
 
     def test_reheader_indexes_new_vcf_before_reading(self):
-        with patch("run_genomiser.samples", side_effect=[["old_id"], ["19545"]]), \\
+        with patch("run_genomiser.samples", side_effect=[["old_id"], ["19545"]]), \
              patch("run_genomiser.run") as execute:
             prepared, old = prepare_vcf(self.source, "19545", self.target, self.namefile)
         self.assertEqual(prepared, str(self.target))
@@ -37,7 +37,7 @@ class GenomiserIndexTests(unittest.TestCase):
 
     def test_matching_sample_and_existing_index_reuses_input(self):
         Path(str(self.source) + ".tbi").write_bytes(b"index")
-        with patch("run_genomiser.samples", return_value=["19545"]), \\
+        with patch("run_genomiser.samples", return_value=["19545"]), \
              patch("run_genomiser.run") as execute:
             prepared, old = prepare_vcf(self.source, "19545", self.target, self.namefile)
         self.assertEqual(prepared, str(self.source))
@@ -45,7 +45,7 @@ class GenomiserIndexTests(unittest.TestCase):
         execute.assert_not_called()
 
     def test_missing_original_index_uses_local_symlink(self):
-        with patch("run_genomiser.samples", side_effect=[["19545"], ["19545"]]), \\
+        with patch("run_genomiser.samples", side_effect=[["19545"], ["19545"]]), \
              patch("run_genomiser.run") as execute:
             prepared, old = prepare_vcf(self.source, "19545", self.target, self.namefile)
         self.assertEqual(prepared, str(self.target))
