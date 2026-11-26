@@ -44,6 +44,10 @@ jobs:
               raise SystemExit(f"Unexpected VCF-only jobs: {found}; expected: {expected}")
           PY
 
+      - name: Check new plot and sensitivity script syntax
+        run: |
+          python -m py_compile plots/plot_breakpoint_gene_tracks.py scripts/check_ranking_stability.py scripts/cleanup_old_thesis_outputs.py
+
       - name: Parse archived LRS downstream reanalysis without BAM rules
         if: always()
         working-directory: snakemake_pipelines/lrs_downstream_reanalysis
@@ -51,9 +55,9 @@ jobs:
           snakemake -s Snakefile --list-rules --config input_root=/tmp sample_ids=11446 > /tmp/saved_lrs_rules.txt
           grep -qx 'finalize_candidate_ranking' /tmp/saved_lrs_rules.txt
           grep -qx 'genomiser_genome' /tmp/saved_lrs_rules.txt
-          grep -qx 'saved_evidence_plots' /tmp/saved_lrs_rules.txt
-          grep -qx 'assess_sv_alleles' /tmp/saved_lrs_rules.txt
-          if grep -Eq '^(binned_read_depth|samplot_candidate_breakpoints)
+          grep -qx 'all_saved_thesis_plots' /tmp/saved_lrs_rules.txt
+          grep -qx 'ranking_stability' /tmp/saved_lrs_rules.txt
+          if grep -Eq '^(binned_read_depth|samplot_candidate_breakpoints)$' /tmp/saved_lrs_rules.txt; then
             echo "Unexpected BAM-dependent rule registered"
             exit 1
           fi
@@ -64,22 +68,7 @@ jobs:
         run: |
           snakemake -s Snakefile_LRS_update --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz
           snakemake -s Snakefile_LRS_postprocess --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz
-      - name: Enable Genomiser rules for parser validation (SRS)
-        if: always()
-        working-directory: snakemake_pipelines/srs_wgs_pipeline
-        run: |
-          snakemake -s Snakefile_SRS_WGS --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz
- /tmp/saved_lrs_rules.txt; then
-            echo "Unexpected BAM-dependent rule registered"
-            exit 1
-          fi
 
-      - name: Enable Genomiser rules for parser validation (LRS)
-        if: always()
-        working-directory: snakemake_pipelines/lrs
-        run: |
-          snakemake -s Snakefile_LRS_update --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz
-          snakemake -s Snakefile_LRS_postprocess --list-rules --config genomiser_enabled=true patient_profiles_tsv=/tmp/clinical.tsv genomiser_remm_hg38=/tmp/ReMM.v0.4.hg38.tsv.gz
       - name: Enable Genomiser rules for parser validation (SRS)
         if: always()
         working-directory: snakemake_pipelines/srs_wgs_pipeline
