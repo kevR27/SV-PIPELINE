@@ -619,6 +619,7 @@ def _main():
         # Keep one representative overview, phenotype, evidence and locus figure
         # rather than exporting every intermediate/exploratory panel by default.
         focused_scripts = {
+            "plot_lrs_qc.py",  # both LRS/SRS: saved measured coverage QC when available
             "build_candidate_review.py",
             "plot_event_review_summary.py",
             "plot_candidate_evidence_matrix.py",

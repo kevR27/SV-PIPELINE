@@ -218,7 +218,11 @@ def main():
         for source in ["STRAGLR_MATCH", "TLDR_MATCH", "LONGPHASE_MATCH", "LONGPHASE_PHASED"]:
             status = unique[source].fillna("NOT_AVAILABLE").astype(str).str.upper() if source in unique else pd.Series("NOT_AVAILABLE", index=unique.index)
             rows[-1][f"{source.lower()}_unavailable_SV_count"] = int(status.isin(["NOT_AVAILABLE", "UNKNOWN", ".", ""]).sum())
-            rows[-1]["alleles_with_review_flags"] = int(unique["ALLELE_REVIEW_FLAGS"].fillna(".").ne(".").sum())
+        # Older integrated results can legitimately lack this optional field.
+        rows[-1]["alleles_with_review_flags"] = (
+            int(unique["ALLELE_REVIEW_FLAGS"].fillna(".").ne(".").sum())
+            if "ALLELE_REVIEW_FLAGS" in unique.columns else "."
+        )
 
     # Retain join keys for a valid empty/all-intergenic callset.
     summary = pd.DataFrame(rows) if rows else pd.DataFrame(
