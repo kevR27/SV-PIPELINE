@@ -146,7 +146,7 @@ class SavedOutputTests(unittest.TestCase):
             unresolved=next(r for r in rows if r["GENES"]==".")
             # Compact assessment retains traceable counts and invalid labels, not bulky raw JSON.
             self.assertGreaterEqual(int(unresolved["ANNOTSV_UNRESOLVED_GENE_ROW_COUNT"]), 1)
-            self.assertIn("cmpl", unresolved["ANNOTSV_INVALID_GENE_LABELS"])
+            self.assertIn("CMPL", unresolved["ANNOTSV_INVALID_GENE_LABELS"])
             self.run_script("rebuild_sv_results.py",*args,success=False)
 
     def test_rank_counts_master_id_once_across_breakpoint_annotations(self):
