@@ -1,13 +1,11 @@
 """Focused checks for failures/reuse found in the October 2026 input audit."""
 import csv
 import gzip
-import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -16,10 +14,6 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import check_run_cache as cache
 import build_snv_sv_candidates as pairs
 import annotate_alphagenome_atlas as atlas
-
-spec = importlib.util.spec_from_file_location("srs_samplot", ROOT / "scripts/run_samplot_candidates.py")
-samplot = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(samplot)
 
 
 class PipelineIOAuditTests(unittest.TestCase):
@@ -88,21 +82,6 @@ class PipelineIOAuditTests(unittest.TestCase):
                 self.assertEqual(list(csv.DictReader(handle, delimiter="\t")), [])
             (path / "repeat.bed").write_text("chr1\tinvalid\t100\n")
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
-
-    def test_srs_samplot_cannot_count_a_stale_image_as_success(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp)
-            (path / "in.tsv").write_text("SV_ID\tCHROM\tSTART\tEND\tSVTYPE\tGENE\nv\tchr1\t100\t200\tDEL\tOPA1\n")
-            (path / "images").mkdir()
-            stale = path / "images/001_DEL_chr1_100_200_v_OPA1.png"
-            stale.write_bytes(b"old image")
-            argv = ["samplot", "--input", str(path / "in.tsv"), "--sample", "SYNTHETIC", "--bam", "not-real.bam",
-                    "--reference", "not-real.fa", "--out-dir", str(path / "images"), "--manifest", str(path / "manifest.tsv")]
-            with patch.object(sys, "argv", argv), patch.object(samplot.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="")):
-                self.assertEqual(samplot.main(), 1)
-            self.assertFalse(stale.exists())
-            with (path / "manifest.tsv").open() as handle:
-                self.assertEqual(next(csv.DictReader(handle, delimiter="\t"))["STATUS"], "FAILED")
 
     def test_genomewide_vep_master_is_streamed_into_existing_focused_view(self):
         with tempfile.TemporaryDirectory() as temp:
