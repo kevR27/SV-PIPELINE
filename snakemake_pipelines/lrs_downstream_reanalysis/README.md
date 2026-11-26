@@ -373,4 +373,10 @@ does not rerun or rescore the ranking. Unknown population AF is explicitly
 retained for review, not treated as AF zero. Configure
 `ranking_stability_enabled: false` to skip this optional sensitivity check.
 
+The shared `benchmarking_review_all` target writes a concise per-patient
+`benchmark/<sample>.benchmark_review.tsv` and JSON manifest. It links
+the existing descriptive method agreement, eligibility-filter ranking
+stability and (only when independently curated) confirmed-truth results.
+There is no new pathogenicity score or patient RNA-expression analysis.
+
 Storage cleanup is performed separately and is never part of any Snakemake target. Preserve source evidence for reproducible replotting.
