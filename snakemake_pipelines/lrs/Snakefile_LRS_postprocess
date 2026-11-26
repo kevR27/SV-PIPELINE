@@ -569,7 +569,7 @@ rule thesis_plots_sample:
         candidate_events=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
         ranked_genes=PATH + "{sample}/gene_discovery/final/{sample}_gene_candidates.ranked.tsv",
         gene_summary=rules.build_gene_multimodal_summary.output.tsv,
-        genomiser_comparison=rules.compare_genomiser_rankings.output.summary,
+        genomiser_comparison=PATH + "{sample}/benchmark/{sample}.ranking_comparison.json",
         mitochondrial_ranking=PATH + "{sample}/gene_discovery/final/{sample}_mitochondrial_gene_ranking.ranked.tsv",
         available=existing_plot_inputs,
         genome_context=PLOT_CONTEXT_INPUTS,
