@@ -38,7 +38,7 @@ jobs:
               ["snakemake", "-s", "Snakefile", "--list-rules"],
               check=True, capture_output=True, text=True
           )
-          expected = {"all", "prepare_patient_profile", "genomiser_genome", "assess_sv_alleles", "vcf_only_final_ranking", "compare_genomiser_rankings"}
+          expected = {"all", "prepare_patient_profile", "genomiser_genome", "assess_sv_alleles", "vcf_only_final_ranking", "compare_genomiser_rankings", "ranking_stability", "benchmark_review", "benchmarking_review_all"}
           found = set(result.stdout.splitlines())
           if not expected.issubset(found) or any(not (name.startswith("vcf_only_") or name in expected or name == "benchmark_genomiser_ranking") for name in found):
               raise SystemExit(f"Unexpected VCF-only jobs: {found}; expected: {expected}")
