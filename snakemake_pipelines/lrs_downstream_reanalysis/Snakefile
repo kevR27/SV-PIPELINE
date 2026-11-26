@@ -109,3 +109,101 @@ rule saved_evidence_plots:
             sample=POSTPROCESS_SAMPLES
         ),
         COHORT_PLOT_OUTPUTS
+
+
+# Full exploratory plot regeneration from saved LRS data.
+# Do not call the legacy all_thesis_plots target: it requires Samplot/BAMs.
+# Outputs are isolated in plots_reanalysis/ to avoid selecting old images.
+ARCHIVED_PLOT_CONTEXT = {
+    key: str(value) for key, value in PLOT_CONTEXT.items()
+    if value and os.path.isfile(str(value))
+}
+ARCHIVED_PLOT_REPEATS = {
+    key: str(value) for key, value in PLOT_REPEAT_BEDS.items()
+    if value and os.path.isfile(str(value))
+}
+ARCHIVED_PLOT_CONTEXT_ARGS = " ".join(
+    "--" + key + " " + shlex.quote(path)
+    for key, path in ARCHIVED_PLOT_CONTEXT.items()
+)
+ARCHIVED_PLOT_CONTEXT_ARGS += " " + " ".join(
+    "--repeat-bed " + shlex.quote(str(label) + "=" + path)
+    for label, path in ARCHIVED_PLOT_REPEATS.items()
+)
+ARCHIVED_PLOT_CONTEXT_ARGS += " --random-draws " + str(
+    int(config.get("genome_plot_random_draws", 200))
+)
+ARCHIVED_PLOT_INPUTS = (
+    list(ARCHIVED_PLOT_CONTEXT.values())
+    + list(ARCHIVED_PLOT_REPEATS.values())
+)
+ARCHIVED_PLOT_SCRIPTS = sorted(str(p) for p in Path(PLOTS).glob("*.py"))
+
+
+rule archived_thesis_plots_sample:
+    input:
+        events=rules.finalize_candidate_ranking.output.sv,
+        genes=rules.finalize_candidate_ranking.output.genes,
+        integrated=rules.merge_integrated_annotations.output.tsv,
+        multimodal=rules.build_gene_multimodal_summary.output.tsv,
+        phenotypes=PATH + "{sample}/gene_discovery/{sample}_human_gene_phenotypes.tsv",
+        genomiser=rules.genomiser_genome.output.manifest,
+        available=existing_plot_inputs,
+        context=ARCHIVED_PLOT_INPUTS,
+        runner=PLOTS + "/run_thesis_plots.py",
+        scripts=ARCHIVED_PLOT_SCRIPTS,
+    output:
+        manifest=PATH + "{sample}/plots_reanalysis/plot_run_manifest.tsv",
+        done=touch(PATH + "{sample}/plots_reanalysis/.thesis_plots.done")
+    params:
+        outdir=PATH + "{sample}/plots_reanalysis",
+        context_args=ARCHIVED_PLOT_CONTEXT_ARGS,
+        gene_bed_arg=(
+            "--gene-bed " + shlex.quote(str(GENE_BED))
+            if GENE_BED and os.path.isfile(str(GENE_BED)) else ""
+        ),
+        gene_gtf_arg=(
+            "--gene-gtf " + shlex.quote(str(PLOT_GENE_GTF))
+            if PLOT_GENE_GTF and os.path.isfile(str(PLOT_GENE_GTF)) else ""
+        ),
+        methylation_units=config.get("methylation_units", "percent"),
+        top_genes=THESIS_TOP_GENES,
+        review_top_n=REVIEW_TOP_N,
+        locus_top_n=LOCUS_TOP_N,
+    conda:
+        CONDAENV + "plots.yaml"
+    log:
+        PATH + "{sample}/logs/plots/{sample}.archived_thesis_plots.log"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
+        python {input.runner:q} \\
+            --root {PATH:q} \\
+            --sample {wildcards.sample:q} \\
+            --platform lrs \\
+            --candidate-table {input.events:q} \\
+            --evidence-table {input.integrated:q} \\
+            --out-dir {params.outdir:q} \\
+            --no-samplot \\
+            --top-genes {params.top_genes} \\
+            --review-top-n {params.review_top_n} \\
+            --locus-top-n {params.locus_top_n} \\
+            --methylation-units {params.methylation_units} \\
+            {params.gene_bed_arg} \\
+            {params.gene_gtf_arg} \\
+            {params.context_args} \\
+            > {log:q} 2>&1
+        test -s {output.manifest:q}
+        """
+
+
+# Comprehensive BAM-free plotting target: legacy R/SV filtering/cohort
+# plots plus all available optional Python plots, without read-based Samplot.
+rule all_saved_thesis_plots:
+    input:
+        rules.saved_evidence_plots.input,
+        expand(
+            PATH + "{sample}/plots_reanalysis/.thesis_plots.done",
+            sample=POSTPROCESS_SAMPLES,
+        ),
