@@ -793,6 +793,7 @@ include: "xci_analysis.smk"
 rule all_thesis_plots:
     input:
         GENOMISER_TARGETS,
+        STABILITY_TARGETS,
         expand(
             PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
             sample=POSTPROCESS_SAMPLES,
@@ -801,14 +802,12 @@ rule all_thesis_plots:
             PATH + "{sample}/plots/.thesis_plots.done",
             sample=POSTPROCESS_SAMPLES,
         ),
-        COHORT_PLOT_OUTPUTS,
-        XCI_PLOT_DONE,
         expand(
-            PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
+            PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.pdf",
             sample=POSTPROCESS_SAMPLES,
         ),
+        COHORT_PLOT_OUTPUTS,
         atlas=lambda wc: ATLAS_OVERVIEW_TARGETS + ATLAS_NATIVE_TARGETS
-
 
 # Reassess from saved integrated and phenotype TSVs, including in BAM-free mode.
 # No BAM caller producer is registered in this postprocess DAG.
