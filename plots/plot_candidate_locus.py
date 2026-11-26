@@ -268,12 +268,23 @@ def plot_assembly_alignment(path, prefix):
 def write_candidate_card(locus_image, samplots, phase_image, assembly_image, row, prefix):
     """One printable page; the full-resolution source figures remain available."""
     fig = plt.figure(figsize=(16.5,23.4))  # A2 portrait: one page with readable source panels.
-    grid = fig.add_gridspec(3,2,height_ratios=[1.6,1,.8])
-    axes = [fig.add_subplot(grid[0,:]),fig.add_subplot(grid[1,:]),fig.add_subplot(grid[2,0]),fig.add_subplot(grid[2,1])]
-    panels = [("Locus, depth and methylation (when measured)", [locus_image]),
-              ("Reads: existing Samplot", samplots[:2]),
-              ("Gene phase: verified pair evidence", [phase_image] if phase_image else []),
-              ("Existing local assembly alignment", [assembly_image] if assembly_image else [])]
+    panels = [("Locus, depth and methylation (when measured)", [locus_image])]
+    # No empty Samplot panel when running from saved BAM-free evidence.
+    if samplots:
+        panels.append(("Reads: existing Samplot", samplots[:2]))
+    panels.extend([
+        ("Gene phase: verified pair evidence", [phase_image] if phase_image else []),
+        ("Existing local assembly alignment", [assembly_image] if assembly_image else []),
+    ])
+    if samplots:
+        grid = fig.add_gridspec(3,2,height_ratios=[1.6,1,.8])
+        axes = [
+            fig.add_subplot(grid[0,:]), fig.add_subplot(grid[1,:]),
+            fig.add_subplot(grid[2,0]), fig.add_subplot(grid[2,1]),
+        ]
+    else:
+        grid = fig.add_gridspec(3,1,height_ratios=[1.8,1,1])
+        axes = [fig.add_subplot(grid[i,0]) for i in range(3)]
     sources = []
     for ax, (label, paths) in zip(axes,panels):
         ax.axis("off")
