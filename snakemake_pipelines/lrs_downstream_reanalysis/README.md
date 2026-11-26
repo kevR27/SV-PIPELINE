@@ -281,3 +281,57 @@ and conflicting `AF/GL/PL` header definitions are *not fixed* by this
 change. They require separate caller-VCF quality review. If a subsequent
 Genomiser run still exhausts memory, inspect the new Genomiser Java log;
 do not assume SV preparation guarantees success.
+
+## Regenerate all available thesis plots from saved evidence (no Samplot)
+
+The existing `saved_evidence_plots` target produces the standard R plots,
+filtering plots, and cohort comparison. The separate
+`all_saved_thesis_plots` target now also runs the existing Python thesis
+figure collection **for all selected patients**, using the current
+`*_integrated_SV_gene_analysis.final.tsv.gz` and final ranked SV-gene
+table. This target does not request BAMs, Samplot, read-level XCI or fresh
+mosdepth data.
+
+```bash
+cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/lrs_downstream_reanalysis
+
+snakemake -s Snakefile --configfile config.yaml --use-conda \\
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \\
+  --cores 32 --resources mem_mb=45000 --rerun-triggers mtime \\
+  -n all_saved_thesis_plots
+
+snakemake -s Snakefile --configfile config.yaml --use-conda \\
+  --conda-prefix /home/casadei7/snakemake_envs/envs/ \\
+  --cores 32 --resources mem_mb=45000 --rerun-triggers mtime \\
+  --rerun-incomplete -p all_saved_thesis_plots
+```
+
+Python output figures appear in
+`<sample>/plots_reanalysis/` rather than mixing with older
+`plots/` results. The automatic launcher is called with
+`--no-samplot`; when archived Samplot images exist they are not
+searched or embedded, and candidate review cards omit the Samplot
+panel. The historical Exomiser-comparison plot is not produced.
+Instead `10_integrated_evidence/<sample>_genomiser_rank_comparison.*`
+shows descriptive top-N agreement from the **current Genomiser**
+comparison tables.
+
+Review `<sample>/plots_reanalysis/plot_run_manifest.tsv` for every
+plot script. `COMMAND_COMPLETED` means the script finished, not that
+its figure is diagnostically validated; `SKIPPED_MISSING_INPUT` means
+that a supporting archived file was absent and must not be silently
+interpreted as evidence that the biological phenomenon is absent.
+Optional plots require genuine saved outputs: caller support, mosdepth
+summaries, needLR, phased VCFs, bedMethyl, genome BED/FAI, etc.
+The standard R plots remain in `plots_r/` and cohort comparisons in
+`cohort_plots/`.
+
+Publication selection: prioritize SV-type/cohort context, candidate
+event evidence, locus breakpoint/depth context, HON phenotype
+relevance, and comparison of the two ranking methods. Use repeat,
+MEI, phased/methylation and mitochondrial pathway plots when relevant
+to an individual candidate, and place broad exploratory figures in
+the supplement. Avoid calling multi-caller agreement or phasing
+independent experimental validation. Noncoding, regulatory and
+inversion-spanned gene context are hypotheses until independently
+supported.
