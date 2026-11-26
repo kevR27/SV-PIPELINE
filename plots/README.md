@@ -28,7 +28,6 @@ This directory contains downstream visualization and conservative intersection s
 - `plot_sv_gene_associations.py`: quantitative relationship between technical SV support, phenotype relevance, gene-disease evidence and each explicit SV-gene pair.
 - `plot_sv_gene_network.py`: bipartite map showing which master SV overlaps which gene, including multi-gene SVs and genes affected by multiple prioritized SVs.
 - `plot_candidate_locus.py`: one detailed locus figure per prioritized SV-gene pair, including nearby genes, principal evidence fields and optional indexed modkit methylation.
-- `run_samplot_candidates.py`: read-level ONT breakpoint/alignment evidence for the highest-priority master SVs; large events are breakpoint-zoomed and BNDs are shown as breakpoint-context views.
 - `plot_mitocarta_sv_genes.py`: MitoCarta3.0 view of nuclear-encoded mitochondrial genes intersected by SVs, including pathway context separated by direct/proximal/interval SV-gene relationship.
 - `plot_mitochondrial_gene_ranking.py`: separate ranked figures for nuclear-encoded mitochondrial genes and mtDNA-encoded genes.
 - `plot_cohort_sv_comparison.py`: deduplicated comparison of completed samples by SV type and evidence-defined subsets.
@@ -56,7 +55,7 @@ accompany the figures.
 | Size versus support | `03_sv_landscape/` | Black rings highlight shortlisted SVs. Caller counts and read support are separate; read counts are not summed across callers. |
 | Population AF with candidates | `04_population_frequency/` | Measured AF <=1% and unknown AF stay in one review group, with different colours. Histograms exclude zero/missing values and state their counts; black marks identify candidates. |
 | HP1/HP2 gene view | `12_candidate_loci/top_N/gene_phase/` | Only compatible phased SNV/SV pairs on the same chromosome and phase block are placed on haplotypes. Other pairs remain unresolved. |
-| One-page candidate cards | `12_candidate_loci/top_N/candidate_cards/` | A2 portrait PDFs combine available locus, depth, methylation, Samplot, phase and optional assembly evidence. Originals remain available for detail. |
+| One-page candidate cards | `12_candidate_loci/top_N/candidate_cards/` | A2 portrait PDFs combine available locus, depth, methylation, phase and optional assembly evidence. Originals remain available for detail. |
 | Repeat context | `03_sv_landscape/*repeat_context*` | Observed breakpoint overlap versus matched random positions; needs repeat BED files. |
 | Local assembly alignment | `12_candidate_loci/top_N/*assembly*` | Forward/reverse PAF blocks use different colours; needs an existing local assembly alignment. |
 
@@ -86,7 +85,7 @@ mean. A ratio of 1 on X/Y therefore does not establish expected chromosome copy
 number. Bins touching supplied exclusions/gaps/centromeres are masked. The TSV
 records the baseline and covered bases. This is relative depth, not absolute
 copy number or GC-corrected CNVpytor. For individual DEL/DUP events, inspect
-flank-normalised local depth (LRS), local measured mean depth (SRS) and Samplot;
+flank-normalised local depth (LRS), local measured mean depth (SRS) and the caller breakpoint tracks;
 the 1 Mb ribbon cannot resolve small events. Missing bins are never invented.
 
 Both configs accept matching GRCh38 tracks:
@@ -131,9 +130,7 @@ LRS gene phase reuses `*_snv_sv_candidates.tsv` and joint LongPhase SV genotypes
 HP1/HP2 are local block labels, not maternal/paternal labels. Pairing now checks
 chromosome identity and refuses to borrow phase from another ALT at the same
 position. Multiallelic records stay unresolved. SRS currently phases small
-variants only; those calls cannot place an SV on HP1/HP2. Haplotag-coloured
-Samplot is not enabled: compatible SV-aware HP tags in the BAM would be needed
-before that display could support a cis/trans interpretation.
+variants only; those calls cannot place an SV on HP1/HP2. SV cis/trans interpretation requires compatible phase evidence; locus plots alone cannot establish it.
 
 For key candidates with an **existing local assembly**, align its contigs to
 the same reference. If minimap2 is installed:
@@ -162,9 +159,7 @@ python plots/run_thesis_plots.py --root /path/to/results --sample patient01 \
 
 Use `--platform lrs` for LRS. Optional flags: `--centromere-bed`, `--gap-bed`,
 `--depth-bed`, repeated `--repeat-bed CLASS=PATH`, and `--assembly-manifest`.
-Samplot images are attached through their manifest's exact SV IDs. Snakemake
-waits for the current Samplot manifest before making cards. If Samplot is
-created separately later, rerun the launcher to refresh cards.
+Candidate cards use available locus, phase and optional local-assembly evidence.
 
 Technical references: [BED coordinates](https://genome.ucsc.edu/FAQ/FAQformat),
 [mosdepth bins](https://github.com/brentp/mosdepth), and
@@ -390,29 +385,6 @@ The comparison deduplicates by `SV_ID` before calculating SV burden and does
 not interpret the evidence-defined subsets as sequential filters.
 
 
-## Samplot read-level breakpoint evidence
-
-`all_thesis_plots` now also generates Samplot images for the highest-priority
-master SVs using the original sample BAM. These figures display the long-read
-alignment/depth evidence underlying the candidate call. They are visual
-technical evidence and are not treated as an independent caller or orthogonal
-molecular validation.
-
-For DEL/DUP/INV/INS, the SV interval/type is passed directly to Samplot. Events
-at least 1 Mb are breakpoint-zoomed using the configured `samplot_zoom_bp`.
-For BND/TRA records, each available breakpoint is plotted as local alignment
-context because a single-interval Samplot view cannot by itself represent the
-full interchromosomal adjacency.
-
-Outputs:
-
-```text
-<sample>/plots/13_breakpoint_evidence/
-├── *.png
-├── samplot_manifest.tsv
-└── .samplot.done
-```
-
 ## MitoCarta3.0 gene context
 
 MitoCarta annotations are written as a compact temporary delta and merged into:
@@ -509,9 +481,7 @@ CNV/breakpoint candidates from inversion/BND interval-only context.
 contributing to each prioritized gene (<100 kb, 100 kb–1 Mb, 1–10 Mb, ≥10 Mb
 and breakends), plus the number of INV/BND events.
 
-Candidate locus and Samplot selection are now stratified across event classes
-so small SVs cannot crowd all large and breakpoint-defined events out of
-detailed review.
+Candidate locus selection is stratified across event classes, so small SVs cannot crowd out large and breakpoint-defined candidates.
 
 ## Separate AlphaGenome Atlas figures
 
@@ -539,11 +509,6 @@ identifies a failed command, and `DRY_RUN` means no command was executed.
 Some optional branch skips are reported only in the launcher log. A command
 can complete with an empty-data notice, so check its figure/source TSV or
 individual manifest before claiming that a figure was produced.
-
-Samplot records each requested event separately. Current requested images are
-removed before running, preventing an old PNG from hiding a failed new run.
-SRS now fails the rule when a requested plot fails; balanced/complex events
-without supported plotting remain explicitly skipped for manual review.
 
 The workflow tracks the launcher manifest and marker, rather than every
 optional PDF/PNG. If you delete a figure while retaining both, regenerate the
