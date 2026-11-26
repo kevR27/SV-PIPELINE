@@ -198,12 +198,24 @@ rule archived_thesis_plots_sample:
         """
 
 
-# Comprehensive BAM-free plotting target: legacy R/SV filtering/cohort
-# plots plus all available optional Python plots, without read-based Samplot.
+# Optional QC plots can be rebuilt only when Dorado QC and N50
+# summaries were retained. Missing files are not treated as normal QC.
+ARCHIVED_QC_SAMPLES = [
+    sample for sample in POSTPROCESS_SAMPLES
+    if os.path.isfile(PATH + f"{sample}/qc/{sample}.dorado_qc.tsv")
+    and os.path.isfile(PATH + f"{sample}/qc/{sample}.n50.tsv")
+]
+
+# Comprehensive BAM-free plotting target: R/filtering/cohort plots plus all
+# currently applicable Python plots. QC is included when saved metrics exist.
 rule all_saved_thesis_plots:
     input:
         rules.saved_evidence_plots.input,
         expand(
             PATH + "{sample}/plots_reanalysis/.thesis_plots.done",
             sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
+            sample=ARCHIVED_QC_SAMPLES,
         ),
