@@ -1471,7 +1471,7 @@ rule thesis_plots_sample:
         genomiser_comparison=PATH + "{sample}/benchmark/{sample}.ranking_comparison.json",
         depth_summary=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth.tsv",
         depth_bins_final=PATH + "{sample}/gene_discovery/final/{sample}_large_sv_depth_bins.tsv",
-        candidates=rules.srs_finalize_candidate_ranking.output.sv,
+        candidates=PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_candidates.ranked.tsv",
         evidence=diagnostic_source,
         coverage=rules.mosdepth_coverage.output.summary,
         coverage_dist=rules.mosdepth_coverage.output.global_dist,
