@@ -6,6 +6,7 @@ Patient profiles and Genomiser analysis remain mandatory.
 """
 
 import os
+import shlex
 import sys
 
 configfile: "config.yaml"
@@ -56,12 +57,21 @@ GENOMISER_CUSTOM_SV = PATH + "{sample}/gene_discovery/final/{sample}_sv_gene_can
 GENOMISER_BENCHMARK_SAMPLES = confirmed_benchmark_samples(config.get("genomiser_benchmark_truth_tsv"), SAMPLES)
 GENOMISER_BENCHMARK_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.genomiser_vs_custom.json", sample=GENOMISER_BENCHMARK_SAMPLES)
 GENOMISER_COMPARISON_TARGETS = expand(PATH + "{sample}/benchmark/{sample}.ranking_comparison.json", sample=SAMPLES)
+STABILITY_TARGETS = (
+    expand(PATH + "{sample}/ranking_stability/stability_manifest.json", sample=SAMPLES)
+    if config.get("ranking_stability_enabled", True) else []
+)
+BENCHMARK_REVIEW_TARGETS = expand(
+    PATH + "{sample}/benchmark/{sample}.benchmark_review.tsv", sample=SAMPLES
+)
 
 rule all:
     input:
         GENOMISER_TARGETS,
         GENOMISER_BENCHMARK_TARGETS,
         GENOMISER_COMPARISON_TARGETS,
+        STABILITY_TARGETS,
+        BENCHMARK_REVIEW_TARGETS,
         expand(GENOMISER_CUSTOM_GENE, sample=SAMPLES),
         expand(GENOMISER_CUSTOM_SV, sample=SAMPLES),
         expand(PATH + "{sample}/gene_discovery/final/{sample}_clinical_candidates.ranked.tsv", sample=SAMPLES)
@@ -72,3 +82,7 @@ include: "../common/genomiser.smk"
 include: "custom_ranking.smk"
 include: "../common/benchmark_genomiser.smk"
 include: "../common/compare_genomiser_rankings.smk"
+RANKING_STABILITY_SV = GENOMISER_CUSTOM_SV
+include: "../common/ranking_stability.smk"
+BENCHMARK_REVIEW_SAMPLES = SAMPLES
+include: "../common/benchmark_review.smk"
