@@ -39,7 +39,6 @@ def parse_args():
     p.add_argument("--top-n", type=int, default=25)
     p.add_argument("--flank", type=int, default=50000)
     p.add_argument("--title-prefix", default="Candidate locus")
-    p.add_argument("--samplot-manifest", action="append", default=[], help="Existing Samplot manifest(s); joined by exact master ID")
     p.add_argument("--phase-pairs", help="Existing same-gene SNV/SV pairing TSV")
     p.add_argument("--assembly-manifest", help="Optional TSV with SV_ID and PAF_PATH for existing local assemblies")
     return p.parse_args()
@@ -212,20 +211,6 @@ def compact_text(value, max_chars=72, max_tokens=4):
     return text
 
 
-def load_samplot_images(paths):
-    """Use manifests, never filename guessing, to associate read evidence."""
-    images = {}
-    for path in paths:
-        table = read_tsv(path)
-        for row in table.to_dict("records"):
-            if row.get("STATUS", "OK") != "OK":
-                continue
-            image = row.get("IMAGE", row.get("output"))
-            if image and Path(str(image)).is_file():
-                images.setdefault(str(row["SV_ID"]), []).append(str(image))
-    return images
-
-
 def plot_assembly_alignment(path, prefix):
     """Plot reported PAF alignment blocks from an existing local assembly.
 
@@ -265,47 +250,42 @@ def plot_assembly_alignment(path, prefix):
     return str(prefix)+".png"
 
 
-def write_candidate_card(locus_image, samplots, phase_image, assembly_image, row, prefix):
-    """One printable page; the full-resolution source figures remain available."""
-    fig = plt.figure(figsize=(16.5,23.4))  # A2 portrait: one page with readable source panels.
-    panels = [("Locus, depth and methylation (when measured)", [locus_image])]
-    # No empty Samplot panel when running from saved BAM-free evidence.
-    if samplots:
-        panels.append(("Reads: existing Samplot", samplots[:2]))
-    panels.extend([
-        ("Gene phase: verified pair evidence", [phase_image] if phase_image else []),
+def write_candidate_card(locus_image, phase_image, assembly_image, row, prefix):
+    """Printable review card; original source figures remain available."""
+    fig = plt.figure(figsize=(16.5, 23.4))
+    panels = [
+        ("Locus, depth and methylation (when measured)", [locus_image]),
+        ("Gene phase: available pair evidence", [phase_image] if phase_image else []),
         ("Existing local assembly alignment", [assembly_image] if assembly_image else []),
-    ])
-    if samplots:
-        grid = fig.add_gridspec(3,2,height_ratios=[1.6,1,.8])
-        axes = [
-            fig.add_subplot(grid[0,:]), fig.add_subplot(grid[1,:]),
-            fig.add_subplot(grid[2,0]), fig.add_subplot(grid[2,1]),
-        ]
-    else:
-        grid = fig.add_gridspec(3,1,height_ratios=[1.8,1,1])
-        axes = [fig.add_subplot(grid[i,0]) for i in range(3)]
+    ]
+    grid = fig.add_gridspec(3, 1, height_ratios=[1.8, 1, 1])
+    axes = [fig.add_subplot(grid[i, 0]) for i in range(3)]
     sources = []
-    for ax, (label, paths) in zip(axes,panels):
+    for ax, (label, paths) in zip(axes, panels):
         ax.axis("off")
-        ax.set_title(label,loc="left",fontsize=11)
+        ax.set_title(label, loc="left", fontsize=11)
         if not paths:
-            ax.text(.5,.5,"Evidence unavailable",transform=ax.transAxes,ha="center",fontsize=13,color="#777777")
-        elif len(paths) == 1:
-            ax.imshow(plt.imread(paths[0]))
+            ax.text(.5, .5, "Evidence unavailable", transform=ax.transAxes,
+                    ha="center", fontsize=13, color="#777777")
         else:
-            for i, path in enumerate(paths):
-                inset = ax.inset_axes([0, .51 if i == 0 else 0, 1, .48])
-                inset.imshow(plt.imread(path))
-                inset.axis("off")
+            ax.imshow(plt.imread(paths[0]))
         for path in paths:
-            sources.append({"SV_ID":row["SV_ID"],"GENE":row.get("GENE",row.get("GENES",".")),"PANEL":label,"SOURCE_IMAGE":path})
-    fig.suptitle(f"Candidate review · {row.get('GENE',row.get('GENES','.'))} · {row['SV_ID']}",fontweight="bold",fontsize=16)
-    fig.text(.5,.015,"A review summary of available evidence; missing panels are not negative findings. Open the separate original figures for full detail.\nCandidate selection, computational support and phase are not proof of disease causality.",ha="center",fontsize=10)
-    fig.subplots_adjust(left=.025,right=.98,top=.93,bottom=.07,hspace=.15,wspace=.08)
-    save_figure(fig,prefix,dpi=200)
+            sources.append({"SV_ID": row["SV_ID"],
+                            "GENE": row.get("GENE", row.get("GENES", ".")),
+                            "PANEL": label, "SOURCE_IMAGE": path})
+    fig.suptitle(
+        f"Candidate review · {row.get('GENE', row.get('GENES', '.'))} · {row['SV_ID']}",
+        fontweight="bold", fontsize=16,
+    )
+    fig.text(.5, .015,
+             "A review summary of available evidence; missing panels are not negative findings. "
+             "Open the separate source figures for detail.\n"
+             "Computational support and phase are not proof of disease causality.",
+             ha="center", fontsize=10)
+    fig.subplots_adjust(left=.025, right=.98, top=.93, bottom=.07, hspace=.15)
+    save_figure(fig, prefix, dpi=200)
     plt.close(fig)
-    pd.DataFrame(sources).to_csv(str(prefix)+"_sources.tsv",sep="\t",index=False)
+    pd.DataFrame(sources).to_csv(str(prefix) + "_sources.tsv", sep="\t", index=False)
 
 
 def main():
@@ -313,7 +293,6 @@ def main():
     set_thesis_style()
     df = read_tsv(args.input)
     genes = load_gene_bed(args.gene_bed)
-    samplot_images = load_samplot_images(args.samplot_manifest)
     assemblies = {}
     if args.assembly_manifest:
         assembly_table = read_tsv(args.assembly_manifest, required=["SV_ID", "PAF_PATH"])
@@ -829,7 +808,6 @@ def main():
         )
         write_candidate_card(
             str(locus_png),
-            samplot_images.get(sv_id, []),
             phase_images.get(gene),
             assembly_image,
             row,
