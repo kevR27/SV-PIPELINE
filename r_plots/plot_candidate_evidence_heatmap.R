@@ -174,6 +174,11 @@ colnames(evidence) <- c(
   "Straglr same-locus insertion", "TLDR insertion match"
 )
 
+# Split long column names so each label remains readable at print size.
+colnames(evidence) <- vapply(colnames(evidence), function(label) {
+  paste(strwrap(label, width = 17), collapse = "\n")
+}, character(1))
+
 rownames(evidence) <- paste0(
   dt$GENE, " | ", dt$SVTYPE, " | ", dt$CHROM, ":",
   format(as.numeric(dt$START), scientific = FALSE, trim = TRUE)
@@ -225,13 +230,14 @@ ht <- Heatmap(
   row_split = row_split,
   row_names_gp = gpar(fontsize = 8),
   column_names_gp = gpar(fontsize = 8.5),
-  column_names_rot = 40,
+  column_names_rot = 70,
+  column_names_max_height = unit(72, "mm"),
   row_title_gp = gpar(fontsize = 8.5, fontface = "bold"),
-  row_title_rot = 0,
-  row_gap = unit(3.5, "mm"),
+  row_title_rot = 90,
+  row_gap = unit(5, "mm"),
   rect_gp = gpar(col = "white", lwd = 0.8),
   left_annotation = row_ha,
-  row_names_max_width = unit(62, "mm"),
+  row_names_max_width = unit(85, "mm"),
   heatmap_legend_param = list(
     at = c(0, 1),
     labels = c("No", "Yes"),
@@ -241,15 +247,16 @@ ht <- Heatmap(
   column_title_gp = gpar(fontface = "bold", fontsize = 13)
 )
 
-height <- max(7, 0.30 * nrow(evidence) + 2.8)
-pdf(pdf_file, width = 14.5, height = height, useDingbats = FALSE)
+height <- max(8.5, 0.41 * nrow(evidence) + 3.6)
+width <- max(15, 0.80 * ncol(evidence) + 6.5)
+pdf(pdf_file, width = width, height = height, useDingbats = FALSE)
 draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
 dev.off()
 
-png(png_file, width = 14.5, height = height, units = "in", res = 400)
+png(png_file, width = width, height = height, units = "in", res = 400)
 draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
 dev.off()
 
-svglite(svg_file, width = 14.5, height = height)
+svglite(svg_file, width = width, height = height)
 draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
 dev.off()
