@@ -370,6 +370,21 @@ The **r_plots/** folder contains complementary R figures:
 | **r_plots/plot_xci.R** | XCI methylation and skew figures. |
 | **r_plots/theme_thesis.R** | Shared figure styling. |
 
+## Benchmark review and ranking stability
+
+LRS, SRS and VCF-only analysis create a per-sample `benchmark/<sample>.benchmark_review.tsv`
+and JSON provenance file. These index **three distinct evaluations**:
+(1) descriptive custom-versus-Genomiser rank agreement, (2) fixed-rank
+AF/caller eligibility sensitivity in `ranking_stability/`, and
+(3) a confirmed-truth benchmark only if independently curated truth records
+were supplied. Missing truth is marked `NOT_CONFIGURED`; it is not a
+negative diagnostic result. Ranking stability does not recompute clinical
+scores and is not itself diagnostic accuracy.
+
+Transcript-specific SV consequences rely on VEP/AnnotSV and a matching GRCh38
+transcript reference; expression disruption is not claimed without RNA data.
+The plotting/benchmarking workflows do not perform storage cleanup.
+
 ## 8. How to read the results
 
 Start with the master merged VCF and its caller-support summary, then check the integrated SV–gene table, gene/transcript effects, population evidence, HPO relevance, and the final candidate tables. Review the caller/depth/gene breakpoint figures; use a separate BAM viewer if direct read-level inspection is required. The complete discovery variants are preserved even when an optional annotation is unavailable.
