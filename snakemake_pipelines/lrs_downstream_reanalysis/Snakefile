@@ -182,7 +182,7 @@ rule archived_thesis_plots_sample:
         python {input.runner:q} \\
             --root {PATH:q} \\
             --sample {wildcards.sample:q} \\
-            --platform lrs --focused \\
+            --platform lrs  \\
             --candidate-table {input.events:q} \\
             --evidence-table {input.integrated:q} \\
             --out-dir {params.outdir:q} \\
@@ -206,13 +206,25 @@ ARCHIVED_QC_SAMPLES = [
     and os.path.isfile(PATH + f"{sample}/qc/{sample}.n50.tsv")
 ]
 
-# Comprehensive BAM-free plotting target: R/filtering/cohort plots plus all
-# currently applicable Python plots. QC is included when saved metrics exist.
+# Comprehensive BAM-free plot target: all Python, R, filtering and optional
+# cohort figures that can be rebuilt from saved evidence. Optional QC is
+# included only when the original QC summaries are present.
 rule all_saved_thesis_plots:
     input:
-        # Focused target excludes redundant R HPO/evidence/population figures.
         expand(
             PATH + "{sample}/plots/15_downstream_filtering/.filter_plots.done",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots_r/population_gene_effect/{sample}_population_gene_effect.pdf",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.pdf",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.pdf",
             sample=POSTPROCESS_SAMPLES,
         ),
         expand(
@@ -227,3 +239,4 @@ rule all_saved_thesis_plots:
             PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
             sample=ARCHIVED_QC_SAMPLES,
         ),
+        COHORT_PLOT_OUTPUTS,
