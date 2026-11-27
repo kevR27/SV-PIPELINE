@@ -468,7 +468,7 @@ def _main():
         "--candidates", str(breakpoint_source),
         "--platform", args.platform,
         "--out-dir", str(out / "12_breakpoint_tracks"),
-        "--top-n", str(min(args.locus_top_n, 8)),
+        "--top-n", str(args.locus_top_n),
     ]
     if depth_bins_path:
         breakpoint_cmd += ["--depth", str(depth_bins_path)]
