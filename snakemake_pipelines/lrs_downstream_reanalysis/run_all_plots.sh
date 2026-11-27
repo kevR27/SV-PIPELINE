@@ -29,4 +29,5 @@ snakemake -s Snakefile \
       r_candidate_evidence_heatmap \
       r_hpo_heatmap \
       r_large_sv_depth \
-      r_sequencing_qc
+      r_sequencing_qc \
+      cohort_thesis_comparison
