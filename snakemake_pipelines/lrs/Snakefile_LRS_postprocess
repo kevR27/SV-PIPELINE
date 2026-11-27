@@ -717,6 +717,14 @@ rule cohort_thesis_comparison:
 include: "xci_analysis.smk"
 
 
+# QC graphics are requested only for samples with retained Dorado and N50
+# summaries; postprocess cannot reconstruct original sequencing QC from VCFs.
+THESIS_PLOT_QC_SAMPLES = [
+    sample for sample in POSTPROCESS_SAMPLES
+    if os.path.isfile(PATH + f"{sample}/qc/{sample}.dorado_qc.tsv")
+    and os.path.isfile(PATH + f"{sample}/qc/{sample}.n50.tsv")
+]
+
 # Explicit target only. It is NOT part of rule all.
 rule all_thesis_plots:
     input:
@@ -749,7 +757,7 @@ rule all_thesis_plots:
         ),
         expand(
             PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
-            sample=POSTPROCESS_SAMPLES,
+            sample=THESIS_PLOT_QC_SAMPLES,
         ),
         COHORT_PLOT_OUTPUTS,
         atlas=lambda wc: ATLAS_OVERVIEW_TARGETS + ATLAS_NATIVE_TARGETS
