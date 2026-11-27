@@ -634,7 +634,7 @@ rule thesis_plots_sample:
         python {PLOTS:q}/run_thesis_plots.py \
             --root {PATH} \
             --sample {wildcards.sample} \
-            --platform lrs --focused \
+            --platform lrs  \
             --candidate-table {input.candidate_events:q} \
             --top-genes {params.top_genes} \
             --review-top-n {params.review_top_n} \
@@ -733,6 +733,22 @@ rule all_thesis_plots:
         ),
         expand(
             PATH + "{sample}/plots_r/large_sv_depth/{sample}_large_sv_depth.pdf",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots_r/population_gene_effect/{sample}_population_gene_effect.pdf",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots_r/candidate_evidence/{sample}_candidate_evidence.pdf",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots_r/hpo/{sample}_hpo_heatmap.pdf",
+            sample=POSTPROCESS_SAMPLES,
+        ),
+        expand(
+            PATH + "{sample}/plots_r/qc/{sample}_sequencing_qc.pdf",
             sample=POSTPROCESS_SAMPLES,
         ),
         COHORT_PLOT_OUTPUTS,
