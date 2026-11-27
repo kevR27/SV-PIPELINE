@@ -281,29 +281,43 @@ change. They require separate caller-VCF quality review. If a subsequent
 Genomiser run still exhausts memory, inspect the new Genomiser Java log;
 do not assume SV preparation guarantees success.
 
-## Regenerate focused thesis plots from saved evidence
+## Regenerate all available thesis plots from saved evidence
 
-The existing `saved_evidence_plots` target produces the standard R plots,
-filtering plots, and cohort comparison. The separate
-`all_saved_thesis_plots` target now also runs the existing Python thesis
-figure collection **for all selected patients**, using the current
-`*_integrated_SV_gene_analysis.final.tsv.gz` and final ranked SV-gene
-table. This target does not request BAMs, read-level XCI or fresh
-mosdepth data.
+The `all_saved_thesis_plots` target requests **all available** saved-evidence
+plots for every selected patient: Python candidate loci (including detailed
+candidate cards), MitoCarta/mitochondrial context, SV and gene overviews,
+R phenotype/evidence/population/large-SV figures, optional saved-QC figures,
+filtering plots, and cohort comparison only when that module is enabled.
+The runner is intentionally **not** called with `--focused`. It cannot
+rebuild missing BAM-derived evidence, read-level alignments or XCI.
+
+For a **first run** or normal incremental downstream update:
 
 ```bash
 cd /DATA/casadei7/tools/SV-PIPELINE-main_v3/snakemake_pipelines/lrs_downstream_reanalysis
 
-snakemake -s Snakefile --configfile config.yaml --use-conda \\
-  --conda-prefix /home/casadei7/snakemake_envs/envs/ \\
-  --cores 32 --resources mem_mb=45000 --rerun-triggers mtime \\
-  -n all_saved_thesis_plots
-
-snakemake -s Snakefile --configfile config.yaml --use-conda \\
-  --conda-prefix /home/casadei7/snakemake_envs/envs/ \\
-  --cores 32 --resources mem_mb=45000 --rerun-triggers mtime \\
-  --rerun-incomplete -p all_saved_thesis_plots
+snakemake -s Snakefile --configfile config.yaml --use-conda \
+  --conda-prefix /home/casadei7/snakemake_envs/envs \
+  --cores 32 --resources mem_mb=45000 --rerun-incomplete -p \
+  all all_saved_thesis_plots
 ```
+
+**To regenerate every available plot on every invocation, even if it is
+already up to date, use the included wrapper**:
+
+```bash
+bash run_all_plots.sh
+```
+
+This wrapper runs `all all_saved_thesis_plots` with `--forcerun` for the
+saved-evidence plotting rules only (Python launcher, downstream filtering,
+R phenotype/evidence/population/depth and available R QC). It does **not**
+force Genomiser, variant calling, reference generation, or candidate
+ranking. Snakemake still recomputes missing/outdated downstream inputs.
+The repository is on a `noexec` filesystem on this server, so call the
+wrapper with `bash` rather than `./run_all_plots.sh`.
+Use `SNAKEMAKE_CONDA_PREFIX`, `SNAKEMAKE_CORES`, and `SNAKEMAKE_MEM_MB`
+to override the wrapper's Conda prefix, CPU and memory settings.
 
 Python output figures appear in
 `<sample>/plots_reanalysis/` rather than mixing with older
@@ -332,7 +346,7 @@ independent experimental validation. Noncoding, regulatory and
 inversion-spanned gene context are hypotheses until independently
 supported.
 
-## Focused figures, no cohort recurrence, and sensitivity checks
+## Full available figures, no cohort recurrence, and sensitivity checks
 
 For incremental batches of unresolved patients, `cohort_analysis_enabled: false`
 is the default. No SV recurrence is calculated or used by the final ranking;
@@ -342,14 +356,20 @@ reference construction is not a cohort statistic and is now stored under
 is ready, deliberately switch `cohort_analysis_enabled: true`, confirm
 sample selection and rerun `all` using ordinary Snakemake provenance tracking.
 
-`all_saved_thesis_plots` is the focused target. It now avoids duplicate
-R HPO/evidence/population figures and instead generates:
-- Current SV landscape and candidate evidence matrix
-- Mechanism-aware large-event overview
-- Candidate phenotype heatmap and custom-versus-Genomiser rank comparison
-- A **measured coverage + gene/exon + matched caller breakpoint** panel for
-  up to eight prioritized DEL/DUP/INV/INS events per sample
-- Saved large-SV depth, QC (when available), and filtering plots
+`all_saved_thesis_plots` now requests the complete set of currently
+supported saved-evidence figures, including:
+- SV landscape, candidate evidence matrix, caller agreement and population context
+- Mechanism-aware large-event overview and detailed candidate locus/cards
+- Phenotype heatmaps, gene prioritization and Genomiser rank comparison
+- MitoCarta / nuclear mitochondrial gene and mtDNA context figures when annotated
+- Measured coverage, gene/exon and matched caller breakpoint tracks
+- R phenotype, evidence, population, saved large-SV depth, QC (when available),
+  and filtering plots
+
+Each plot has its own input requirements. Optional figures may be skipped,
+and empty folders may still be created; inspect the manifest and log. The
+`14_mitochondrial_context/` figures need MitoCarta annotation columns.
+All available outputs can be extensive for `candidate_locus_top_n: 50`.
 
 The new compact locus figures and source manifests appear at
 `<sample>/plots_reanalysis/12_breakpoint_tracks/`. This panel is
