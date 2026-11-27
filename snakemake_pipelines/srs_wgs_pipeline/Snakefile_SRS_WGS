@@ -1478,7 +1478,7 @@ rule thesis_plots_sample:
         """
         mkdir -p "$(dirname {log:q})"
         python {PLOTS:q}/run_thesis_plots.py --root {PATH:q} --sample {wildcards.sample:q} \
-            --platform srs --focused --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
+            --platform srs  --candidate-table {input.candidates:q} --evidence-table {input.evidence:q} --gene-bed {input.genes:q} \
             --top-genes {params.top_genes} --review-top-n {params.review_top_n} --locus-top-n {params.locus_top_n} \
             {params.genome_context_args} \
             {params.gene_gtf_arg} > {log:q} 2>&1
