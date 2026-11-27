@@ -510,8 +510,17 @@ Some optional branch skips are reported only in the launcher log. A command
 can complete with an empty-data notice, so check its figure/source TSV or
 individual manifest before claiming that a figure was produced.
 
-The workflow tracks the launcher manifest and marker, rather than every
-optional PDF/PNG. If you delete a figure while retaining both, regenerate the
-plotting rule with `-R thesis_plots_sample` on your usual Snakemake command.
-This reruns applicable plots from existing tables and can regenerate deleted
-figures; it does not mean the original callers must be rerun.
+The runner now generates **every available figure by default**; the former
+`--focused` mode has been removed. The saved-output LRS entry point writes
+its manifests to `<sample>/plots_reanalysis/plot_run_manifest.tsv`, while
+standard LRS/SRS write to `<sample>/plots/plot_run_manifest.tsv`.
+Some folders may still be empty when prerequisite data or candidates are absent.
+Review each manifest and launcher log to distinguish these cases.
+
+Snakemake tracks the launcher manifest and marker, rather than every
+optional PDF/PNG. To regenerate all available plots on **every invocation**,
+run `bash run_all_plots.sh` from `snakemake_pipelines/lrs_downstream_reanalysis/`.
+This wrapper forces only plot producers and keeps upstream results incremental.
+For standard LRS/SRS, use `--forcerun thesis_plots_sample` on your normal
+plotting target (and explicitly force any additional R/filtering rules you
+also want refreshed). No new SV callers are required.
