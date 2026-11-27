@@ -296,8 +296,10 @@ def main():
     parser.add_argument("--gene-gtf")
     parser.add_argument("--depth")
     parser.add_argument("--out-dir", required=True)
-    parser.add_argument("--top-n",type=int,default=8)
+    parser.add_argument("--top-n",type=int,default=10)
     args = parser.parse_args()
+    if args.top_n < 1:
+        parser.error("--top-n must be at least 1")
     sample_dir=Path(args.sample_dir)
     candidates=choose_candidates(args.candidates,args.top_n)
     folder=Path(args.out_dir)
