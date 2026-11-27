@@ -290,6 +290,10 @@ The review outputs distinguish **research ranking**, **reported AnnotSV classifi
 
 The workflow no longer registers any read-alignment plotting rule. Caller/depth tracks do not replace read-level confirmation.
 
+The number of compact breakpoint-track figures follows
+`candidate_locus_top_n` (maximum eligible SV events, without an eight-event
+cap). The plotting layer does not perform new breakpoint validation.
+
 Run `all_thesis_plots` to generate all supported figures for which input
 evidence is available. The plotting launcher no longer filters to a focused
 subset: it includes detailed candidate loci and mitochondrial context in

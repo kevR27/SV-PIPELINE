@@ -369,6 +369,12 @@ supported saved-evidence figures, including:
 Each plot has its own input requirements. Optional figures may be skipped,
 and empty folders may still be created; inspect the manifest and log. The
 `14_mitochondrial_context/` figures need MitoCarta annotation columns.
+The `candidate_locus_top_n` setting also governs the maximum number of
+compact breakpoint-track figures, without a separate eight-event cap.
+With `candidate_locus_top_n: 50`, up to 50 distinct eligible DEL/DUP/INV/INS
+events are shown per sample. Fewer tracks can be produced if fewer events
+have valid coordinates. The plotted tracks remain an archived computational
+review, not read-level breakpoint validation.
 All available outputs can be extensive for `candidate_locus_top_n: 50`.
 
 The new compact locus figures and source manifests appear at
