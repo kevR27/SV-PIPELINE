@@ -42,7 +42,6 @@ def parse_args():
     p.add_argument("--repeat-bed", action="append", default=[], metavar="CLASS=PATH")
     p.add_argument("--random-draws", type=int, default=200)
     p.add_argument("--assembly-manifest", help="Optional SV_ID/PAF_PATH table for existing candidate assemblies")
-    p.add_argument("--focused", action="store_true", help="Generate the core thesis figures only; skip redundant exploratory plots")
     p.add_argument("--review-top-n", type=int, default=5, help="Initial review associations per panel group")
     p.add_argument("--locus-top-n", type=int, default=10, help="Maximum detailed locus figures from the review shortlist")
     p.add_argument("--review-only", action="store_true", help="Generate QC and essential review outputs from completed tables only")
@@ -590,23 +589,6 @@ def _main():
             "plot_sv_gene_network.py",
         }
         jobs = [(command, required) for command, required in jobs if Path(command[1]).name not in lrs_event_plots]
-
-    if args.focused:
-        # Keep one representative overview, phenotype, evidence and locus figure
-        # rather than exporting every intermediate/exploratory panel by default.
-        focused_scripts = {
-            "plot_lrs_qc.py",  # both LRS/SRS: saved measured coverage QC when available
-            "build_candidate_review.py",
-            "plot_event_review_summary.py",
-            "plot_candidate_evidence_matrix.py",
-            "plot_breakpoint_gene_tracks.py",
-            "plot_sv_landscape.py",
-            "plot_large_complex_candidates.py",
-            "plot_gene_hpo_heatmap.py",
-            "plot_genomiser_rank_comparison.py",
-        }
-        jobs = [(command, required) for command, required in jobs
-                if Path(command[1]).name in focused_scripts]
 
     for command, required in jobs:
         run(command, required, args.dry_run)
