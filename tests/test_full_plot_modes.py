@@ -32,6 +32,15 @@ class FullPlotModeTests(unittest.TestCase):
         self.assertIn("plot_breakpoint_gene_tracks.py", runner)
         self.assertIn("SKIPPED_MISSING_INPUT", runner)
 
+    def test_breakpoint_track_count_follows_locus_top_n(self):
+        runner = (ROOT / "plots" / "run_thesis_plots.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"--top-n", str(args.locus_top_n)', runner)
+        self.assertNotIn("min(args.locus_top_n, 8)", runner)
+        settings = (LRS / "config_lrs.yaml").read_text(encoding="utf-8")
+        self.assertIn("candidate_locus_top_n: 50", settings)
+
     def test_archived_target_requests_all_saved_r_figures(self):
         snakefile = (ARCHIVED / "Snakefile").read_text(encoding="utf-8")
         target = snakefile.split("rule all_saved_thesis_plots:", 1)[1]
