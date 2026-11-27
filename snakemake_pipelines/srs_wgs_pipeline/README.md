@@ -92,7 +92,7 @@ your server copy automatically.
 | --- | --- |
 | `all` | Main analysis, annotation, candidate rankings and downstream interpretation; does not request the additional review filtering |
 | `further_filtering` | Additional filtering tables only |
-| `all_thesis_plots` | Focused breakpoint/gene/depth figures, filtering views and optional Atlas figures when enabled |
+| `all_thesis_plots` | All available thesis figures, including detailed loci, phenotype, mitochondrial context, filtering views and optional Atlas figures when enabled |
 | `all all_thesis_plots` | Complete analysis plus the filtering and figures above |
 
 **You do not need a separate `further_filtering` command after requesting
@@ -286,16 +286,24 @@ Begin with the QC summary and the integrated SV VCF, then inspect the SV–gene 
 
 The review outputs distinguish **research ranking**, **reported AnnotSV classification** and **clinical review order**. They are not equivalent. A variant may overlap a relevant gene while still requiring breakpoint confirmation, segregation analysis, transcript studies or other experimental follow-up. The workflow does not infer inheritance, variant phase or pathogenicity from missing evidence.
 
-## Focused thesis figures and ranking sensitivity (new)
+## Complete thesis figures and ranking sensitivity
 
 The workflow no longer registers any read-alignment plotting rule. Caller/depth tracks do not replace read-level confirmation.
 
-Run `all_thesis_plots` to generate a selected figure set, including
-measured mosdepth coverage + SV interval/caller breakpoint annotations
-and whole-gene spans. Set `candidate_plot_gene_gtf` to an existing
+Run `all_thesis_plots` to generate all supported figures for which input
+evidence is available. The plotting launcher no longer filters to a focused
+subset: it includes detailed candidate loci and mitochondrial context in
+addition to measured mosdepth coverage, SV interval/caller breakpoint
+annotations and whole-gene spans. Set `candidate_plot_gene_gtf` to an existing
 matched GRCh38 GTF for **true exons**; BED-only gene spans must not be
 misidentified as exon structures. Caller trace matches are computational
 concordance, not independent validation.
+
+Snakemake normally reuses completed figures. To redraw all Python thesis
+figures on each subsequent run, include `--forcerun thesis_plots_sample`
+in the usual `snakemake ... all all_thesis_plots` command. To regenerate
+filtering plots as well, add `downstream_filtering_plots` to that force
+list. This does not force upstream variant calling.
 
 `ranking_stability_enabled: true` adds a per-patient sensitivity
 output to `ranking_stability/`. This records how the final SV-associated
